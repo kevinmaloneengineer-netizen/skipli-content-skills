@@ -1,0 +1,13 @@
+dist/
+deploy/.env
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+web/client/dist/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+deploy/firebase-key.json
+*-firebase-adminsdk-*.json
+docs/

@@ -1,0 +1,280 @@
+diff --git a/extensions/chrome-selected-cookie-sync/popup.js b/extensions/chrome-selected-cookie-sync/popup.js
+index 360530fa..25a7b4a5 100644
+--- a/extensions/chrome-selected-cookie-sync/popup.js
++++ b/extensions/chrome-selected-cookie-sync/popup.js
+@@ -36,10 +36,12 @@ function bindEvents() {
+   for (const input of [els.gatewayUrl, els.token, els.userId, els.agentId]) {
+     input.addEventListener("change", saveSettings);
+   }
+-  els.grant.addEventListener("click", requestSiteAccess);
+-  els.refresh.addEventListener("click", loadCookies);
++  els.grant.addEventListener("click", () => requestSiteAccess().catch((err) => setStatus(err.message, true)));
++  els.refresh.addEventListener("click", () => loadCookies().catch((err) => setStatus(err.message, true)));
+   els.selectAll.addEventListener("click", selectAllCookies);
+-  els.sync.addEventListener("click", syncSelected);
++  els.sync.addEventListener("click", () =>
++    syncSelected().catch((err) => setStatus(`Sync failed: ${err.message}`, true)),
++  );
+ }
+ 
+ async function saveSettings() {
+@@ -76,9 +78,17 @@ async function loadCookies() {
+     setStatus("Grant access for this site before reading cookies.");
+     return;
+   }
+-  state.cookies = await chrome.cookies.getAll({ url: state.tab.url });
++  // Read from the tab's own cookie store so incognito/other-store tabs work too.
++  const stores = await chrome.cookies.getAllCookieStores();
++  const store = stores.find((s) => s.tabIds.includes(state.tab.id));
++  const query = { url: state.tab.url };
++  if (store) {
++    query.storeId = store.id;
++  }
++  state.cookies = await chrome.cookies.getAll(query);
+   renderCookies();
+-  setStatus(`${state.cookies.length} cookies available for this site.`);
++  const host = new URL(state.tab.url).hostname;
++  setStatus(`${state.cookies.length} cookies available for ${host}.`);
+ }
+ 
+ function renderCookies() {
+@@ -166,7 +176,7 @@ async function syncSelected() {
+     setStatus(data.error || `Sync failed with HTTP ${response.status}.`, true);
+     return;
+   }
+-  setStatus(`Synced ${data.synced ?? cookies.length} cookies.`);
++  setStatus(`✅ Synced ${data.synced ?? cookies.length} cookies to agent ${agentId}.`);
+ }
+ 
+ async function ensureOriginPermission(rawUrl) {
+@@ -180,12 +190,30 @@ function originPatternFor(rawUrl) {
+   try {
+     const url = new URL(rawUrl);
+     if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+-    return `${url.protocol}//${url.host}/*`;
++    // Session cookies usually live on the parent domain (e.g. ".facebook.com"),
++    // and Chrome hides cookies whose domain the extension has no permission for.
++    // "*.example.com" covers example.com itself and every subdomain.
++    const host = url.hostname;
++    if (/^[\d.]+$/.test(host) || !host.includes(".")) {
++      return `${url.protocol}//${url.host}/*`;
++    }
++    return `${url.protocol}//*.${baseDomain(host)}/*`;
+   } catch {
+     return "";
+   }
+ }
+ 
++// Approximate registrable domain: "m.facebook.com" -> "facebook.com",
++// "shop.example.com.vn" -> "example.com.vn" (short second-level labels like com/co/net).
++function baseDomain(host) {
++  const labels = host.split(".");
++  if (labels.length <= 2) return host;
++  const sld = labels[labels.length - 2];
++  const tld = labels[labels.length - 1];
++  const take = tld.length === 2 && sld.length <= 3 ? 3 : 2;
++  return labels.slice(-take).join(".");
++}
++
+ function cookieKey(cookie) {
+   return `${cookie.domain}\n${cookie.path}\n${cookie.name}`;
+ }
+diff --git a/pkg/browser/browser_page.go b/pkg/browser/browser_page.go
+index 620844c7..a82bab70 100644
+--- a/pkg/browser/browser_page.go
++++ b/pkg/browser/browser_page.go
+@@ -2,6 +2,7 @@ package browser
+ 
+ import (
+ 	"context"
++	"errors"
+ 	"fmt"
+ 	"sync"
+ 	"time"
+@@ -116,7 +117,7 @@ func (m *Manager) Navigate(ctx context.Context, targetID, url string) error {
+ 		}
+ 		return fmt.Errorf("navigate: %w", err)
+ 	}
+-	if err := page.WaitStable(300 * time.Millisecond); err != nil {
++	if err := waitSettled(ctx, page); err != nil {
+ 		if ctx.Err() != nil {
+ 			return ctx.Err()
+ 		}
+@@ -125,6 +126,36 @@ func (m *Manager) Navigate(ctx context.Context, targetID, url string) error {
+ 	return nil
+ }
+ 
++// stableWaitMax bounds how long open/navigate/actions wait for the DOM to settle.
++// Live sites (social feeds, chat apps) mutate the DOM continuously and never
++// become "stable". Unbounded, the wait ran until the action timeout; the ctx
++// watchdog then closed the page while OpenTab still reported success, so the
++// next action on that tab failed with "context canceled".
++const stableWaitMax = 10 * time.Second
++
++// waitSettled waits, best effort, for the page DOM to settle. The wait is
++// capped at stableWaitMax (or half the time left on ctx, whichever is shorter)
++// so a page that never settles is left open and usable. It returns ctx.Err()
++// when the caller's ctx is done, or the wait error for real failures such as a
++// closed target.
++func waitSettled(ctx context.Context, page *rod.Page) error {
++	budget := stableWaitMax
++	if deadline, ok := ctx.Deadline(); ok {
++		if half := time.Until(deadline) / 2; half < budget {
++			budget = half
++		}
++	}
++	if budget > 0 {
++		timed := page.Timeout(budget)
++		err := timed.WaitStable(300 * time.Millisecond)
++		timed.CancelTimeout()
++		if err != nil && !errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
++			return err
++		}
++	}
++	return ctx.Err()
++}
++
+ // Close shuts down the browser if running.
+ func (m *Manager) Close() error {
+ 	return m.Stop(context.Background())
+diff --git a/pkg/browser/browser_remote.go b/pkg/browser/browser_remote.go
+index 042008a7..5b0512fa 100644
+--- a/pkg/browser/browser_remote.go
++++ b/pkg/browser/browser_remote.go
+@@ -249,9 +249,13 @@ func (m *Manager) getPageAndResolve(ctx context.Context, targetID, ref string) (
+ 	return page, el, nil
+ }
+ 
+-// waitStable waits for page to become stable (no network/DOM activity).
++// waitStable waits, best effort, for page to become stable (no network/DOM
++// activity). Capped at stableWaitMax: pages that never settle would otherwise
++// block the action forever, since the page has no deadline of its own.
+ func waitStable(page *rod.Page) {
+-	_ = page.WaitStable(300 * time.Millisecond)
++	timed := page.Timeout(stableWaitMax)
++	_ = timed.WaitStable(300 * time.Millisecond)
++	timed.CancelTimeout()
+ }
+ 
+ // resolveRemoteCDP queries a Chrome endpoint's /json/version to get the CDP
+diff --git a/pkg/browser/browser_settle_test.go b/pkg/browser/browser_settle_test.go
+new file mode 100644
+index 00000000..0e8518bb
+--- /dev/null
++++ b/pkg/browser/browser_settle_test.go
+@@ -0,0 +1,88 @@
++package browser
++
++import (
++	"context"
++	"os"
++	"strings"
++	"testing"
++	"time"
++)
++
++// busyPageURL serves a page whose DOM mutates every 100ms forever, like a live
++// social feed. WaitStable never succeeds on it.
++const busyPageURL = "data:text/html,<body><div id=t>0</div><script>setInterval(()=>{const d=document.getElementById('t');d.textContent=String(+d.textContent+1);document.body.appendChild(document.createElement('span'))},100)</script></body>"
++
++// remoteChromeForTest returns a CDP URL from GOCLAW_TEST_CHROME_URL
++// (e.g. ws://localhost:9222), or skips: these tests need a real Chrome.
++func remoteChromeForTest(t *testing.T) string {
++	t.Helper()
++	u := os.Getenv("GOCLAW_TEST_CHROME_URL")
++	if u == "" {
++		t.Skip("GOCLAW_TEST_CHROME_URL not set; skipping real-Chrome test")
++	}
++	return u
++}
++
++// Regression: OpenTab on a never-settling page used to block until the action
++// ctx expired, the watchdog then closed the page, and OpenTab still returned
++// success - so the next Evaluate failed with "context canceled".
++func TestOpenTabNeverSettlingPageStaysUsable(t *testing.T) {
++	m := New(WithRemoteURL(remoteChromeForTest(t)))
++	defer m.Close()
++
++	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
++	defer cancel()
++	if err := m.Start(ctx); err != nil {
++		t.Fatalf("start: %v", err)
++	}
++
++	start := time.Now()
++	tab, err := m.OpenTab(ctx, busyPageURL)
++	elapsed := time.Since(start)
++	if err != nil {
++		t.Fatalf("open busy page: %v", err)
++	}
++	if elapsed > stableWaitMax+5*time.Second {
++		t.Fatalf("OpenTab took %s, want <= ~%s (stability wait must be capped)", elapsed, stableWaitMax)
++	}
++
++	// Simulate the tool handler: the per-action ctx is cancelled after open returns.
++	cancel()
++	time.Sleep(200 * time.Millisecond)
++
++	got, err := m.Evaluate(context.Background(), tab.TargetID, `() => document.getElementById('t') ? "alive" : "missing"`)
++	if err != nil {
++		t.Fatalf("evaluate after open: %v", err)
++	}
++	if !strings.Contains(got, "alive") {
++		t.Fatalf("evaluate = %q, want alive", got)
++	}
++}
++
++// waitSettled must never outlive the caller's ctx and must leave headroom
++// before the deadline so the watchdog does not fire on the normal path.
++func TestWaitSettledRespectsShortDeadline(t *testing.T) {
++	m := New(WithRemoteURL(remoteChromeForTest(t)))
++	defer m.Close()
++
++	if err := m.Start(context.Background()); err != nil {
++		t.Fatalf("start: %v", err)
++	}
++	tab, err := m.OpenTab(context.Background(), busyPageURL)
++	if err != nil {
++		t.Fatalf("open: %v", err)
++	}
++	m.mu.Lock()
++	page := m.pages[tab.TargetID]
++	m.mu.Unlock()
++
++	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
++	defer cancel()
++	start := time.Now()
++	if err := waitSettled(ctx, page); err != nil {
++		t.Fatalf("waitSettled on busy page with live ctx: %v", err)
++	}
++	if elapsed := time.Since(start); elapsed > 3*time.Second {
++		t.Fatalf("waitSettled took %s, want about half of the 4s deadline", elapsed)
++	}
++}
+diff --git a/pkg/browser/browser_tabs.go b/pkg/browser/browser_tabs.go
+index baf08387..ff0a3352 100644
+--- a/pkg/browser/browser_tabs.go
++++ b/pkg/browser/browser_tabs.go
+@@ -152,9 +152,12 @@ func (m *Manager) OpenTab(ctx context.Context, url string) (*TabInfo, error) {
+ 	}
+ 
+ 	// Watchdog: close page on ctx cancel to unblock WaitStable CDP call.
++	// waitSettled caps the wait well inside ctx, so a page that never settles
++	// (live feeds) stays open instead of being killed by the watchdog.
+ 	stopWatchdog := watchPageClose(ctx, page)
+-	if err := page.WaitStable(300 * time.Millisecond); err != nil {
++	if err := waitSettled(ctx, page); err != nil {
+ 		stopWatchdog()
++		_ = page.Close()
+ 		if ctx.Err() != nil {
+ 			return nil, ctx.Err()
+ 		}
+@@ -213,7 +216,7 @@ func (m *Manager) openTabLightpandaLocked(ctx context.Context, tenantID, targetU
+ 
+ 	// Best-effort stability wait - lightpanda may not fire every lifecycle event.
+ 	stopWatchdog := watchPageClose(ctx, page)
+-	_ = page.WaitStable(300 * time.Millisecond)
++	_ = waitSettled(ctx, page)
+ 	stopWatchdog()
+ 
+ 	info, _ := page.Info()

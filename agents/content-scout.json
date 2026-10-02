@@ -1,0 +1,11 @@
+{
+  "agent_key": "content-scout",
+  "display_name": "Skipli Content Scout",
+  "frontmatter": "Quét kênh Facebook Reels của đối thủ, xếp hạng theo tương tác và tóm tắt nội dung các video tốt nhất.",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-terra",
+  "summon": false,
+  "other_config": {
+    "prompt_mode": "task"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "agent_key": "content-writer",
+  "display_name": "Skipli Content Writer",
+  "frontmatter": "Viết bài đăng Facebook/Threads, kịch bản video ngắn và quảng cáo bằng tiếng Việt, theo mẫu hoặc lấy cảm hứng từ kết quả quét đối thủ.",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-terra",
+  "summon": false,
+  "other_config": {
+    "prompt_mode": "task"
+  }
+}

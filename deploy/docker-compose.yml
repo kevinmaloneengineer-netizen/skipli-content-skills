@@ -1,0 +1,133 @@
+# GoClaw + Postgres (pgvector) + headless Chrome for Skipli content skills.
+# Merged from GoClaw's docker-compose.yml + .postgres.yml + .browser.yml.
+#
+# Image: GoClaw upstream does not yet include the browser fix in
+# goclaw-patches/ (Facebook tabs get closed). Until it is merged, build a
+# patched image and point GOCLAW_IMAGE at it - see deploy/README.md.
+#
+#   cp .env.example .env   # fill in tokens
+#   docker compose up -d
+#   docker compose stop    # keeps data. Never `down -v` (wipes DB + cookies)
+
+services:
+  goclaw:
+    image: ${GOCLAW_IMAGE:-ghcr.io/nextlevelbuilder/goclaw:latest}
+    ports:
+      - "${GOCLAW_PORT:-18790}:18790"
+    environment:
+      - GOCLAW_HOST=0.0.0.0
+      - GOCLAW_PORT=18790
+      - GOCLAW_CONFIG=/app/data/config.json
+      - GOCLAW_GATEWAY_TOKEN=${GOCLAW_GATEWAY_TOKEN:?set GOCLAW_GATEWAY_TOKEN in deploy/.env}
+      # Encrypts provider keys and browser cookies; changing it makes stored secrets unreadable.
+      - GOCLAW_ENCRYPTION_KEY=${GOCLAW_ENCRYPTION_KEY:?set GOCLAW_ENCRYPTION_KEY in deploy/.env}
+      - GOCLAW_SKILLS_DIR=/app/data/skills
+      - GOCLAW_POSTGRES_DSN=postgres://${POSTGRES_USER:-goclaw}:${POSTGRES_PASSWORD:-goclaw}@postgres:5432/${POSTGRES_DB:-goclaw}?sslmode=disable
+      - GOCLAW_BROWSER_REMOTE_URL=ws://chrome:9222
+    volumes:
+      - goclaw-data:/app/data
+      - goclaw-skills:/app/skills
+      - goclaw-workspace:/app/workspace
+      - goclaw-workspace:/app/.goclaw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chrome:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+          pids: 200
+    restart: unless-stopped
+
+  # Skipli Content (web/): Node API + React UI, data in Firestore. Run ONE replica -
+  # the job queue lives in-process. Only reachable from this machine unless
+  # WEB_BIND=0.0.0.0; set APP_PASSWORD before exposing it (every run spends model quota).
+  web:
+    build: ../web
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    environment:
+      - GOCLAW_URL=http://goclaw:18790
+      - GOCLAW_GATEWAY_TOKEN=${GOCLAW_GATEWAY_TOKEN}
+      - GOCLAW_USER_ID=${GOCLAW_USER_ID:-system}
+      - AGENT_SCOUT=${AGENT_SCOUT:-content-scout}
+      - AGENT_WRITER=${AGENT_WRITER:-content-writer}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - JOB_CONCURRENCY=${JOB_CONCURRENCY:-1}
+      # Firestore (firebase-admin). Service account JSON as one line, see deploy/README.md.
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:?set FIREBASE_PROJECT_ID in deploy/.env}
+      - FIREBASE_SERVICE_ACCOUNT=${FIREBASE_SERVICE_ACCOUNT:-}
+      - FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID:-}
+      - FIRESTORE_PREFIX=${FIRESTORE_PREFIX:-content_}
+      # Facebook "100 latest reels" scan (optional)
+      - APIFY_TOKEN=${APIFY_TOKEN:-}
+      - APIFY_FB_REELS_ACTOR=${APIFY_FB_REELS_ACTOR:-apify~facebook-reels-scraper}
+      - REEL_LIST_CACHE_HOURS=${REEL_LIST_CACHE_HOURS:-6}
+    depends_on:
+      - goclaw
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg18
+    # Bound to localhost only; the gateway reaches it as postgres:5432.
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-goclaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goclaw}
+      POSTGRES_DB: ${POSTGRES_DB:-goclaw}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-goclaw} -d ${POSTGRES_DB:-goclaw}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  chrome:
+    image: chromedp/headless-shell:latest
+    # Entrypoint already sets the remote-debugging address/port; re-adding them breaks Chrome.
+    command:
+      - --no-sandbox
+      - --headless=new
+      - --remote-allow-origins=*
+      - --disable-gpu
+      - --disable-dev-shm-usage
+    # CDP has no auth - never expose it publicly.
+    ports:
+      - "127.0.0.1:${CHROME_CDP_PORT:-9222}:9222"
+    shm_size: 2gb
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9222"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+    restart: unless-stopped
+
+volumes:
+  goclaw-data:
+  goclaw-skills:
+  goclaw-workspace:
+  postgres-data:
