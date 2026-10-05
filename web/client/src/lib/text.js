@@ -4,7 +4,7 @@ export function toPlainText(md) {
     .replace(/\r\n?/g, "\n")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
+    .replace(/__([^_\s][^_]*?)__/g, "$1")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\n{3,}/g, "\n\n")
@@ -45,4 +45,55 @@ export async function copyText(text) {
   const ok = document.execCommand("copy");
   ta.remove();
   return ok;
+}
+
+export const PILLARS = [
+  { id: "entertain", name: "Giải trí" },
+  { id: "educate", name: "Giáo dục" },
+  { id: "engage", name: "Tương tác" },
+  { id: "sell", name: "Bán hàng" },
+];
+
+const norm = (s) => s.normalize("NFC").toLowerCase().trim();
+
+/** Split a channel-cloner answer into "## Bài N · <pillar>: <title>" posts + intro + notes. */
+export function splitClonePosts(md) {
+  const posts = [];
+  const intro = [];
+  const notes = [];
+  for (const part of String(md ?? "").replace(/\r\n?/g, "\n").split(/^(?=## )/m)) {
+    const m = part.match(/^## Bài\s*\d*\s*[·•|:-]\s*([^:\n]+?)\s*:\s*([^\n]*)\n([\s\S]*)$/i);
+    if (!m) {
+      (posts.length ? notes : intro).push(part);
+      continue;
+    }
+    const pillar = PILLARS.find((p) => norm(p.name) === norm(m[1]))?.id ?? "other";
+    const [rawBody, ...tail] = m[3].split(/^---\s*$/m);
+    let body = rawBody.trim();
+    let source = "";
+    const src = body.match(/^>\s*Gốc:\s*(.*)\n?/i);
+    if (src) {
+      source = src[1].trim();
+      body = body.slice(src[0].length).trim();
+    }
+    posts.push({ id: `p${posts.length + 1}`, pillar, title: m[2].trim() || m[1].trim(), source, body });
+    if (tail.length) notes.push(tail.join("---"));
+  }
+  return { intro: intro.join("\n").trim(), posts, notes: notes.join("\n").trim() };
+}
+
+const TIME = String.raw`\d{1,2}:\d{2}(?::\d{2})?`;
+const SEGMENT = new RegExp(String.raw`^## (${TIME})\s*(?:đến|-|–|—)\s*(${TIME})\s*[·•|:-]\s*(.+)$`);
+
+/** Split a livestream script into "## MM:SS đến MM:SS · Title" segments + everything after them (closing lines, tables). */
+export function splitLivestream(md) {
+  const segments = [];
+  const rest = [];
+  for (const part of String(md ?? "").replace(/\r\n?/g, "\n").split(/^(?=## )/m)) {
+    const [head, ...body] = part.split("\n");
+    const m = head.match(SEGMENT);
+    if (m) segments.push({ start: m[1], end: m[2], title: m[3].trim(), body: body.join("\n").trim() });
+    else rest.push(part);
+  }
+  return { segments, rest: rest.join("\n").trim() };
 }

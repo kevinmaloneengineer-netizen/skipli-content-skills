@@ -14,7 +14,7 @@ export const SKILLS = [
     tone: "coral",
     title: "Quét Reels đối thủ",
     short: "Quét Reels",
-    pitch: "Chỉ cần dán link kênh Facebook. Hệ thống quét 100 reel gần nhất, xếp hạng theo tương tác, rồi AI xem video và chọn ra những cái đáng học.",
+    pitch: "Chỉ cần dán link kênh Facebook. Hệ thống quét 100 reel mới nhất, xếp hạng theo tương tác, rồi AI xem video và chọn ra những cái đáng học.",
     eta: "3 đến 10 phút",
     etaLong: "Quét 100 reel thường mất 5 đến 10 phút, một reel lẻ khoảng 1 phút.",
   },
@@ -41,6 +41,28 @@ export const SKILLS = [
     etaLong: "Thường dưới 1 phút.",
   },
   {
+    id: "clone",
+    type: "clone",
+    path: "/clone",
+    tone: "violet",
+    title: "Nhân bản kênh đối thủ",
+    short: "Nhân bản kênh",
+    pitch: "Dán link kênh đối thủ, AI đọc những bài ăn tương tác nhất rồi viết hàng loạt bài mới cho kênh của bạn, chia sẵn theo nhóm nội dung.",
+    eta: "2 đến 5 phút",
+    etaLong: "Thường mất 2 đến 5 phút: đọc kênh đối thủ rồi viết từng bài.",
+  },
+  {
+    id: "video",
+    type: "video",
+    path: "/video",
+    tone: "sky",
+    title: "Tạo video AI",
+    short: "Video AI",
+    pitch: "Từ một chủ đề, một ảnh storyboard hay một đoạn lời kể, AI dựng thành video ngắn có giọng đọc tiếng Việt và phụ đề. Chạy trên GPU miễn phí.",
+    eta: "15 đến 40 phút",
+    etaLong: "Trên GPU miễn phí, mỗi cảnh mất vài phút: thường 15 đến 40 phút cho cả video.",
+  },
+  {
     id: "library",
     path: "/library",
     tone: "mustard",
@@ -63,13 +85,14 @@ export const SKILLS = [
   },
   {
     id: "fanpage",
-    status: "soon",
-    path: "/skills/fanpage",
+    type: "fanpage",
+    path: "/fanpage",
     tone: "blue",
     title: "Phân tích fanpage đối thủ",
     short: "Fanpage",
-    pitch: "Bài viết nào của đối thủ ăn tương tác nhất, đăng giờ nào, chủ đề gì lặp lại.",
-    plan: ["Quét bài đăng (không chỉ Reels) của một fanpage", "Thống kê tương tác theo loại bài, giờ đăng, độ dài", "Rút ra 3 đến 5 điều nên học và nên tránh"],
+    pitch: "Đối thủ đăng bao nhiêu, ngày giờ nào ăn tương tác, video dài bao lâu thì hiệu quả, chủ đề gì lặp lại. Có số liệu đi kèm.",
+    eta: "2 đến 4 phút",
+    etaLong: "Thường mất 2 đến 4 phút để đọc 100 reel và tính số liệu.",
   },
   {
     id: "image",
@@ -93,13 +116,14 @@ export const SKILLS = [
   },
   {
     id: "livestream",
-    status: "soon",
-    path: "/skills/livestream",
+    type: "livestream",
+    path: "/livestream",
     tone: "olive",
     title: "Kịch bản livestream bán hàng",
     short: "Livestream",
-    pitch: "Kịch bản theo từng phút: mở màn, giới thiệu sản phẩm, chốt đơn, trả lời câu hỏi thường gặp.",
-    plan: ["Kịch bản theo mốc thời gian cho buổi 30 đến 90 phút", "Câu chốt đơn và xử lý từ chối cho từng sản phẩm", "Bộ câu trả lời nhanh cho bình luận hay gặp"],
+    pitch: "Kịch bản theo từng phút: mở màn, giới thiệu sản phẩm, chốt đơn, mini game, trả lời câu hỏi thường gặp.",
+    eta: "khoảng 1 phút",
+    etaLong: "Thường mất khoảng 1 phút.",
   },
 ];
 
@@ -122,7 +146,7 @@ export const CATEGORIES = [
     word: "SÁNG TẠO",
     dark: true,
     desc: "Biến những gì học được thành bài viết, hình ảnh và kịch bản của riêng bạn, không chép của ai.",
-    skills: ["write", "image", "livestream"],
+    skills: ["write", "clone", "video", "image", "livestream"],
     deco: ["pen", "spark", "image", "quote", "lines", "wand", "spark", "pen"],
   },
   {
@@ -143,3 +167,5 @@ export const skillByType = (type) => SKILLS.find((s) => s.type === type);
 export const PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "Video ngắn", ads: "Quảng cáo" };
 
 export const TONES = ["Chuyên gia, đáng tin", "Hài hước, bắt trend", "Truyền cảm hứng", "Ngắn gọn, đi thẳng vào vấn đề", "Gen Z, trẻ trung"];
+
+export const CLONE_PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "Video ngắn" };

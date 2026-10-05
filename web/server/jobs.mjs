@@ -7,7 +7,8 @@ export const ACTIVE = new Set(["queued", "running"]);
  * and one Facebook session, and free-tier model quotas punish bursts.
  */
 /** @param {{ prepare?: (job, ctx: { setPhase, signal }) => Promise<{ prompt: string, notice?: string }> }} opts */
-export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), log = console }) {
+/** finish(job, content, ctx) may post-process the agent answer (e.g. render a video) → { result, fields } or null. */
+export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, log = console }) {
   const queue = [];
   const running = new Map(); // id -> AbortController
 
@@ -49,7 +50,8 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
         timeoutMs,
         signal: ctrl.signal,
       });
-      await store.updateJob(job.id, { status: "done", result: content, usage, phase: null, finishedAt: new Date().toISOString() });
+      const extra = await finish(job, content, { setPhase, signal: ctrl.signal });
+      await store.updateJob(job.id, { status: "done", result: extra?.result ?? content, usage, ...extra?.fields, phase: null, finishedAt: new Date().toISOString() });
     } catch (e) {
       const canceled = ctrl.signal.aborted;
       if (!canceled) log.error(`job ${job.id} failed:`, e.message);

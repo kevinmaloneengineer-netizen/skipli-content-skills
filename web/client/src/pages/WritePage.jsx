@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
-import { JobHistory } from "../components/JobBits.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
 import { PLATFORMS, TONES } from "../lib/constants.js";
@@ -114,7 +113,6 @@ export default function WritePage() {
           ]}
         />
       </form>
-      <JobHistory type="write" />
     </SkillShell>
   );
 }

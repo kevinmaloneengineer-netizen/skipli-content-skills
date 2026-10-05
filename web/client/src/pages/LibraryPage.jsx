@@ -104,7 +104,7 @@ export default function LibraryPage() {
   const [params, setParams] = useSearchParams();
   const kind = params.get("kind") ?? "";
   const [items, setItems] = useState(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => params.get("q") ?? "");
   const [editing, setEditing] = useState(undefined); // undefined = closed, null = new, item = edit
 
   const load = () => api("/library").then(({ items: list }) => setItems(list), (e) => toast(e.message, { kind: "error" }));

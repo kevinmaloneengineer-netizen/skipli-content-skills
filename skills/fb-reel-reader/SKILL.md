@@ -12,7 +12,7 @@ Two modes:
 
 ## Step 1 - (Channel mode) Collect, score and shortlist reels
 
-**If the request already contains a list of reel IDs** (e.g. "Danh sách 100 reel gần nhất … đã được lấy sẵn"), skip 1a and go straight to 1b with exactly those IDs (`--limit 30`). Report the number of IDs given as the number of reels scanned.
+**If the request already contains a list of reel IDs** (e.g. "Danh sách 100 reel mới nhất … đã được lấy sẵn"), skip 1a and go straight to 1b with exactly those IDs (`--limit 30`). Report the number of IDs given as the number of reels scanned.
 
 ### 1a. Scan the latest reels of the channel (no login, no browser)
 
@@ -110,7 +110,7 @@ Then one closing line: how many reels were scanned (the N latest from a provided
 ## Rules
 
 - **Hạn chế dấu gạch ngang.** Không dùng "—", "–" hay " - " để nối ý trong câu hoặc trong tiêu đề; dùng dấu phẩy, dấu chấm hoặc dấu hai chấm. Khoảng số viết "từ 3 đến 5", không viết "3–5". (Gạch đầu dòng của danh sách thì vẫn dùng bình thường.)
-- **Write the report for a business owner, not a developer.** Never mention script names, flags, tools, APIs or internals (`list_reels.py`, `--count`, pagination, exec, Gemini, yt-dlp…). Say what was scanned in plain words, e.g. "Đã quét toàn bộ 82 reel của kênh" or "Đã quét 100 reel gần nhất".
+- **Write the report for a business owner, not a developer.** Never mention script names, flags, tools, APIs or internals (`list_reels.py`, `--count`, pagination, exec, Gemini, yt-dlp…). Say what was scanned in plain words, e.g. "Đã quét toàn bộ 82 reel của kênh" or "Đã quét 100 reel mới nhất".
 - If fewer reels were scanned than asked because the channel has no more, say it is the whole channel - it is not an error. Only mention a limitation when something actually failed, and then in one plain sentence.
 
 - **Always run the scripts fresh for every request.** Never answer from results earlier in the conversation (they may be stale or from a failed/fallback run) unless the user explicitly asks to reuse them.

@@ -7,6 +7,7 @@ const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt);
 export function memoryAdapter() {
   const jobs = new Map();
   const library = new Map();
+  const feedback = [];
   let seeded = false;
 
   return {
@@ -33,6 +34,9 @@ export function memoryAdapter() {
     },
     async deleteItem(id) {
       library.delete(id);
+    },
+    async saveFeedback(item) {
+      feedback.push(clone(item));
     },
     /** Insert starter items exactly once per database. */
     async seedOnce(items) {

@@ -170,7 +170,54 @@ function Livestream() {
   );
 }
 
-const ART = { reels: Reels, threads: Threads, write: Write, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream };
+function Clone() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(40 34)">
+        <rect width="78" height="84" rx="10" className="art-fg" />
+        {[14, 28, 42].map((y, i) => (
+          <rect key={y} x="12" y={y} width={[54, 40, 48][i]} height="6" rx="3" className="art-mid" />
+        ))}
+        <rect x="12" y="60" width="30" height="12" rx="6" className="art-hi" />
+      </g>
+      <path d="M132 76 h34 m-10 -10 l10 10 l-10 10" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className="art-stroke" />
+      {[0, 1, 2].map((i) => (
+        <g key={i} transform={`translate(${184 + i * 14} ${20 + i * 22})`}>
+          <rect width="86" height="62" rx="10" className={i === 2 ? "art-card" : "art-mid"} />
+          {i === 2 && (
+            <>
+              <rect x="12" y="14" width="56" height="6" rx="3" className="art-mid" />
+              <rect x="12" y="28" width="40" height="6" rx="3" className="art-mid" />
+              <circle cx="70" cy="46" r="7" className="art-hi" />
+            </>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function Video() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(62 22)">
+        <rect width="196" height="106" rx="14" className="art-fg" />
+        <rect x="10" y="10" width="176" height="74" rx="8" className="art-mid" />
+        <path d="M86 32 l28 15 l-28 15z" className="art-card" />
+        <rect x="10" y="92" width="176" height="5" rx="2.5" className="art-mid" />
+        <rect x="10" y="92" width="74" height="5" rx="2.5" className="art-hi" />
+      </g>
+      {[0, 1, 2].map((i) => (
+        <rect key={i} x={28 + i * 0} y={34 + i * 30} width="22" height="18" rx="4" className={i === 1 ? "art-hi" : "art-card"} />
+      ))}
+      {[0, 1, 2].map((i) => (
+        <rect key={i} x="270" y={34 + i * 30} width="22" height="18" rx="4" className="art-card" />
+      ))}
+    </svg>
+  );
+}
+
+const ART = { reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

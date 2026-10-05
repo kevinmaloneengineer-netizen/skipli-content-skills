@@ -33,6 +33,7 @@ export function firestoreAdapter(db, prefix = "") {
   const jobs = db.collection(`${prefix}jobs`);
   const library = db.collection(`${prefix}library`);
   const meta = db.collection(`${prefix}meta`).doc("app");
+  const feedback = db.collection(`${prefix}feedback`);
   const data = (snap) => snap.docs.map((d) => d.data());
 
   return {
@@ -60,6 +61,9 @@ export function firestoreAdapter(db, prefix = "") {
     },
     async deleteItem(id) {
       await library.doc(id).delete();
+    },
+    async saveFeedback(item) {
+      await feedback.doc(item.id).set(item);
     },
     async seedOnce(items) {
       return db.runTransaction(async (tx) => {

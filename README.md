@@ -8,7 +8,11 @@ Bối cảnh và các quyết định kỹ thuật nằm trong [docs/HANDOFF.md]
 | Quét Reels đối thủ: xếp hạng theo tương tác, AI xem video | [`fb-reel-reader`](skills/fb-reel-reader/SKILL.md) | `content-scout` |
 | Tìm content viral Threads: theo từ khoá hoặc tài khoản | [`threads-viral-finder`](skills/threads-viral-finder/SKILL.md) | `content-scout` |
 | Viết content AI: theo mẫu, lấy cảm hứng từ kết quả quét | [`content-writer`](skills/content-writer/SKILL.md) | `content-writer` |
-| Thư viện mẫu content | lưu trong Firestore qua web | - |
+| Nhân bản kênh đối thủ: viết hàng loạt bài mới chia theo nhóm | [`channel-cloner`](skills/channel-cloner/SKILL.md) | `content-scout` / `content-writer` |
+| Phân tích fanpage: tần suất, ngày giờ, độ dài video, chủ đề | [`fanpage-analyzer`](skills/fanpage-analyzer/SKILL.md) | `content-scout` |
+| Kịch bản livestream bán hàng theo từng mốc phút | [`livestream-scripter`](skills/livestream-scripter/SKILL.md) | `content-writer` |
+| Tạo video AI (kịch bản + GPU worker Kaggle) | [`video-scripter`](skills/video-scripter/SKILL.md), [`video-worker/`](video-worker/worker.py) | `content-writer` |
+| Thư viện mẫu content | lưu trong Firestore qua web | không |
 
 ```
 React UI ──/api──▶ Node (Express) ──HTTP──▶ GoClaw /v1/chat/completions ──▶ agent ──▶ skill scripts
@@ -24,7 +28,8 @@ skills/          skill GoClaw (SKILL.md ở gốc mỗi thư mục)
 agents/          cấu hình agent (body cho POST /v1/agents)
 web/             server/ = Node + Express API, client/ = React (Vite), test/
 deploy/          docker-compose (GoClaw + Postgres + Chrome + web), patch GoClaw, firebase/ (rules, emulator)
-scripts/         push-skills.sh
+scripts/         push-skills.sh, pack.sh (đóng gói sang project mới), rebrand.mjs (đổi tên, logo, màu)
+video-worker/    GPU worker tạo video (chạy trên Kaggle)
 examples/        gọi agent trực tiếp từ backend
 tests/           test cho script Python của skill
 docs/            HANDOFF.md
@@ -62,7 +67,7 @@ DRY_RUN=1 scripts/push-skills.sh         # build zip skill vào dist/
 
 ## Quét Facebook: người dùng chỉ cần dán link (miễn phí, không đăng nhập)
 
-Khách dán link kênh và chọn **100 reel gần nhất**. Không dùng tài khoản Facebook nào, không tốn phí dịch vụ:
+Khách dán link kênh và chọn **100 reel mới nhất**. Không dùng tài khoản Facebook nào, không tốn phí dịch vụ:
 
 1. `list_reels.py <link> --count 100 --stats` mở tab Reels công khai, lấy ~10 reel có sẵn trong trang, rồi **phân trang không cần đăng nhập** bằng chính truy vấn GraphQL mà tab Reels dùng (`ProfileCometAppCollectionReelsRendererPaginationQuery`, ~10 reel mỗi request, nghỉ 0,6 giây giữa các request).
 2. Lấy lượt cảm xúc, bình luận, chia sẻ của từng reel từ trang `/reel/<id>`, tách đúng khối số liệu của reel đó (mỗi trang nhúng ~6 video).

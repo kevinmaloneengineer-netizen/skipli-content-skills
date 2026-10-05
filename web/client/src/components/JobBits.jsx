@@ -47,15 +47,15 @@ export function JobRow({ job, showSkill = false }) {
 }
 
 /** Latest runs of one job type, kept fresh by JobsContext polling. */
-export function JobHistory({ type, limit = 5 }) {
+export function JobHistory({ type, limit = 5, compact = false }) {
   const { jobs, loaded } = useJobs();
   const all = jobs.filter((j) => j.type === type);
 
   return (
-    <section className="recent">
+    <section className={compact ? "recent compact" : "recent"}>
       <div className="section-head">
         <h2>Lần chạy gần đây</h2>
-        {all.length > limit && <Link to={`/history?type=${type}`}>Xem tất cả ({all.length}) →</Link>}
+        {all.length > limit && <Link to={`/history?type=${type}`}>{compact ? `Tất cả (${all.length})` : `Xem tất cả (${all.length})`} →</Link>}
       </div>
       <div className="job-list">
         {loaded && all.length === 0 && <div className="empty">Chưa có lần chạy nào. Kết quả sẽ hiện ở đây.</div>}

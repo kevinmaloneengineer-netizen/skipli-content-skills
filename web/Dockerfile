@@ -14,6 +14,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY --from=build /app/client/dist ./client/dist
+# videos + uploads (mount a volume here to keep them)
+RUN mkdir -p /app/.data && chown node /app/.data
 USER node
 EXPOSE 3000
 CMD ["node", "server/index.mjs"]

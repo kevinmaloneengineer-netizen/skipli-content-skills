@@ -1,3 +1,4 @@
+import HomeExtras from "../components/HomeExtras.jsx";
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import CategoryDeco from "../components/CategoryDeco.jsx";
@@ -127,6 +128,7 @@ export default function HomePage() {
           </div>
         )}
       </section>
+      <HomeExtras />
     </div>
   );
 }

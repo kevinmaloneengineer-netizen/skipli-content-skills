@@ -1,6 +1,7 @@
 import express from "express";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
 import { WEB_ROOT } from "./config.mjs";
 import { createGoclawClient } from "./goclaw.mjs";
@@ -9,6 +10,7 @@ import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
 import { buildJob, InputError } from "./prompts.mjs";
 import { openStore } from "./store/index.mjs";
+import { createVideoService, VideoError } from "./video.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 
 const CLIENT_DIST = path.join(WEB_ROOT, "client", "dist");
@@ -68,13 +70,17 @@ export async function createApp(config, adapter) {
   const store = await openStore(adapter, { templates: SEED_TEMPLATES });
   const goclaw = createGoclawClient(config.goclaw);
   const facebook = createFacebookSource(config.facebook);
-  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook }) });
+  // Tests build a config without `video`: keep their files out of the repo.
+  const video = createVideoService(config.video ?? { dataDir: path.join(tmpdir(), `skipli-video-${process.pid}`), timeoutMs: 60_000, mock: config.goclaw.mock });
+  await video.init();
+  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook }), finish: video.finish });
   await runner.recover();
 
   async function jobSpec(type, input = {}) {
     const refs = {
       template: input.templateId ? store.getItem(input.templateId) : undefined,
       refJob: input.referenceJobId ? await store.getJob(String(input.referenceJobId)) : undefined,
+      hasUpload: video.hasUpload,
     };
     try {
       return buildJob(type, input, refs);
@@ -91,6 +97,14 @@ export async function createApp(config, adapter) {
   }
 
   const api = express.Router();
+  // Reference images for videos arrive as data URLs; only this route accepts a large body.
+  api.post("/uploads", express.json({ limit: "9mb" }), async (req, res) => {
+    try {
+      res.status(201).json({ id: await video.saveUpload(req.body?.dataUrl) });
+    } catch (e) {
+      throw e instanceof VideoError ? new HttpError(400, e.message) : e;
+    }
+  });
   api.use(express.json({ limit: "256kb" }));
   api.use((req, res, next) => {
     if ((req.method === "POST" || req.method === "PUT") && req.headers["content-length"] !== "0" && req.headers["content-type"] && !req.is("application/json")) {
@@ -107,6 +121,32 @@ export async function createApp(config, adapter) {
       store: config.store,
       sources: { facebook100: true, apifyBackup: facebook.enabled }, // 100-reel scan is free (logged-out paging); Apify optional
     });
+  });
+
+  api.get("/video/worker", async (req, res) => {
+    res.json(await video.status());
+  });
+
+  api.put("/video/worker", async (req, res) => {
+    try {
+      res.json(await video.setWorker(req.body ?? {}));
+    } catch (e) {
+      throw e instanceof VideoError ? new HttpError(400, e.message) : e;
+    }
+  });
+
+  api.get("/stats", (req, res) => {
+    res.json(store.stats());
+  });
+
+  api.post("/feedback", async (req, res) => {
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const contact = typeof req.body?.contact === "string" ? req.body.contact.trim() : "";
+    const page = typeof req.body?.page === "string" ? req.body.page.slice(0, 200) : "";
+    if (message.length < 3) throw new HttpError(400, "Hãy viết vài chữ góp ý");
+    if (message.length > 3000 || contact.length > 200) throw new HttpError(400, "Góp ý dài quá");
+    await store.addFeedback({ message, contact, page });
+    res.status(201).json({ ok: true });
   });
 
   api.get("/jobs", (req, res) => {
@@ -144,6 +184,7 @@ export async function createApp(config, adapter) {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Huỷ tác vụ trước khi xoá");
     await store.deleteJob(job.id);
+    if (job.type === "video") await video.remove(job.id);
     res.json({ ok: true });
   });
 
@@ -180,6 +221,12 @@ export async function createApp(config, adapter) {
   const app = express();
   app.disable("x-powered-by");
   app.use(basicAuth(config.appPassword));
+  app.get("/media/videos/:file", (req, res) => {
+    const m = req.params.file.match(/^([0-9a-f-]{36})\.mp4$/);
+    const file = m && video.videoPath(m[1]);
+    if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
+    res.set("X-Content-Type-Options", "nosniff").sendFile(file, { dotfiles: "allow" }); // DATA_DIR defaults to web/.data
+  });
   app.use("/api", (req, res, next) => {
     res.set("Cache-Control", "no-store");
     next();
@@ -187,7 +234,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));

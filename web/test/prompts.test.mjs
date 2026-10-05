@@ -6,7 +6,7 @@ test("fb channel URL builds a channel scan prompt", () => {
   const j = buildJob("fb-reels", { url: "facebook.com/tony.g.jung/reels/", topic: "SEO", top: 5 });
   assert.equal(j.agent, "scout");
   assert.equal(j.input.url, "https://facebook.com/tony.g.jung/reels/");
-  assert.match(j.prompt, /Quét 100 reel gần nhất của kênh Facebook https:\/\/facebook\.com\/tony\.g\.jung\/reels\/ \(list_reels\.py --count 100 --stats, không cần đăng nhập\) và chọn 5 reel tốt nhất về chủ đề "SEO"/);
+  assert.match(j.prompt, /Quét 100 reel mới nhất của kênh Facebook https:\/\/facebook\.com\/tony\.g\.jung\/reels\/ \(list_reels\.py --count 100 --stats, không cần đăng nhập\) và chọn 5 reel tốt nhất về chủ đề "SEO"/);
   assert.equal(j.input.depth, 100, "default scan depth is 100");
   assert.match(buildJob("fb-reels", { url: "facebook.com/x", depth: 10 }).prompt, /Quét 10 reel gần nhất/);
   assert.match(j.title, /@tony\.g\.jung · SEO/);

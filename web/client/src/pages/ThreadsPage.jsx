@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
-import { JobHistory } from "../components/JobBits.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 
 const DAYS = { 7: "7 ngày", 30: "30 ngày", 90: "90 ngày", 0: "Tất cả" };
@@ -47,7 +46,6 @@ export default function ThreadsPage() {
           ]}
         />
       </form>
-      <JobHistory type="threads" />
     </SkillShell>
   );
 }

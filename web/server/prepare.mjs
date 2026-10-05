@@ -15,7 +15,7 @@ export function createPreparer({ facebook, log = console }) {
     if (job.type !== "fb-reels" || input.mode !== "channel" || input.depth !== 100) return { prompt: job.prompt };
 
     if (!facebook.enabled) return { prompt: job.prompt }; // default: the skill pages the reels itself, free
-    await setPhase("Đang lấy danh sách 100 reel gần nhất…");
+    await setPhase("Đang lấy danh sách 100 reel mới nhất…");
     try {
       const { ids, cached } = await facebook.latestReelIds(input.url, 100, { signal });
       if (!ids.length) {

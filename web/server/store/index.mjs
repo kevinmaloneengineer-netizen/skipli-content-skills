@@ -38,6 +38,26 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   }
 
   return {
+    /** Store a feedback message (write-only: read them in the Firestore console). */
+    async addFeedback({ message, contact, page }) {
+      const item = { id: randomUUID(), message, contact, page, createdAt: now() };
+      await adapter.saveFeedback(item);
+      return item;
+    },
+
+    /** Usage numbers for the footer, over the cached recent jobs + the whole library. */
+    stats() {
+      const done = jobs.filter((j) => j.status === "done");
+      const scanned = { "fb-reels": (j) => (j.input?.mode === "channel" ? j.input.depth ?? 10 : 1), fanpage: () => 100, clone: (j) => (j.input?.url ? 30 : 0) };
+      return {
+        runs: done.length,
+        saved: library.filter((x) => x.kind === "saved").length,
+        templates: library.filter((x) => x.kind === "template").length,
+        reels: done.reduce((n, j) => n + (scanned[j.type]?.(j) ?? 0), 0),
+        byType: Object.fromEntries([...new Set(jobs.map((j) => j.type))].map((t) => [t, jobs.filter((j) => j.type === t).length])),
+      };
+    },
+
     // ---- jobs ----
     /** Cached jobs, newest first. */
     listJobs: () => jobs,

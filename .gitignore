@@ -11,3 +11,5 @@ firestore-debug.log
 deploy/firebase-key.json
 *-firebase-adminsdk-*.json
 docs/
+web/.data/
+video-worker/__pycache__/

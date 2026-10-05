@@ -126,6 +126,7 @@ def to_reel(edge):
         "plays_text": plays_text,
         "duration": round(duration, 1) if duration else None,
         "created": datetime.datetime.fromtimestamp(created, datetime.timezone.utc).strftime("%Y-%m-%d") if created else None,
+        "created_ts": created,
         "music": ctx.get("track_title"),
         "owner": (ctx.get("video_owner") or {}).get("name"),
     }
@@ -289,6 +290,7 @@ def fetch_stats(reel):
     if not reel.get("created"):
         ts = _first_int(r'"creation_time":(\d+)', html)
         reel["created"] = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%d") if ts else None
+        reel["created_ts"] = ts
     if not reel.get("duration"):
         m = re.search(r'"length_in_second":([\d.]+)', html)
         reel["duration"] = round(float(m.group(1)), 1) if m else None

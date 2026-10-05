@@ -55,7 +55,7 @@ for name in "${names[@]}"; do
   # GoClaw decides "unchanged" from a hash of SKILL.md alone, so a script-only edit would be
   # silently ignored. Stamp a fingerprint of every file into the frontmatter of a temp copy.
   stage="$(mktemp -d)"
-  rsync -a --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' "$dir/" "$stage/"
+  rsync -aL --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' "$dir/" "$stage/"
   build="$(cd "$stage" && find . -type f ! -name SKILL.md -print0 | sort -z | xargs -0 shasum -a 256 | cat - SKILL.md | shasum -a 256 | cut -c1-12)"
   awk -v b="$build" 'NR > 1 && !done && /^---[[:space:]]*$/ { print "build: " b; done = 1 } { print }' "$dir/SKILL.md" > "$stage/SKILL.md"
   (cd "$stage" && zip -qr -X "$zip" .)

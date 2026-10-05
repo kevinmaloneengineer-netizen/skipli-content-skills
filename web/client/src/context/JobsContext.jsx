@@ -14,6 +14,14 @@ export function JobsProvider({ children }) {
   const toast = useToast();
   const [jobs, setJobs] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  // Jobs that finished while the app was open, newest first; shown by the bell.
+  const [notices, setNotices] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("notices") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
   const known = useRef(new Map()); // id -> last seen status
   const timer = useRef();
 
@@ -27,6 +35,7 @@ export function JobsProvider({ children }) {
         const prev = known.current.get(j.id);
         if (!first && prev && ACTIVE.has(prev) && !ACTIVE.has(j.status)) {
           toast(`${STATUS[j.status]}: ${j.title}`, { kind: j.status === "failed" ? "error" : "info", to: `/jobs/${j.id}` });
+          setNotices((n) => [{ id: j.id, type: j.type, title: j.title, status: j.status, at: new Date().toISOString(), read: false }, ...n.filter((x) => x.id !== j.id)].slice(0, 20));
         }
         known.current.set(j.id, j.status);
       }
@@ -38,6 +47,17 @@ export function JobsProvider({ children }) {
     const active = list?.some((j) => ACTIVE.has(j.status));
     timer.current = setTimeout(refresh, active ? 2500 : 15000);
   }, [toast]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("notices", JSON.stringify(notices));
+    } catch {
+      /* private mode: notices just won't survive a reload */
+    }
+  }, [notices]);
+
+  const markRead = useCallback(() => setNotices((n) => n.map((x) => ({ ...x, read: true }))), []);
+  const clearNotices = useCallback(() => setNotices([]), []);
 
   useEffect(() => {
     refresh();
@@ -53,7 +73,7 @@ export function JobsProvider({ children }) {
     [refresh],
   );
 
-  return <JobsContext.Provider value={{ jobs, loaded, refresh, track }}>{children}</JobsContext.Provider>;
+  return <JobsContext.Provider value={{ jobs, loaded, refresh, track, notices, markRead, clearNotices }}>{children}</JobsContext.Provider>;
 }
 
 export function useJobs() {

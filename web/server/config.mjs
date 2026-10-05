@@ -53,6 +53,11 @@ export function loadConfig() {
       scout: env.AGENT_SCOUT || "content-scout",
       writer: env.AGENT_WRITER || "content-writer",
     },
+    video: {
+      dataDir: env.DATA_DIR || path.join(WEB_ROOT, ".data"),
+      timeoutMs: int("VIDEO_TIMEOUT_MIN", 90, 5, 360) * 60_000,
+      mock,
+    },
     jobs: {
       concurrency: int("JOB_CONCURRENCY", 1, 1, 8),
       timeoutMs: int("JOB_TIMEOUT_MIN", 20, 1, 120) * 60_000,

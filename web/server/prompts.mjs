@@ -17,6 +17,13 @@ export function channelPromptWithIds({ url, topic, top }, ids) {
 const SHORT = { facebook: "Facebook", threads: "Threads", tiktok: "video ngắn", ads: "quảng cáo" };
 const PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "TikTok/Reels (kịch bản video + caption)", ads: "quảng cáo Facebook" };
 const MAX_REFERENCE = 20_000;
+const CLONE_PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "video ngắn (kịch bản + caption)" };
+const VIDEO_RATIOS = ["9:16", "16:9", "1:1"];
+export const VIDEO_MODES = { topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
+export const VIDEO_STYLES = { real: "chân thực như quay thật (photorealistic)", cinematic: "điện ảnh (cinematic film still)", anime: "anime Nhật Bản (anime style)", pixar: "hoạt hình 3D (3D animation, Pixar style)", clay: "đất sét (claymation)", cyberpunk: "cyberpunk (neon cyberpunk)" };
+export const VIDEO_TONES = { warm: "nhẹ nhàng, ấm áp", fun: "vui nhộn", emotional: "cảm động", dramatic: "kịch tính", inspiring: "truyền cảm hứng" };
+const MAX_STORY_WORDS = 350;
+export const PILLARS ={ entertain: "Giải trí", educate: "Giáo dục", engage: "Tương tác", sell: "Bán hàng" };
 
 function str(v, field, { required = false, max = 500 } = {}) {
   const s = typeof v === "string" ? v.trim() : "";
@@ -157,6 +164,144 @@ export function buildJob(type, raw, refs = {}) {
         agent: "writer",
         title: `Viết ${SHORT[platform]} · ${topic.slice(0, 60)}`,
         input: { platform, topic, brief, tone, variants, templateId: template?.id ?? null, templateTitle: template?.title ?? null, reference: typedReference, referenceJobId },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "clone": {
+      const platform = str(raw.platform, "nền tảng", { max: 20 }) || "facebook";
+      if (!CLONE_PLATFORMS[platform]) throw new InputError("Nền tảng không hợp lệ");
+      const topic = str(raw.topic, "chủ đề / sản phẩm của bạn", { required: true, max: 300 });
+      const brief = str(raw.brief, "thông tin thêm", { max: 3000 });
+      const tone = str(raw.tone, "giọng văn", { max: 100 });
+      const count = num(raw.count, "số bài", 3, 15, 9);
+      const pillars = (Array.isArray(raw.pillars) && raw.pillars.length ? raw.pillars : Object.keys(PILLARS)).map(String);
+      for (const p of pillars) if (!PILLARS[p]) throw new InputError(`Nhóm nội dung không hợp lệ: ${p}`);
+      const pillarNames = [...new Set(pillars)].map((p) => PILLARS[p]);
+
+      const source = raw.source === "posts" ? "posts" : "url";
+      const url = source === "url" ? facebookUrl(raw.url) : "";
+      const posts = source === "posts" ? str(raw.posts, "bài viết của đối thủ", { required: true, max: MAX_REFERENCE }) : "";
+      if (url && isSingleVideo(url)) throw new InputError("Hãy dán link trang/kênh, không phải link một reel");
+      const name = url ? new URL(url).pathname.split("/").filter(Boolean)[0] ?? url : "";
+
+      const sections = [
+        `Nhân bản kênh: viết ${count} bài ${CLONE_PLATFORMS[platform]} MỚI cho kênh của tôi, học từ content gốc của đối thủ. Trả lời bằng tiếng Việt.`,
+        url
+          ? `Content gốc: kênh Facebook ${url}. Đọc 30 reel gần nhất kèm tương tác (list_reels.py --count 30 --stats --limit ${Math.min(count + 5, 20)}, không cần đăng nhập, KHÔNG xem video), lấy những bài nhiều tương tác nhất làm gốc. Chạy lại script từ đầu, không dùng kết quả cũ.`
+          : "Content gốc của đối thủ (mỗi bài cách nhau bởi dòng trống hoặc ---):\n<<<BÀI GỐC\n" + posts + "\nBÀI GỐC>>>",
+        `Kênh của tôi: ${topic}`,
+      ];
+      if (brief) sections.push(`Thông tin thêm (thương hiệu, khách hàng, ưu đãi…):\n${brief}`);
+      if (tone) sections.push(`Giọng văn: ${tone}`);
+      sections.push(`Chia đều các bài vào các nhóm: ${pillarNames.join(", ")}.`);
+      return {
+        agent: url ? "scout" : "writer",
+        title: `Nhân bản ${name ? `@${name}` : "bài đối thủ"} · ${topic.slice(0, 50)}`,
+        input: { source, url, posts, platform, topic, brief, tone, count, pillars: [...new Set(pillars)] },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "video": {
+      const mode = VIDEO_MODES[raw.mode] ? raw.mode : "topic";
+      const ratio = VIDEO_RATIOS.includes(raw.ratio) ? raw.ratio : "9:16";
+      const voice = raw.voice === "male" ? "male" : "female";
+      const style = VIDEO_STYLES[raw.style] ? raw.style : "real";
+      const tone = VIDEO_TONES[raw.tone] ? raw.tone : "warm";
+      const brief = str(raw.brief, "thông tin thêm", { max: 2000 });
+      const upload = (id, label) => {
+        if (!id) return null;
+        if (!refs.hasUpload?.(String(id))) throw new InputError(`${label} không còn, hãy tải lại ảnh`);
+        return String(id);
+      };
+      const common = [`Phong cách hình ảnh: ${VIDEO_STYLES[style]}`, `Tone cảm xúc: ${VIDEO_TONES[tone]}`, `Khung hình: ${ratio}`];
+      if (brief) common.push(`Thông tin thêm:\n${brief}`);
+      const base = { mode, ratio, voice, style, tone, brief };
+      const head = "Viết kịch bản video ngắn theo định dạng JSON của skill video-scripter. Lời thoại tiếng Việt.";
+
+      if (mode === "storyboard") {
+        const topic = str(raw.topic, "nội dung câu chuyện", { required: true, max: 300 });
+        const panelIds = Array.isArray(raw.panelIds) ? raw.panelIds.map((id) => upload(id, "Ô storyboard")) : [];
+        if (panelIds.length < 2 || panelIds.length > 12) throw new InputError("Storyboard cần từ 2 đến 12 ô");
+        return {
+          agent: "writer",
+          title: `Video storyboard ${panelIds.length} cảnh · ${topic.slice(0, 50)}`,
+          input: { ...base, topic, panelIds },
+          prompt: [head, `Có sẵn ${panelIds.length} khung hình storyboard theo thứ tự (đã vẽ, KHÔNG cần mô tả lại nhân vật). Viết đúng ${panelIds.length} cảnh, cảnh thứ i ứng với khung thứ i, mỗi cảnh khoảng 8 giây: lời thoại tiếp nối thành một câu chuyện, "motion" tả chuyển động trong khung đó.`, `Câu chuyện: ${topic}`, ...common].join("\n\n"),
+        };
+      }
+
+      if (mode === "story") {
+        const narration = str(raw.narration, "lời kể", { required: true, max: 4000 });
+        const words = narration.split(/\s+/).filter(Boolean).length;
+        if (words > MAX_STORY_WORDS) throw new InputError(`Lời kể tối đa ${MAX_STORY_WORDS} từ (đang có ${words})`);
+        const narratorPct = Math.round(Math.min(100, Math.max(0, Number(raw.narratorPct) || 0)) / 10) * 10;
+        const referenceImageId = upload(raw.referenceImageId, "Ảnh người kể");
+        const shots = Math.min(14, Math.max(3, Math.round(words / 10)));
+        return {
+          agent: "writer",
+          title: `Video kể chuyện · ${narration.slice(0, 50)}`,
+          input: { ...base, narration, narratorPct, referenceImageId },
+          prompt: [
+            head,
+            `Chia lời kể dưới đây thành khoảng ${shots} cảnh. GIỮ NGUYÊN từng chữ của lời kể (không thêm, không bớt), chỉ cắt thành các đoạn nối tiếp.`,
+            `Khoảng ${narratorPct}% số cảnh là người kể chuyện nói trước camera (role "narrator"${referenceImageId ? ", có ảnh người kể" : ""}), các cảnh còn lại là hình minh hoạ cho đoạn lời đó (role "scene").`,
+            "<<<LỜI KỂ\n" + narration + "\nLỜI KỂ>>>",
+            ...common,
+          ].join("\n\n"),
+        };
+      }
+
+      const topic = str(raw.topic, "chủ đề", { required: true, max: 300 });
+      const seconds = [15, 30, 45, 60].includes(Number(raw.seconds)) ? Number(raw.seconds) : 30;
+      const referenceImageId = upload(raw.referenceImageId, "Ảnh tham chiếu");
+      const sections = [head, `Video khoảng ${seconds} giây, ${Math.min(14, Math.round(seconds / 3))} cảnh, mỗi cảnh khoảng 3 giây và chỉ MỘT ý.`, `Chủ đề: ${topic}`, ...common];
+      if (referenceImageId) sections.push('Có ảnh tham chiếu của nhân vật/sản phẩm chính: mọi cảnh có nó thì gọi đúng một cách mô tả cố định (ví dụ "the product from the reference photo").');
+      return {
+        agent: "writer",
+        title: `Video ${seconds}s · ${topic.slice(0, 60)}`,
+        input: { ...base, topic, seconds, referenceImageId },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "fanpage": {
+      const url = facebookUrl(raw.url);
+      if (isSingleVideo(url)) throw new InputError("Hãy dán link trang/kênh, không phải link một reel");
+      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
+      const name = new URL(url).pathname.split("/").filter(Boolean)[0] ?? url;
+      return {
+        agent: "scout",
+        title: `Phân tích fanpage @${name}`,
+        input: { url, focus },
+        prompt:
+          `Phân tích fanpage Facebook ${url} theo skill fanpage-analyzer: đọc 100 reel gần nhất kèm tương tác (list_reels.py --count 100 --stats --limit 200, không cần đăng nhập) rồi chạy analyze_reels.py để có số liệu.` +
+          (focus ? ` Chú ý thêm: ${focus}.` : "") +
+          " Chạy lại script từ đầu, không dùng kết quả cũ. Trả lời bằng tiếng Việt.",
+      };
+    }
+
+    case "livestream": {
+      const products = str(raw.products, "sản phẩm", { required: true, max: 3000 });
+      const minutes = [30, 60, 90].includes(Number(raw.minutes)) ? Number(raw.minutes) : 60;
+      const platform = raw.platform === "tiktok" ? "tiktok" : "facebook";
+      const offer = str(raw.offer, "ưu đãi", { max: 1000 });
+      const audience = str(raw.audience, "khách hàng", { max: 300 });
+      const host = str(raw.host, "phong cách người live", { max: 100 });
+      const sections = [
+        `Viết kịch bản livestream bán hàng ${minutes} phút trên ${platform === "tiktok" ? "TikTok" : "Facebook"} theo skill livestream-scripter, bằng tiếng Việt.`,
+        `Sản phẩm (mỗi dòng một sản phẩm):\n${products}`,
+      ];
+      if (offer) sections.push(`Ưu đãi có thật trong buổi live:\n${offer}`);
+      else sections.push("Chưa có ưu đãi cụ thể: dùng chỗ trống [ƯU ĐÃI], không tự bịa giảm giá hay quà tặng.");
+      if (audience) sections.push(`Khách hàng: ${audience}`);
+      if (host) sections.push(`Phong cách người live: ${host}`);
+      const first = products.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+      return {
+        agent: "writer",
+        title: `Livestream ${minutes} phút · ${first.slice(0, 60)}`,
+        input: { products, minutes, platform, offer, audience, host },
         prompt: sections.join("\n\n"),
       };
     }

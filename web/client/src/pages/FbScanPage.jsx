@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
-import { JobHistory } from "../components/JobBits.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
 
 const COUNTS = { 3: "3 reel", 5: "5 reel", 10: "10 reel" };
-const DEPTHS = { 100: "100 reel gần nhất", 10: "10 reel mới nhất" };
+const DEPTHS = { 100: "100 reel mới nhất", 10: "10 reel mới nhất" };
 
 export default function FbScanPage() {
   const [url, setUrl] = useState("");
@@ -53,7 +52,7 @@ export default function FbScanPage() {
             <Segmented name="depth" label="Phạm vi quét" options={can100 ? DEPTHS : { 10: DEPTHS[10] }} value={depth} onChange={setDepth} />
             <small>
               {depth === "100"
-                ? "Quét 100 reel gần nhất của kênh, xếp hạng theo tương tác rồi AI xem các video nổi bật. Miễn phí, không cần đăng nhập."
+                ? "Quét 100 reel mới nhất của kênh, xếp hạng theo tương tác rồi AI xem các video nổi bật. Miễn phí, không cần đăng nhập."
                 : can100
                   ? "Nhanh hơn: chỉ 10 reel mới đăng gần đây nhất."
                   : "Máy chủ chưa cấu hình nguồn dữ liệu nên hiện chỉ quét được ~10 reel mới nhất."}
@@ -70,7 +69,6 @@ export default function FbScanPage() {
           ]}
         />
       </form>
-      <JobHistory type="fb-reels" />
     </SkillShell>
   );
 }
