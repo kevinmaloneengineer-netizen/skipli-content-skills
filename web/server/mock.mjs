@@ -241,6 +241,51 @@ const LIVESTREAM = `## 00:00 đến 03:00 · Mở màn
 
 _(Dữ liệu mẫu, GOCLAW_MOCK=1)_`;
 
+const IMAGE = JSON.stringify({
+  images: [
+    { prompt: "a glass of iced salted coffee with cream foam on a wooden cafe table, morning sunlight, shallow depth of field, warm tones, empty space at the bottom", headline: "Cà phê muối, mặn mà khó quên", sub: "Lớp kem muối béo nhẹ trên nền cà phê đậm", cta: "Đặt ngay", caption: "Sáng nay bạn đã có ly cà phê nào chưa? ☕\nCà phê muối của quán: đậm vị, béo nhẹ, uống một lần là nhớ.\nGiá [GIÁ], giao tận nơi trong khu vực [KHU VỰC].\n#caphemuoi #caphesang", layout: "bottom" },
+    { prompt: "two friends laughing and holding iced coffee cups in a cozy cafe corner with plants, soft natural light, lifestyle photo, empty space at the top", headline: "Hẹn nhau một ly chiều nay?", sub: "Góc quán yên tĩnh, wifi mạnh, ngồi cả buổi", cta: "Xem menu", caption: "Chiều nay rảnh không? Rủ bạn thân ra quán một ly nha 🌿\nGóc yên tĩnh, nhạc nhẹ, ngồi bao lâu cũng được.\n#cafe #henho", layout: "top" },
+  ],
+}, null, 2);
+
+const PLAN = `Kế hoạch 7 ngày cho Quán cà phê: tuần này tập trung giới thiệu món mới và kéo khách quen quay lại.
+
+## Ngày 1 · 19:30 · Giáo dục: 3 cách phân biệt cà phê nguyên chất
+Bạn có biết cà phê pha sẵn và cà phê rang xay khác nhau thế nào không?
+1. Mùi thơm tự nhiên, không gắt
+2. Màu nâu sánh, không đen kịt
+3. Vị đắng hậu ngọt, không chát
+Lưu lại để lần sau chọn cà phê cho chuẩn nhé!
+#caphe #kienthuc
+
+## Ngày 2 · 11:30 · Bán hàng: Cà phê muối đã có mặt
+Món mới của quán đây: cà phê muối, mặn mà béo nhẹ ☕
+Giá [GIÁ], ghé quán hoặc đặt giao tận nơi: [LINK]
+#caphemuoi
+
+## Ngày 3 · 20:00 · Tương tác: Bạn là team nào?
+Đen đá hay bạc xỉu? Comment team của bạn nha 👇
+
+## Ngày 4 · 12:00 · Giải trí: Một ngày của barista
+6h mở quán, 7h khách đầu tiên, 9h đã pha 50 ly. Barista cũng cần cà phê đấy 😅
+#barista
+
+## Ngày 5 · 19:00 · Bán hàng: Ưu đãi cuối tuần
+Cuối tuần này mua 2 ly tặng [ƯU ĐÃI]. Rủ bạn ghé quán nhé!
+
+## Ngày 6 · 09:30 · Tương tác: Góc quán bạn thích nhất
+Bạn hay ngồi góc nào ở quán? Chụp ảnh khoe dưới comment nha 📸
+
+## Ngày 7 · 20:30 · Giải trí: Playlist chill cuối tuần
+Tối chủ nhật, một ly cà phê và playlist nhẹ nhàng. Bạn đang nghe bài gì?
+
+---
+**Ghi chú:**
+- Bài bán hàng đặt trưa và tối, khi khách hay lướt điện thoại.
+- Điền giá, link và ưu đãi thật trước khi đăng.
+
+_(Dữ liệu mẫu, GOCLAW_MOCK=1)_`;
+
 const VIDEO = JSON.stringify({
   title: "Bí quyết quán ăn đông khách",
   shots: [
@@ -252,7 +297,7 @@ const VIDEO = JSON.stringify({
   ],
 }, null, 2);
 
-const REPLIES = { "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, video: "```json\n" + VIDEO + "\n```" };
+const REPLIES = { "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 export async function mockReply({ kind, prompt, delayMs, signal }) {
   await sleep(delayMs, undefined, { signal });

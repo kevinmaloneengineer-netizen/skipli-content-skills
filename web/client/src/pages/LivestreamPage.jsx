@@ -49,7 +49,7 @@ export default function LivestreamPage() {
           </Field>
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <SubmitRow busy={busy} label="Viết kịch bản" eta="khoảng 1 phút" />
+        <SubmitRow busy={busy} label="Viết kịch bản" eta="1 phút" />
         <Notes
           items={[
             "Kịch bản theo từng mốc phút, kèm câu chốt đơn, xử lý từ chối và trả lời nhanh bình luận.",

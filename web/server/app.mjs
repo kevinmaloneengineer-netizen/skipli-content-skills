@@ -62,6 +62,36 @@ function libraryFields(body, partial = false) {
   return out;
 }
 
+const SLOT_PLATFORMS = new Set(["facebook", "threads", "tiktok", "instagram"]);
+function slotFields(body, partial = false) {
+  const out = {};
+  const text = (field, max, required) => {
+    if (partial && body[field] === undefined) return;
+    const v = typeof body[field] === "string" ? body[field].trim() : "";
+    if (required && !v) throw new HttpError(400, `Thiếu ${field === "title" ? "tiêu đề" : "nội dung"}`);
+    if (v.length > max) throw new HttpError(400, `${field} dài quá ${max} ký tự`);
+    out[field] = v;
+  };
+  text("title", 200, true);
+  text("body", 20_000, false);
+  text("note", 500, false);
+  if (!partial || body.at !== undefined) {
+    const at = new Date(body.at);
+    if (Number.isNaN(at.getTime())) throw new HttpError(400, "Ngày giờ đăng không hợp lệ");
+    out.at = at.toISOString();
+  }
+  if (!partial || body.platform !== undefined) {
+    if (!SLOT_PLATFORMS.has(body.platform)) throw new HttpError(400, "Nền tảng không hợp lệ");
+    out.platform = body.platform;
+  }
+  if (body.status !== undefined) {
+    if (body.status !== "planned" && body.status !== "posted") throw new HttpError(400, "Trạng thái không hợp lệ");
+    out.status = body.status;
+  }
+  for (const k of ["pillar", "libraryId", "sourceJobId"]) if (!partial && typeof body[k] === "string") out[k] = body[k].slice(0, 60);
+  return out;
+}
+
 /**
  * @param {object} config   see ./config.mjs
  * @param {object} adapter  persistence adapter (./store/firestore.mjs or ./store/memory.mjs)
@@ -184,7 +214,29 @@ export async function createApp(config, adapter) {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Huỷ tác vụ trước khi xoá");
     await store.deleteJob(job.id);
-    if (job.type === "video") await video.remove(job.id);
+    await video.remove(job);
+    res.json({ ok: true });
+  });
+
+  api.get("/schedule", (req, res) => {
+    res.json({ slots: store.listSchedule(req.query.from, req.query.to) });
+  });
+
+  /** One slot, or { slots: [...] } to add a whole plan at once (max 31). */
+  api.post("/schedule", async (req, res) => {
+    const list = Array.isArray(req.body?.slots) ? req.body.slots : [req.body ?? {}];
+    if (!list.length || list.length > 31) throw new HttpError(400, "Mỗi lần thêm từ 1 đến 31 bài");
+    res.status(201).json({ slots: await store.addSlots(list.map((x) => slotFields(x ?? {}))) });
+  });
+
+  api.put("/schedule/:id", async (req, res) => {
+    if (!store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
+    res.json({ slot: await store.updateSlot(req.params.id, slotFields(req.body ?? {}, true)) });
+  });
+
+  api.delete("/schedule/:id", async (req, res) => {
+    if (!store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
+    await store.deleteSlot(req.params.id);
     res.json({ ok: true });
   });
 
@@ -226,6 +278,11 @@ export async function createApp(config, adapter) {
     const file = m && video.videoPath(m[1]);
     if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
     res.set("X-Content-Type-Options", "nosniff").sendFile(file, { dotfiles: "allow" }); // DATA_DIR defaults to web/.data
+  });
+  app.get("/media/images/:file", (req, res) => {
+    const file = video.imagePath(req.params.file);
+    if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy ảnh");
+    res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
   });
   app.use("/api", (req, res, next) => {
     res.set("Cache-Control", "no-store");

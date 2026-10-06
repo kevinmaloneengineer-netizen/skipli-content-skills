@@ -97,3 +97,25 @@ export function splitLivestream(md) {
   }
   return { segments, rest: rest.join("\n").trim() };
 }
+
+const PLAN_HEAD = /^## Ngày\s*(\d{1,2})\s*[·•|-]\s*(\d{1,2})[:h](\d{2})\s*[·•|-]\s*([^:\n]+?)\s*:\s*(.*)$/i;
+
+/** Split a content-planner answer into "## Ngày N · HH:MM · Pillar: Title" slots + intro + notes. */
+export function splitPlan(md) {
+  const slots = [];
+  const intro = [];
+  const notes = [];
+  for (const part of String(md ?? "").replace(/\r\n?/g, "\n").split(/^(?=## )/m)) {
+    const [head, ...rest] = part.split("\n");
+    const m = head.match(PLAN_HEAD);
+    if (!m) {
+      (slots.length ? notes : intro).push(part);
+      continue;
+    }
+    const [body, ...tail] = rest.join("\n").split(/^---\s*$/m);
+    const pillar = PILLARS.find((p) => norm(p.name) === norm(m[4]))?.id ?? "other";
+    slots.push({ day: Number(m[1]), time: `${m[2].padStart(2, "0")}:${m[3]}`, pillar, title: m[5].trim() || m[4].trim(), body: body.trim() });
+    if (tail.length) notes.push(tail.join("---"));
+  }
+  return { intro: intro.join("\n").trim(), slots, notes: notes.join("\n").trim() };
+}

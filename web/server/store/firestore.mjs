@@ -34,6 +34,7 @@ export function firestoreAdapter(db, prefix = "") {
   const library = db.collection(`${prefix}library`);
   const meta = db.collection(`${prefix}meta`).doc("app");
   const feedback = db.collection(`${prefix}feedback`);
+  const schedule = db.collection(`${prefix}schedule`);
   const data = (snap) => snap.docs.map((d) => d.data());
 
   return {
@@ -61,6 +62,15 @@ export function firestoreAdapter(db, prefix = "") {
     },
     async deleteItem(id) {
       await library.doc(id).delete();
+    },
+    async loadSchedule() {
+      return data(await schedule.get());
+    },
+    async saveSlot(slot) {
+      await schedule.doc(slot.id).set(slot);
+    },
+    async deleteSlot(id) {
+      await schedule.doc(id).delete();
     },
     async saveFeedback(item) {
       await feedback.doc(item.id).set(item);

@@ -25,7 +25,7 @@ const Check = () => (
  * result contains and the latest runs. Skills without a guide (library,
  * coming soon) get the hero and a single column.
  */
-export default function SkillShell({ id, actions, children }) {
+export default function SkillShell({ id, actions, children, wide = false }) {
   const skill = SKILLS.find((s) => s.id === id);
   const guide = skill.status === "soon" ? null : GUIDE[id];
   const category = CATEGORIES.find((c) => c.skills.includes(id));
@@ -72,7 +72,7 @@ export default function SkillShell({ id, actions, children }) {
       )}
 
       {guide ? (
-        <div className="skill-layout">
+        <div className={wide ? "skill-layout wide" : "skill-layout"}>
           <div className="skill-main">{children}</div>
           <aside className="skill-aside">
             <section className="aside-card">

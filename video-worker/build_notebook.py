@@ -13,8 +13,10 @@ md = """# Skipli video worker (GPU miễn phí)
 4. Giữ tab này mở trong lúc tạo video. Phiên Kaggle tự tắt sau tối đa 12 giờ; mỗi lần chạy lại, URL và token đổi, cần dán lại."""
 
 install = """%%capture
-!pip install -q -U diffusers transformers accelerate sentencepiece imageio imageio-ffmpeg edge-tts fastapi uvicorn
-!apt-get -qq update && apt-get -qq install -y ffmpeg fonts-dejavu-core"""
+!pip install -q -U diffusers transformers accelerate sentencepiece ftfy imageio imageio-ffmpeg edge-tts fastapi uvicorn
+!apt-get -qq update && apt-get -qq install -y ffmpeg fonts-dejavu-core
+# Kaggle's preinstalled torchao is older than what new diffusers expects (ImportError FqnToConfig); we don't use it.
+!pip uninstall -y -q torchao"""
 
 run = r'''import os, re, secrets, subprocess, sys, threading, time, json, urllib.request
 

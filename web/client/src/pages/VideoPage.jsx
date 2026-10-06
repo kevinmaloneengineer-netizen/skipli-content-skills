@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
+import { GpuCard, PhotoPick } from "../components/GpuCard.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
-import { crop, cutGrid, loadImage, upload } from "../lib/image.js";
+import { cutGrid, loadImage, upload } from "../lib/image.js";
 
 const MODES = { topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
 const STYLES = { real: "Chân thực", cinematic: "Điện ảnh", anime: "Anime", pixar: "Hoạt hình 3D", clay: "Đất sét", cyberpunk: "Cyberpunk" };
@@ -12,106 +13,12 @@ const VOICES = { female: "Giọng nữ", male: "Giọng nam" };
 const SECONDS = { 15: "15 giây", 30: "30 giây", 45: "45 giây", 60: "60 giây" };
 const NARRATOR = { 0: "0%", 20: "20%", 40: "40%", 60: "60%", 100: "100%" };
 const MAX_WORDS = 350;
-
-/** GPU worker status + connect form (the Kaggle URL and token change every session). */
-function GpuCard({ status, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function connect(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const s = await api("/video/worker", { method: "PUT", body: { url, token } });
-      onChange(s);
-      if (s.ok) setOpen(false);
-      else setError(s.error ?? "Chưa kết nối được");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!status) return null;
-  const label = status.mock
-    ? "Chế độ demo: tạo video mẫu, không dùng GPU"
-    : status.ok
-      ? `GPU đã kết nối${status.gpu?.length ? ` (${status.gpu.join(", ")})` : ""} · model ${status.models === "ready" ? "sẵn sàng" : status.models === "loading" ? "đang tải, lần đầu mất vài phút" : status.models}`
-      : status.configured
-        ? `GPU mất kết nối: ${status.error ?? "không rõ"}`
-        : "Chưa kết nối GPU";
-  const state = status.ok ? (status.models === "error" ? "bad" : "ok") : "bad";
-
-  return (
-    <section className="gpu-card" data-state={state}>
-      <div className="gpu-row">
-        <span className="gpu-dot" aria-hidden="true" />
-        <span className="gpu-label">{label}</span>
-        <button type="button" className="btn small" onClick={() => setOpen((v) => !v)}>{status.ok ? "Đổi GPU" : "Kết nối GPU"}</button>
-      </div>
-      {status.modelError && <p className="form-error">Lỗi model: {status.modelError}</p>}
-      {open && (
-        <form className="gpu-form" onSubmit={connect}>
-          <ol className="gpu-steps">
-            <li>Mở <b>kaggle.com</b> → Create → New Notebook → File → Import notebook, chọn file <code>video-worker/skipli_video_worker.ipynb</code>.</li>
-            <li>Cột phải: Accelerator <b>GPU T4 x2</b>, Internet <b>On</b>. Bấm <b>Run All</b>.</li>
-            <li>Ô cuối hiện URL và Token, dán vào đây. Giữ tab Kaggle mở khi tạo video.</li>
-          </ol>
-          <div className="row">
-            <Field label="URL">
-              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.trycloudflare.com" autoComplete="off" required />
-            </Field>
-            <Field label="Token">
-              <input value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" required />
-            </Field>
-          </div>
-          {error && <p className="form-error" role="alert">{error}</p>}
-          <button className="btn primary" disabled={busy}>{busy ? "Đang kiểm tra…" : "Kết nối"}</button>
-        </form>
-      )}
-    </section>
-  );
-}
-
-/** One optional photo (character / product / narrator), resized in the browser. */
-function PhotoPick({ label, hint, value, onChange }) {
-  const [error, setError] = useState("");
-  async function pick(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setError("");
-    try {
-      const img = await loadImage(file);
-      onChange(crop(img, 0, 0, img.naturalWidth, img.naturalHeight, 1280));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-  return (
-    <div className="field">
-      <span className="field-label">{label}</span>
-      {value ? (
-        <div className="photo-pick">
-          <img src={value} alt="" />
-          <button type="button" className="btn small" onClick={() => onChange(null)}>Bỏ ảnh</button>
-        </div>
-      ) : (
-        <label className="drop">
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pick} />
-          <span>Chọn ảnh</span>
-        </label>
-      )}
-      {hint && <small>{hint}</small>}
-      {error && <p className="form-error" role="alert">{error}</p>}
-    </div>
-  );
-}
+const ENGINES = { wan: "Đẹp (Wan 2.2)", ltx: "Nhanh (LTX)" };
+const ENGINE_HINT = {
+  wan: "Wan 2.2 trên Hugging Face: đẹp nhất, khoảng 1 phút mỗi cảnh. Mỗi ngày chỉ đủ khoảng 1 video; hết lượt thì các cảnh còn lại tự dựng bằng LTX.",
+  wan5b: "Wan 2.2 bản 5B trên GPU Kaggle: không lo hết lượt, đẹp hơn LTX nhiều nhưng chậm hơn (vài phút mỗi cảnh).",
+  ltx: "LTX trên GPU Kaggle: nhanh nhất, hình kém hơn.",
+};
 
 function StoryboardPick({ panels, onChange }) {
   const [img, setImg] = useState(null);
@@ -168,7 +75,7 @@ function StoryboardPick({ panels, onChange }) {
 export default function VideoPage() {
   const [gpu, setGpu] = useState(null);
   const [mode, setMode] = useState("topic");
-  const [form, setForm] = useState({ topic: "", narration: "", brief: "", seconds: "30", style: "real", tone: "warm", ratio: "9:16", voice: "female", narratorPct: "20" });
+  const [form, setForm] = useState({ topic: "", narration: "", brief: "", seconds: "30", style: "real", tone: "warm", ratio: "9:16", voice: "female", narratorPct: "20", engine: "wan" });
   const [photo, setPhoto] = useState(null);
   const [panels, setPanels] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -242,6 +149,11 @@ export default function VideoPage() {
           </>
         )}
 
+        <div className="field">
+          <span className="field-label">Chất lượng</span>
+          <Segmented name="engine" label="Chất lượng" options={ENGINES} value={form.engine} onChange={set("engine")} />
+          <small>{ENGINE_HINT[form.engine]}</small>
+        </div>
         <div className="row">
           <Field label="Phong cách">
             <select value={form.style} onChange={set("style")}>{Object.entries(STYLES).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>
@@ -261,10 +173,10 @@ export default function VideoPage() {
           </div>
         </div>
         {(error || localError) && <p className="form-error" role="alert">{localError || error}</p>}
-        <SubmitRow busy={busy || uploading} label="Tạo video" eta="15 đến 40 phút trên GPU miễn phí" />
+        <SubmitRow busy={busy || uploading} label="Tạo video" eta={{ wan: "5 đến 15 phút", wan5b: "20 đến 50 phút", ltx: "15 đến 40 phút" }[form.engine]} />
         <Notes
           items={[
-            "Chạy bằng model mã nguồn mở trên GPU miễn phí (Kaggle), không tốn phí API.",
+            "Chạy bằng model mã nguồn mở trên GPU miễn phí (Kaggle, Hugging Face), không tốn phí API. Vẫn cần kết nối GPU Kaggle để vẽ ảnh, đọc giọng và ghép video.",
             "Giọng đọc tiếng Việt và phụ đề được thêm tự động, các cảnh ghép thành một file MP4.",
             "Cảnh người kể chưa nhép môi theo lời, chỉ cử động tự nhiên.",
           ]}

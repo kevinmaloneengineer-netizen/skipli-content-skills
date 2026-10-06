@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { CopyIcon, PenIcon, RetryIcon, SaveIcon } from "../components/Icons.jsx";
 import CloneBoard from "../components/CloneBoard.jsx";
+import ImageBoard from "../components/ImageBoard.jsx";
+import PlanBoard from "../components/PlanBoard.jsx";
 import { BackLink } from "../components/SkillShell.jsx";
 import { JobHistory, StatusBadge } from "../components/JobBits.jsx";
 import SkillArt from "../components/SkillArt.jsx";
@@ -39,6 +41,8 @@ function inputRows(job) {
       ["Giọng văn", i.tone],
     ],
     fanpage: [["Fanpage", i.url], ["Tìm hiểu thêm", i.focus]],
+    image: [["Sản phẩm", i.topic], ["Thông tin thêm", i.brief], ["Khung ảnh", i.size], ["Số ảnh", i.count], ["Có chữ trên ảnh", i.withText ? "Có" : "Không"], ["Ảnh sản phẩm", i.referenceImageId ? "Có" : null]],
+    plan: [["Kênh", i.topic], ["Bắt đầu", i.start], ["Thời gian", i.days && `${i.days} ngày, ${i.perDay} bài/ngày`], ["Nền tảng", CLONE_PLATFORMS[i.platform]], ["Thông tin thêm", i.brief], ["Giọng văn", i.tone]],
     livestream: [
       ["Sản phẩm", i.products],
       ["Thời lượng", i.minutes && `${i.minutes} phút`],
@@ -54,6 +58,7 @@ function inputRows(job) {
       ["Số ô storyboard", i.panelIds?.length],
       ["Độ dài", i.mode === "topic" ? `${i.seconds} giây` : null],
       ["Khung hình", i.ratio],
+      ["Chất lượng", { wan: "Đẹp nhất (Wan 2.2)", wan5b: "Đẹp (Wan 5B)", ltx: "Nhanh (LTX)" }[i.engine] ?? "Nhanh (LTX)"],
       ["Giọng đọc", i.voice === "male" ? "Nam" : "Nữ"],
       ["Tỉ lệ cảnh có người kể", i.mode === "story" ? `${i.narratorPct}%` : null],
     ],
@@ -155,6 +160,8 @@ function Result({ job, onSave }) {
   if (job.type === "write") return <Variants job={job} onSave={onSave} />;
   if (job.type === "clone") return <CloneBoard job={job} />;
   if (job.type === "livestream") return <LivestreamResult job={job} />;
+  if (job.type === "image" && job.images) return <ImageBoard job={job} />;
+  if (job.type === "plan") return <PlanBoard job={job} />;
   if (job.type === "video" && job.video) return <VideoResult job={job} />;
   return <Markdown className="card md">{job.result}</Markdown>;
 }
@@ -239,8 +246,8 @@ export default function JobPage() {
         job.type !== "video" && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
       ].filter(Boolean)
     : [];
-  const full = job.type === "clone";
-  const canCopy = done && job.type !== "clone" && job.type !== "video";
+  const full = job.type === "clone" || job.type === "image";
+  const canCopy = done && !["clone", "video", "image"].includes(job.type);
 
   return (
     <div className={full ? "job-page full" : "job-page"} data-tone={skill?.tone}>

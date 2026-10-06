@@ -8,9 +8,11 @@ import FanpagePage from "./pages/FanpagePage.jsx";
 import FbScanPage from "./pages/FbScanPage.jsx";
 import HistoryPage from "./pages/HistoryPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
+import ImagePage from "./pages/ImagePage.jsx";
 import JobPage from "./pages/JobPage.jsx";
 import LibraryPage from "./pages/LibraryPage.jsx";
 import LivestreamPage from "./pages/LivestreamPage.jsx";
+import SchedulePage from "./pages/SchedulePage.jsx";
 import ThreadsPage from "./pages/ThreadsPage.jsx";
 import VideoPage from "./pages/VideoPage.jsx";
 import WritePage from "./pages/WritePage.jsx";
@@ -36,6 +38,8 @@ export default function App() {
               <Route path="video" element={<VideoPage />} />
               <Route path="fanpage" element={<FanpagePage />} />
               <Route path="livestream" element={<LivestreamPage />} />
+              <Route path="image" element={<ImagePage />} />
+              <Route path="schedule" element={<SchedulePage />} />
               <Route path="library" element={<LibraryPage />} />
               <Route path="history" element={<HistoryPage />} />
               <Route path="jobs/:id" element={<JobPage />} />

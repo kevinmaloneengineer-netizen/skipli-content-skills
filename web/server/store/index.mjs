@@ -27,6 +27,7 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   const stamp = now();
   await adapter.seedOnce(templates.map((t) => ({ id: randomUUID(), kind: "template", tags: [], ...t, createdAt: stamp, updatedAt: stamp })));
   const library = await adapter.loadLibrary(); // newest first
+  const schedule = await adapter.loadSchedule(); // small: one row per planned post
 
   function trim() {
     // Evict the oldest finished jobs; they stay readable through adapter.loadJob.
@@ -38,6 +39,34 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   }
 
   return {
+    listSchedule(from, to) {
+      return schedule.filter((s) => (!from || s.at >= from) && (!to || s.at < to)).sort((a, b) => a.at.localeCompare(b.at));
+    },
+    getSlot(id) {
+      return schedule.find((s) => s.id === id);
+    },
+    async addSlots(list) {
+      const stamp = now();
+      const added = list.map((x) => ({ id: randomUUID(), status: "planned", ...x, createdAt: stamp, updatedAt: stamp }));
+      for (const slot of added) {
+        await adapter.saveSlot(slot);
+        schedule.push(slot);
+      }
+      return added;
+    },
+    async updateSlot(id, patch) {
+      const slot = schedule.find((s) => s.id === id);
+      if (!slot) return undefined;
+      Object.assign(slot, patch, { updatedAt: now() });
+      await adapter.saveSlot(slot);
+      return slot;
+    },
+    async deleteSlot(id) {
+      const i = schedule.findIndex((s) => s.id === id);
+      if (i >= 0) schedule.splice(i, 1);
+      await adapter.deleteSlot(id);
+    },
+
     /** Store a feedback message (write-only: read them in the Firestore console). */
     async addFeedback({ message, contact, page }) {
       const item = { id: randomUUID(), message, contact, page, createdAt: now() };

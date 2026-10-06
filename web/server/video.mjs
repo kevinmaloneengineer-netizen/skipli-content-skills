@@ -18,6 +18,30 @@ const MAX_UPLOAD = 6 * 1024 * 1024;
 
 export class VideoError extends Error {}
 
+export const IMAGE_SIZES = { "1:1": [1024, 1024], "4:5": [896, 1120], "9:16": [768, 1344], "16:9": [1344, 768] };
+const IMAGE_FILE = /^[0-9a-f-]{36}-\d{1,2}\.png$/;
+const LAYOUTS = new Set(["top", "center", "bottom"]);
+
+/** Pull the image plan out of the agent's answer: { images: [{ prompt, headline, sub, cta, caption, layout }] }. */
+export function parseImagePlan(content) {
+  const text = String(content ?? "");
+  const fenced = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  const raw = fenced?.[1] ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new VideoError("AI không trả về ý tưởng ảnh đúng định dạng. Hãy chạy lại.");
+  }
+  const clip = (v, n) => String(v ?? "").trim().slice(0, n);
+  const images = (Array.isArray(data?.images) ? data.images : [])
+    .map((x) => ({ prompt: clip(x?.prompt, 600), headline: clip(x?.headline, 80), sub: clip(x?.sub, 140), cta: clip(x?.cta, 40), caption: clip(x?.caption, 1500), layout: LAYOUTS.has(x?.layout) ? x.layout : "bottom" }))
+    .filter((x) => x.prompt)
+    .slice(0, 6);
+  if (!images.length) throw new VideoError("AI chưa đưa ra ý tưởng ảnh nào. Hãy chạy lại.");
+  return { images };
+}
+
 /** Pull the shot list out of the agent's answer (a ```json block or the first {...}). */
 export function parseScript(content) {
   const text = String(content ?? "");
@@ -52,13 +76,14 @@ export function scriptMarkdown({ title, shots }) {
 }
 
 export function createVideoService({ dataDir, timeoutMs, mock, log = console }) {
-  const dirs = { videos: path.join(dataDir, "videos"), uploads: path.join(dataDir, "uploads") };
+  const dirs = { videos: path.join(dataDir, "videos"), uploads: path.join(dataDir, "uploads"), images: path.join(dataDir, "images") };
   const settingsFile = path.join(dataDir, "video-worker.json");
   let worker = { url: process.env.VIDEO_WORKER_URL ?? "", token: process.env.VIDEO_WORKER_TOKEN ?? "" };
 
   async function init() {
     await mkdir(dirs.videos, { recursive: true });
     await mkdir(dirs.uploads, { recursive: true });
+    await mkdir(dirs.images, { recursive: true });
     try {
       worker = { ...worker, ...JSON.parse(await readFile(settingsFile, "utf8")) };
     } catch {
@@ -68,12 +93,21 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
 
   const isMock = () => worker.url === "mock" || (!worker.url && mock);
 
-  async function call(p, { method = "GET", body, signal, raw = false } = {}) {
+  async function call(p, opts = {}) {
+    try {
+      return await request(p, opts);
+    } catch (e) {
+      if (e instanceof VideoError || opts.signal?.aborted) throw e;
+      throw new VideoError("Không kết nối được GPU. Phiên Kaggle có thể đã tắt: chạy lại notebook (Run All) rồi dán URL và Token mới ở mục Kết nối GPU.");
+    }
+  }
+
+  async function request(p, { method = "GET", body, signal, raw = false, timeout = 60_000 } = {}) {
     const res = await fetch(`${worker.url}${p}`, {
       method,
       headers: { Authorization: `Bearer ${worker.token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(15_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
@@ -128,20 +162,71 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     return Math.round(seconds * 10) / 10;
   }
 
+  const imagePath = (file) => (IMAGE_FILE.test(file) ? path.join(dirs.images, file) : null);
+
+  /** Ad images: the agent's JSON (prompts + Vietnamese text) → PNGs from the GPU worker (text is overlaid in the app). */
+  async function finishImages(job, content, { setPhase, signal }) {
+    const plan = parseImagePlan(content);
+    const files = plan.images.map((_, i) => `${job.id}-${i + 1}.png`);
+    let [w, h] = IMAGE_SIZES[job.input.size] ?? IMAGE_SIZES["1:1"];
+    let res;
+    if (isMock()) {
+      await setPhase("Đang tạo ảnh demo…");
+      const colors = ["0xe25d33", "0x2e6b4f", "0x5b3fc4", "0x1b7fc4", "0xd99a1e", "0x7d3a6c"];
+      try {
+        for (const [i, f] of files.entries()) {
+          await run("ffmpeg", ["-y", "-f", "lavfi", "-i", `color=c=${colors[i % colors.length]}:s=${w}x${h}`, "-frames:v", "1", path.join(dirs.images, f)]);
+        }
+      } catch (e) {
+        throw new VideoError(`Chế độ demo cần ffmpeg trên máy (${e.code ?? e.message})`);
+      }
+    } else {
+      if (!worker.url) throw new VideoError("Chưa kết nối GPU. Mở trang Tạo ảnh AI để kết nối rồi chạy lại.");
+      const body = { prompts: plan.images.map((x) => x.prompt), size: job.input.size, style: job.input.style };
+      if (job.input.referenceImageId && hasUpload(job.input.referenceImageId)) body.reference_image = (await readFile(path.join(dirs.uploads, job.input.referenceImageId))).toString("base64");
+      await setPhase(`Đang vẽ ${files.length} ảnh trên GPU…`);
+      const { id } = await call("/image", { method: "POST", body, signal });
+      const deadline = Date.now() + 20 * 60_000; // first call of a session may wait for the models to load
+      for (;;) {
+        if (Date.now() > deadline) throw new VideoError("Vẽ ảnh quá lâu, đã dừng chờ.");
+        await sleep(3000, undefined, { signal });
+        try {
+          res = await call(`/image/${id}`, { signal });
+        } catch (e) {
+          if (signal.aborted || /Token/.test(e.message)) throw e;
+          continue; // tunnel hiccup
+        }
+        if (res.status === "failed") throw new VideoError(`GPU vẽ lỗi: ${res.error}`);
+        if (res.status === "done") break;
+      }
+      await Promise.all(res.images.map((b64, i) => writeFile(path.join(dirs.images, files[i]), Buffer.from(b64, "base64"))));
+    }
+    if (res?.width) [w, h] = [res.width, res.height]; // the worker decides the real size
+    const images = plan.images.map((x, i) => ({ ...x, file: files[i] }));
+    return {
+      result: images.map((x, i) => `### Ảnh ${i + 1}\n**${x.headline}**${x.sub ? `\n${x.sub}` : ""}${x.cta ? `\n[${x.cta}]` : ""}\n\n${x.caption ?? ""}`).join("\n\n"),
+      fields: { images: { size: job.input.size, width: w, height: h, items: images } },
+    };
+  }
+
   /** Runner hook: shot list -> worker render -> MP4 in DATA_DIR. */
-  async function finish(job, content, { setPhase, signal }) {
+  async function finish(job, content, ctx) {
+    if (job.type === "image") return finishImages(job, content, ctx);
     if (job.type !== "video") return null;
+    const { setPhase, signal } = ctx;
     const script = parseScript(content);
     const result = scriptMarkdown(script);
     const out = videoPath(job.id);
     let seconds;
+    let workerNotice = null;
 
     if (isMock()) {
       await setPhase("Đang dựng video demo…");
       seconds = await mockRender(job, script, out);
     } else {
       if (!worker.url) throw new VideoError("Chưa kết nối GPU. Mở trang Tạo video AI để kết nối rồi chạy lại.");
-      const body = { shots: script.shots, ratio: job.input.ratio, voice: job.input.voice, style: job.input.style };
+      const body = { shots: script.shots, ratio: job.input.ratio, voice: job.input.voice, style: job.input.style, engine: job.input.engine ?? "ltx" };
+      if (body.engine === "wan" && process.env.HF_TOKEN) body.hf_token = process.env.HF_TOKEN; // more free Hugging Face quota than anonymous
       const b64 = async (id) => (hasUpload(id) ? (await readFile(path.join(dirs.uploads, id))).toString("base64") : null);
       if (job.input.referenceImageId) body.reference_image = await b64(job.input.referenceImageId);
       if (job.input.panelIds?.length) {
@@ -164,6 +249,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
           continue; // tunnel hiccup; keep waiting
         }
         if (st.status === "failed") throw new VideoError(`GPU dựng lỗi: ${st.error}`);
+        if (st.notice) workerNotice = st.notice;
         if (st.status === "done") {
           seconds = st.duration;
           break;
@@ -175,8 +261,13 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       await writeFile(out, Buffer.from(await res.arrayBuffer()));
     }
     const shots = job.input.panelIds?.length ? script.shots.slice(0, job.input.panelIds.length) : script.shots;
-    return { result, fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: script.title, shots } } };
+    return { result, fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: script.title, shots, engine: job.input.engine ?? "ltx" }, ...(workerNotice ? { notice: workerNotice } : {}) } };
   }
 
-  return { init, status, setWorker, saveUpload, hasUpload, videoPath, finish, remove: (jobId) => rm(videoPath(jobId), { force: true }) };
+  async function remove(job) {
+    if (job.type === "video") await rm(videoPath(job.id), { force: true });
+    for (const x of job.images?.items ?? []) if (imagePath(x.file)) await rm(imagePath(x.file), { force: true });
+  }
+
+  return { init, status, setWorker, saveUpload, hasUpload, videoPath, imagePath, finish, remove };
 }

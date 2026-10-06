@@ -60,7 +60,7 @@ export default function FbScanPage() {
           </div>
         )}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <SubmitRow busy={busy} label="Bắt đầu quét" eta={isSingleReel ? "khoảng 1 phút" : depth === "100" ? "5 đến 10 phút" : "3 đến 5 phút"} />
+        <SubmitRow busy={busy} label="Bắt đầu quét" eta={isSingleReel ? "1 phút" : depth === "100" ? "5 đến 10 phút" : "3 đến 5 phút"} />
         <Notes
           items={[
             "Chỉ cần dán link, hệ thống tự lấy danh sách reel mà không cần đăng nhập Facebook.",

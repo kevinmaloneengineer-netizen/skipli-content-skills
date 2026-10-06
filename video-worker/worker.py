@@ -8,6 +8,7 @@ Then all shots are concatenated. One render at a time; the web app polls progres
   POST /render            {"shots": [...], "ratio": "9:16", "voice": "female", "reference_image": "<base64>"}
   GET  /render/{id}       {"status", "phase", "done", "total", "error"}
   GET  /render/{id}/video MP4
+  POST /image             {"prompts": [...], "size": "1:1", "style": "real", "reference_image": "<base64>"}  → PNGs (base64)
   GET  /health
 
 Env: WORKER_TOKEN (required, sent as "Authorization: Bearer ..."), WORKER_MOCK=1 (no GPU:
@@ -41,6 +42,10 @@ MOCK = os.environ.get("WORKER_MOCK") == "1"
 WORK = Path(os.environ.get("WORKER_DIR", "/tmp/skipli-video"))
 LTX_MODEL = os.environ.get("LTX_MODEL", "Lightricks/LTX-Video")
 LTX_STEPS = int(os.environ.get("LTX_STEPS", "30"))
+WAN5B_MODEL = os.environ.get("WAN5B_MODEL", "Wan-AI/Wan2.2-TI2V-5B-Diffusers")
+WAN5B_STEPS = int(os.environ.get("WAN5B_STEPS", "25"))
+WAN5B_MAX_S = float(os.environ.get("WAN5B_MAX_S", "2.5"))
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")  # before torch is imported
 FPS = 24
 SIZES = {"9:16": (480, 832), "16:9": (832, 480), "1:1": (640, 640)}
 VOICES = {"female": "vi-VN-HoaiMyNeural", "male": "vi-VN-NamMinhNeural"}
@@ -70,6 +75,24 @@ class Shot(BaseModel):
     image: Optional[str] = None  # base64 keyframe for this shot (a storyboard panel); skips generation
 
 
+# Final sizes. SDXL-Turbo is sharp near 512 px, so each image is drawn at half size, upscaled 2x
+# and refined with a light img2img pass (adds real detail instead of a soft, stretched picture).
+IMAGE_SIZES = {"1:1": (1024, 1024), "4:5": (896, 1120), "9:16": (768, 1344), "16:9": (1344, 768)}
+AD_NEGATIVE = "text, letters, words, watermark, logo, blurry, low quality, deformed, extra fingers"
+
+
+class ImageRequest(BaseModel):
+    prompts: List[str] = Field(min_length=1, max_length=6)
+    size: str = "1:1"
+    style: str = "real"
+    reference_image: Optional[str] = None
+    seed: Optional[int] = None
+
+
+# Free Wan 2.2 image-to-video on Hugging Face ZeroGPU Spaces (tried in order; daily quota per user/IP).
+WAN_SPACES = [s.strip() for s in os.environ.get("WAN_SPACES", "zerogpu-aoti-wan2-2-fp8da-aoti-faster,r3gm-wan2-2-fp8da-aoti-preview").split(",") if s.strip()]
+
+
 class RenderRequest(BaseModel):
     shots: List[Shot]
     ratio: str = "9:16"
@@ -77,30 +100,32 @@ class RenderRequest(BaseModel):
     reference_image: Optional[str] = None
     style: str = "real"
     seed: Optional[int] = None
+    engine: str = "ltx"  # "ltx" | "wan5b" (both on this GPU) | "wan" (Hugging Face Space, falls back to wan5b)
+    hf_token: Optional[str] = None
 
 
 # ---------------------------------------------------------------- models
 
 _models = {}
 _model_lock = threading.Lock()
+_sd_lock = threading.Lock()  # one SDXL call at a time: video keyframes and /image share the pipeline
 _model_state = {"status": "mock" if MOCK else "idle", "error": None}
 
 
+def _dtype(torch):
+    cap = torch.cuda.get_device_capability(0)[0]
+    # T4/P100 have no native bf16; LTX_DTYPE overrides if fp16 gives black frames.
+    return {"bf16": torch.bfloat16, "fp16": torch.float16}.get(os.environ.get("LTX_DTYPE", ""), torch.bfloat16 if cap >= 8 else torch.float16)
+
+
 def models():
-    """Load SDXL-Turbo (keyframes) + LTX-Video (image-to-video) once; offload to fit a 16 GB T4."""
+    """SDXL-Turbo (keyframes, ads) + the current video model. Loaded once; video models swap (see video_pipe)."""
     with _model_lock:
-        if _models:
+        if "t2i" in _models:
             return _models
         _model_state["status"] = "loading"
         import torch
-        from diffusers import AutoPipelineForImage2Image, AutoPipelineForText2Image, LTXImageToVideoPipeline
-
-        cap = torch.cuda.get_device_capability(0)[0]
-        # T4/P100 have no native bf16; LTX_DTYPE overrides if fp16 gives black frames.
-        dtype = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(os.environ.get("LTX_DTYPE", ""), torch.bfloat16 if cap >= 8 else torch.float16)
-        ltx = LTXImageToVideoPipeline.from_pretrained(LTX_MODEL, torch_dtype=dtype)
-        ltx.enable_model_cpu_offload(gpu_id=0)
-        ltx.vae.enable_tiling()
+        from diffusers import AutoPipelineForImage2Image, AutoPipelineForText2Image
 
         t2i = AutoPipelineForText2Image.from_pretrained("stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16")
         if torch.cuda.device_count() > 1:  # Kaggle "T4 x2": keyframes on the second GPU
@@ -110,9 +135,47 @@ def models():
             t2i.enable_model_cpu_offload()
             i2i = AutoPipelineForImage2Image.from_pipe(t2i)
             i2i.enable_model_cpu_offload()
-        _models.update(torch=torch, ltx=ltx, t2i=t2i, i2i=i2i, dtype=str(dtype))
+        _models.update(torch=torch, t2i=t2i, i2i=i2i)
+    video_pipe("ltx")
+    _model_state["status"] = "ready"
+    return _models
+
+
+def video_pipe(kind):
+    """The image-to-video pipeline for "ltx" or "wan5b". Only one lives in RAM (Kaggle has ~30 GB): switching frees the other."""
+    with _model_lock:
+        if _models.get("video_kind") == kind:
+            return _models["video"]
+        import gc
+        import torch
+        _models.pop("video", None)
+        _models.pop("video_kind", None)
+        gc.collect()
+        torch.cuda.empty_cache()
+        _model_state["status"] = f"loading {kind}"
+        if kind == "wan5b":
+            from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+            vae = AutoencoderKLWan.from_pretrained(WAN5B_MODEL, subfolder="vae", torch_dtype=torch.float32)
+            pipe = WanImageToVideoPipeline.from_pretrained(WAN5B_MODEL, vae=vae, torch_dtype=torch.float16)
+            # A whole 5B transformer (or the 11 GB text encoder) plus activations does not fit a 15 GB T4, even in fp8.
+            # Group offloading keeps weights in RAM and streams layers to the GPU just in time (overlapped with compute).
+            from diffusers.hooks import apply_group_offloading
+            gpu, cpu = torch.device("cuda:0"), torch.device("cpu")
+            pipe.transformer.enable_layerwise_casting(storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.float16)
+            pipe.transformer.enable_group_offload(onload_device=gpu, offload_device=cpu, offload_type="leaf_level", use_stream=True)
+            apply_group_offloading(pipe.text_encoder, onload_device=gpu, offload_device=cpu, offload_type="block_level", num_blocks_per_group=2)
+            pipe.vae.enable_group_offload(onload_device=gpu, offload_device=cpu, offload_type="leaf_level")
+            pipe.vae.enable_tiling()
+            if getattr(pipe, "image_encoder", None) is not None:
+                pipe.image_encoder.to(gpu)
+        else:
+            from diffusers import LTXImageToVideoPipeline
+            pipe = LTXImageToVideoPipeline.from_pretrained(LTX_MODEL, torch_dtype=_dtype(torch))
+            pipe.enable_model_cpu_offload(gpu_id=0)
+            pipe.vae.enable_tiling()
+        _models.update(video=pipe, video_kind=kind)
         _model_state["status"] = "ready"
-        return _models
+        return pipe
 
 
 def warm_up():
@@ -217,10 +280,11 @@ def keyframe(shot, prev_last, reference, w, h, seed, style="real"):
     gw, gh = (round(w * 1.07 / 64) * 64, round(h * 1.07 / 64) * 64)
     # SDXL reads ~75 tokens: the shot's own subject/action first, style last.
     prompt = f"{shot.visual}, {STYLES.get(style, STYLES['real'])}"
-    if reference is not None:
-        img = m["i2i"](prompt=prompt, image=fit(reference, gw, gh), strength=0.55, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
-    else:
-        img = m["t2i"](prompt=prompt, width=gw, height=gh, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+    with _sd_lock:
+        if reference is not None:
+            img = m["i2i"](prompt=prompt, image=fit(reference, gw, gh), strength=0.55, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+        else:
+            img = m["t2i"](prompt=prompt, width=gw, height=gh, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
     return fit(img, w, h)
 
 
@@ -239,17 +303,79 @@ def animate(shot, image, seconds, w, h, seed, out, style="real"):
     gen = m["torch"].Generator("cpu").manual_seed(seed)
     motion = shot.motion or ("the person talks to the camera with natural facial expressions and small head movements" if shot.role == "narrator" else "")
     prompt = f"{shot.visual}. {motion}. {STYLES.get(style, STYLES['real'])}".strip()
-    frames = m["ltx"](image=image, prompt=prompt, negative_prompt=NEGATIVE, width=w, height=h, num_frames=n,
+    frames = video_pipe("ltx")(image=image, prompt=prompt, negative_prompt=NEGATIVE, width=w, height=h, num_frames=n,
                       num_inference_steps=LTX_STEPS, guidance_scale=3.0, generator=gen).frames[0]
     frames = frames[: len(frames) - max(4, len(frames) // 8)]  # LTX's last frames smear; drop them
     export_to_video(frames, str(out), fps=FPS)
     return frames[-1] if isinstance(frames[-1], Image.Image) else Image.fromarray(frames[-1])
 
 
-def finish_shot(clip, audio, srt, dur, w, out):
+def animate_wan5b(shot, image, seconds, w, h, seed, out, style="real"):
+    """Wan 2.2 TI2V-5B image-to-video on the local T4 (24 fps). Slower than LTX, much better motion and detail."""
+    from diffusers.utils import export_to_video
+
+    pipe = video_pipe("wan5b")
+    torch = models()["torch"]
+    gen = torch.Generator("cpu").manual_seed(seed)
+    n = round(min(max(seconds, 2.0), WAN5B_MAX_S) * 24 / 4) * 4 + 1  # 4k+1 frames; short clip, then stretched/held to the voice
+    torch.cuda.empty_cache()
+    motion = shot.motion or ("the person talks to the camera with natural facial expressions and small head movements" if shot.role == "narrator" else "subtle natural motion")
+    prompt = f"{shot.visual}. {motion}. {STYLES.get(style, STYLES['real'])}"
+    ww, hh = (w // 32) * 32, (h // 32) * 32  # Wan 2.2 VAE needs multiples of 32
+    frames = pipe(image=fit(image, ww, hh), prompt=prompt, negative_prompt=NEGATIVE, width=ww, height=hh, num_frames=n,
+                  num_inference_steps=WAN5B_STEPS, guidance_scale=5.0, generator=gen).frames[0]
+    export_to_video(frames, str(out), fps=24)
+    return frames[-1] if isinstance(frames[-1], Image.Image) else Image.fromarray((frames[-1] * 255).clip(0, 255).astype("uint8"))
+
+
+def last_frame(clip):
+    png = clip.with_suffix(".last.png")
+    run(["ffmpeg", "-y", "-sseof", "-0.1", "-i", str(clip), "-frames:v", "1", "-update", "1", str(png)])
+    return Image.open(png).convert("RGB")
+
+
+def animate_wan(shot, image, seconds, out, style, token):
+    """Image-to-video with Wan 2.2 on a free Hugging Face Space (Gradio HTTP API). Raises if every Space fails."""
+    import requests
+
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    motion = shot.motion or ("the person talks to the camera with natural facial expressions and small head movements" if shot.role == "narrator" else "subtle natural motion")
+    prompt = f"{shot.visual}. {motion}. {STYLES.get(style, STYLES['real'])}"[:900]
+    buf = io.BytesIO()
+    image.save(buf, "PNG")
+    errors = []
+    for space in WAN_SPACES:
+        base = f"https://{space}.hf.space/gradio_api"
+        try:
+            up = requests.post(f"{base}/upload", headers=headers, files={"files": ("frame.png", buf.getvalue(), "image/png")}, timeout=60)
+            up.raise_for_status()
+            path = up.json()[0]
+            # same leading parameters on both Spaces: image, prompt, steps, negative, seconds, cfg, cfg2, seed, randomize
+            data = [{"path": path, "meta": {"_type": "gradio.FileData"}}, prompt, 6, NEGATIVE, round(min(max(seconds, 2.0), 5.0), 1), 1, 1, 42, True]
+            if "r3gm" in space:
+                data = data[:1] + [None] + data[1:]  # this Space also takes an optional last frame
+            ev = requests.post(f"{base}/call/generate_video", headers=headers, json={"data": data}, timeout=60)
+            ev.raise_for_status()
+            stream = requests.get(f"{base}/call/generate_video/{ev.json()['event_id']}", headers=headers, timeout=900).text
+            if "event: error" in stream:
+                tail = stream.strip().splitlines()[-1][:300]
+                raise RuntimeError(f"Space error: {tail}")
+            line = [l for l in stream.splitlines() if l.startswith("data:")][-1]
+            url = re.search(r'"url":\s*"([^"]+)"', line).group(1)
+            video = requests.get(url, headers=headers, timeout=300)
+            video.raise_for_status()
+            out.write_bytes(video.content)
+            return last_frame(out)
+        except Exception as e:  # noqa: BLE001 - try the next Space
+            errors.append(f"{space}: {type(e).__name__}: {str(e)[:160]}")
+    raise RuntimeError("; ".join(errors))
+
+
+def finish_shot(clip, audio, srt, dur, w, out, h=None):
     """Stretch the clip to the voice (slow down up to 1.5x, then hold the last frame), burn subtitles."""
     k = min(max(dur / duration(clip), 1.0), 1.25)
-    vf = f"setpts={k:.4f}*PTS,tpad=stop_mode=clone:stop_duration={dur:.2f},fps={FPS},format=yuv420p"
+    scale = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}," if h else ""  # Wan clips come at the Space's size
+    vf = f"{scale}setpts={k:.4f}*PTS,tpad=stop_mode=clone:stop_duration={dur:.2f},fps={FPS},format=yuv420p"
     if HAS_SUBTITLES:
         size = 15 if w < 600 else 12
         style = f"FontName=DejaVu Sans,FontSize={size},Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=38"
@@ -270,22 +396,37 @@ def render(job, req):
     seed = req.seed if req.seed is not None else int(time.time()) % 100000
     job["total"] = len(req.shots)
 
+    wan = req.engine == "wan" and not MOCK
+    # Wan 2.2 5B does not fit a free Kaggle T4 x2 box (GPU then RAM out of memory), so only an explicit "wan5b" uses it.
+    local = animate_wan5b if req.engine == "wan5b" and not MOCK else animate
     if not MOCK and _model_state["status"] != "ready":
         job["phase"] = "Đang tải model AI (lần đầu mất vài phút)…"
         models()
 
     parts, last = [], None
     for i, shot in enumerate(req.shots, 1):
-        job["phase"] = f"Đang dựng cảnh {i}/{len(req.shots)}…"
+        job["phase"] = f"Đang dựng cảnh {i}/{len(req.shots)}{' bằng Wan 2.2' if wan else ''}…"
         audio = d / f"s{i}.mp3"
         tts(shot.narration, voice, audio)
         dur = duration(audio) + 0.3
         image = keyframe(shot, last, reference, w, h, seed + i, req.style)
         clip = d / f"s{i}_raw.mp4"
-        last = animate(shot, image, dur, w, h, seed + i, clip, req.style)
+        if wan:
+            try:
+                last = animate_wan(shot, image, dur, clip, req.style, req.hf_token)
+            except Exception as e:  # noqa: BLE001 - quota used up or Space down: keep going on the local GPU
+                print(f"wan failed on shot {i}: {e}", flush=True)
+                job["notice"] = "Hết lượt Wan 2.2 trên Hugging Face hôm nay (hoặc Space bận), các cảnh còn lại dựng bằng LTX."
+                wan = False
+                job["phase"] = f"Đang dựng cảnh {i}/{len(req.shots)} bằng LTX…"
+                last = local(shot, image, dur, w, h, seed + i, clip, req.style)
+        else:
+            if local is animate_wan5b:
+                job["phase"] = f"Đang dựng cảnh {i}/{len(req.shots)} bằng Wan 2.2 5B…"
+            last = local(shot, image, dur, w, h, seed + i, clip, req.style)
         write_srt(shot.narration, dur, d / f"s{i}.srt")
         part = d / f"s{i}.mp4"
-        finish_shot(clip, audio, d / f"s{i}.srt", dur, w, part)
+        finish_shot(clip, audio, d / f"s{i}.srt", dur, w, part, h)
         parts.append(part)
         job["done"] = i
 
@@ -356,13 +497,78 @@ def start(req: RenderRequest, authorization: str = Header(None)):
     return {"id": job["id"]}
 
 
+def draw_images(req):
+    """Ad images (SDXL-Turbo: a few seconds each once loaded). Text is NOT drawn: the app overlays editable text."""
+    w, h = IMAGE_SIZES.get(req.size, IMAGE_SIZES["1:1"])
+    reference = decode_image(req.reference_image) if req.reference_image else None
+    seed = req.seed if req.seed is not None else int(time.time()) % 100000
+    out = []
+    for i, p in enumerate(req.prompts):
+        prompt = f"{p[:600]}, {STYLES.get(req.style, STYLES['real'])}, advertising photo, clean composition, empty space for text"
+        if MOCK:
+            img = Image.linear_gradient("L").resize((w, h)).convert("RGB")
+            img = Image.merge("RGB", (img.getchannel(0), Image.new("L", (w, h), (seed + i * 53) % 255), img.getchannel(2)))
+        else:
+            m = models()
+            gen = m["torch"].Generator("cpu").manual_seed(seed + i)
+            bw, bh = w // 2, h // 2
+            with _sd_lock:
+                if reference is not None:
+                    img = m["i2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, image=fit(reference, bw, bh), strength=0.6, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+                else:
+                    img = m["t2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, width=bw, height=bh, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+                # 2x: Lanczos upscale, then refine (strength * steps must be >= 1 for SDXL-Turbo)
+                big = fit(img, bw, bh).resize((w, h), Image.LANCZOS)
+                img = m["i2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, image=big, strength=0.35, num_inference_steps=6, guidance_scale=0.0, generator=gen).images[0]
+            img = fit(img, w, h)
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        out.append(base64.b64encode(buf.getvalue()).decode())
+    return {"images": out, "width": w, "height": h}
+
+
+images = {}
+
+
+@app.post("/image")
+def image_start(req: ImageRequest, authorization: str = Header(None)):
+    """Start drawing; poll GET /image/{id}. Async because the first call may wait minutes for the models (tunnel cuts at 100 s)."""
+    check(authorization)
+    iid = uuid.uuid4().hex
+    images[iid] = {"status": "running", "error": None, "result": None, "created": time.time()}
+    for k in [k for k, v in images.items() if time.time() - v["created"] > 3600]:
+        images.pop(k, None)
+
+    def go():
+        try:
+            images[iid].update(status="done", result=draw_images(req))
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            images[iid].update(status="failed", error=f"{type(e).__name__}: {e}"[:500])
+
+    threading.Thread(target=go, daemon=True).start()
+    return {"id": iid}
+
+
+@app.get("/image/{iid}")
+def image_status(iid: str, authorization: str = Header(None)):
+    check(authorization)
+    job = images.get(iid)
+    if not job:
+        raise HTTPException(404, "unknown image job (worker restarted?)")
+    out = {"status": job["status"], "error": job["error"]}
+    if job["status"] == "done":
+        out.update(job["result"])
+    return out
+
+
 @app.get("/render/{rid}")
 def status(rid: str, authorization: str = Header(None)):
     check(authorization)
     job = jobs.get(rid)
     if not job:
         raise HTTPException(404, "unknown render (worker restarted?)")
-    return {k: job[k] for k in ("status", "phase", "done", "total", "error", "duration")}
+    return {k: job.get(k) for k in ("status", "phase", "done", "total", "error", "duration", "notice")}
 
 
 @app.get("/render/{rid}/video")

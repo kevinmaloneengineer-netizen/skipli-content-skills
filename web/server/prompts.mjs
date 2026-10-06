@@ -23,7 +23,11 @@ export const VIDEO_MODES = { topic: "Kịch bản tự do", storyboard: "Story B
 export const VIDEO_STYLES = { real: "chân thực như quay thật (photorealistic)", cinematic: "điện ảnh (cinematic film still)", anime: "anime Nhật Bản (anime style)", pixar: "hoạt hình 3D (3D animation, Pixar style)", clay: "đất sét (claymation)", cyberpunk: "cyberpunk (neon cyberpunk)" };
 export const VIDEO_TONES = { warm: "nhẹ nhàng, ấm áp", fun: "vui nhộn", emotional: "cảm động", dramatic: "kịch tính", inspiring: "truyền cảm hứng" };
 const MAX_STORY_WORDS = 350;
-export const PILLARS ={ entertain: "Giải trí", educate: "Giáo dục", engage: "Tương tác", sell: "Bán hàng" };
+const IMAGE_SIZES = ["1:1", "4:5", "9:16", "16:9"];
+const IMAGE_SIZE_NAMES = { "1:1": "bài đăng vuông", "4:5": "bài đăng dọc", "9:16": "story, reels", "16:9": "ảnh bìa, YouTube" };
+const WEEKDAYS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+const weekday = (ymd) => WEEKDAYS[new Date(`${ymd}T00:00:00Z`).getUTCDay()];
+export const PILLARS = { entertain: "Giải trí", educate: "Giáo dục", engage: "Tương tác", sell: "Bán hàng" };
 
 function str(v, field, { required = false, max = 500 } = {}) {
   const s = typeof v === "string" ? v.trim() : "";
@@ -217,7 +221,8 @@ export function buildJob(type, raw, refs = {}) {
       };
       const common = [`Phong cách hình ảnh: ${VIDEO_STYLES[style]}`, `Tone cảm xúc: ${VIDEO_TONES[tone]}`, `Khung hình: ${ratio}`];
       if (brief) common.push(`Thông tin thêm:\n${brief}`);
-      const base = { mode, ratio, voice, style, tone, brief };
+      const engine = ["wan", "wan5b", "ltx"].includes(raw.engine) ? raw.engine : "wan";
+      const base = { mode, ratio, voice, style, tone, brief, engine };
       const head = "Viết kịch bản video ngắn theo định dạng JSON của skill video-scripter. Lời thoại tiếng Việt.";
 
       if (mode === "storyboard") {
@@ -302,6 +307,62 @@ export function buildJob(type, raw, refs = {}) {
         agent: "writer",
         title: `Livestream ${minutes} phút · ${first.slice(0, 60)}`,
         input: { products, minutes, platform, offer, audience, host },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "image": {
+      const topic = str(raw.topic, "sản phẩm / chủ đề", { required: true, max: 300 });
+      const brief = str(raw.brief, "thông tin thêm", { max: 2000 });
+      const size = IMAGE_SIZES.includes(raw.size) ? raw.size : "1:1";
+      const style = VIDEO_STYLES[raw.style] ? raw.style : "real";
+      const count = [1, 2, 4].includes(Number(raw.count)) ? Number(raw.count) : 4;
+      const withText = raw.withText !== false;
+      let referenceImageId = null;
+      if (raw.referenceImageId) {
+        if (!refs.hasUpload?.(String(raw.referenceImageId))) throw new InputError("Ảnh sản phẩm không còn, hãy tải lại ảnh");
+        referenceImageId = String(raw.referenceImageId);
+      }
+      const sections = [
+        `Lên ý tưởng ${count} ảnh quảng cáo khác nhau theo định dạng JSON của skill image-prompter. Câu chữ tiếng Việt.`,
+        `Sản phẩm / chủ đề: ${topic}`,
+        `Khung ảnh: ${size} (${IMAGE_SIZE_NAMES[size]})`,
+        `Phong cách hình ảnh: ${VIDEO_STYLES[style]}`,
+        withText ? "Mỗi ảnh có headline, sub và cta để đặt chữ lên ảnh." : "Ảnh không cần chữ: để headline, sub, cta rỗng, chỉ viết caption.",
+      ];
+      if (brief) sections.push(`Thông tin thêm:\n${brief}`);
+      if (referenceImageId) sections.push('Có ảnh sản phẩm thật làm mẫu: prompt mô tả bối cảnh quanh "the product from the reference photo", không mô tả lại sản phẩm khác.');
+      return {
+        agent: "writer",
+        title: `Ảnh ${size} · ${topic.slice(0, 60)}`,
+        input: { topic, brief, size, style, count, withText, referenceImageId },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "plan": {
+      const topic = str(raw.topic, "kênh / sản phẩm", { required: true, max: 300 });
+      const brief = str(raw.brief, "thông tin thêm", { max: 2000 });
+      const tone = str(raw.tone, "giọng văn", { max: 100 });
+      const days = [7, 14].includes(Number(raw.days)) ? Number(raw.days) : 7;
+      const perDay = [1, 2].includes(Number(raw.perDay)) ? Number(raw.perDay) : 1;
+      const platform = CLONE_PLATFORMS[raw.platform] ? raw.platform : "facebook";
+      const start = /^\d{4}-\d{2}-\d{2}$/.test(String(raw.start ?? "")) ? raw.start : null;
+      if (!start) throw new InputError("Chọn ngày bắt đầu");
+      const pillars = (Array.isArray(raw.pillars) && raw.pillars.length ? raw.pillars : Object.keys(PILLARS)).map(String);
+      for (const p of pillars) if (!PILLARS[p]) throw new InputError(`Nhóm nội dung không hợp lệ: ${p}`);
+      const sections = [
+        `Lên kế hoạch content ${days} ngày, mỗi ngày ${perDay} bài ${CLONE_PLATFORMS[platform]}, theo định dạng của skill content-planner. Viết sẵn từng bài, tiếng Việt.`,
+        `Kênh / sản phẩm: ${topic}`,
+        `Ngày 1 là ${start} (${weekday(start)}). Chọn khung giờ đăng hợp lý cho từng ngày.`,
+        `Xen kẽ các nhóm: ${[...new Set(pillars)].map((p) => PILLARS[p]).join(", ")}.`,
+      ];
+      if (brief) sections.push(`Thông tin thêm (khách hàng, ưu đãi có thật, sự kiện trong tuần…):\n${brief}`);
+      if (tone) sections.push(`Giọng văn: ${tone}`);
+      return {
+        agent: "writer",
+        title: `Kế hoạch ${days} ngày · ${topic.slice(0, 60)}`,
+        input: { topic, brief, tone, days, perDay, platform, start, pillars: [...new Set(pillars)] },
         prompt: sections.join("\n\n"),
       };
     }

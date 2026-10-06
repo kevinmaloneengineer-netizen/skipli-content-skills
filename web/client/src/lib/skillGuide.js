@@ -66,4 +66,22 @@ export const GUIDE = {
     ],
     output: ["Kịch bản theo từng mốc thời gian", "Câu chốt đơn và xử lý từ chối", "Trả lời nhanh bình luận hay gặp"],
   },
+  image: {
+    perks: ["GPU miễn phí", "Chữ tiếng Việt sửa được", "Đúng khung nền tảng"],
+    steps: [
+      ["Nhập sản phẩm", "Tên, điểm nổi bật, có thể kèm ảnh sản phẩm thật."],
+      ["AI lên ý tưởng", "Mỗi ảnh một góc khác nhau, kèm tiêu đề, dòng phụ, nút kêu gọi."],
+      ["Vẽ và chỉnh chữ", "GPU vẽ ảnh, bạn sửa chữ ngay trên ảnh rồi tải PNG."],
+    ],
+    output: ["1 đến 4 ảnh đúng khung bạn chọn", "Tiêu đề, dòng phụ, nút kêu gọi sửa trực tiếp", "Caption đăng kèm từng ảnh"],
+  },
+  schedule: {
+    perks: ["Kéo thả đổi ngày", "AI lên kế hoạch tuần", "Gợi ý giờ đăng"],
+    steps: [
+      ["Thêm bài", "Từ thư viện, từ kết quả AI, hoặc viết mới."],
+      ["Xếp lịch", "Chọn ngày giờ, kéo thả sang ngày khác, xem theo tuần hoặc tháng."],
+      ["Đăng và đánh dấu", "Tới giờ sao chép bài đi đăng, bấm đã đăng để theo dõi."],
+    ],
+    output: ["Lịch tuần, tháng của mọi bài sắp đăng", "Kế hoạch 7 hoặc 14 ngày viết sẵn bài", "Theo dõi bài đã đăng, chưa đăng"],
+  },
 };

@@ -8,6 +8,7 @@ export function memoryAdapter() {
   const jobs = new Map();
   const library = new Map();
   const feedback = [];
+  const schedule = new Map();
   let seeded = false;
 
   return {
@@ -34,6 +35,15 @@ export function memoryAdapter() {
     },
     async deleteItem(id) {
       library.delete(id);
+    },
+    async loadSchedule() {
+      return [...schedule.values()].map(clone);
+    },
+    async saveSlot(slot) {
+      schedule.set(slot.id, clone(slot));
+    },
+    async deleteSlot(id) {
+      schedule.delete(id);
     },
     async saveFeedback(item) {
       feedback.push(clone(item));
