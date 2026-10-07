@@ -4,6 +4,8 @@ import { CopyIcon, PenIcon, RetryIcon, SaveIcon } from "../components/Icons.jsx"
 import CloneBoard from "../components/CloneBoard.jsx";
 import ImageBoard from "../components/ImageBoard.jsx";
 import PlanBoard from "../components/PlanBoard.jsx";
+import FanpageResult from "../components/FanpageResult.jsx";
+import ReelsResult from "../components/ReelsResult.jsx";
 import { BackLink } from "../components/SkillShell.jsx";
 import { JobHistory, StatusBadge } from "../components/JobBits.jsx";
 import SkillArt from "../components/SkillArt.jsx";
@@ -162,6 +164,8 @@ function Result({ job, onSave }) {
   if (job.type === "livestream") return <LivestreamResult job={job} />;
   if (job.type === "image" && job.images) return <ImageBoard job={job} />;
   if (job.type === "plan") return <PlanBoard job={job} />;
+  if (job.type === "fanpage") return <FanpageResult markdown={job.result} />;
+  if (["fb-reels", "threads"].includes(job.type)) return <ReelsResult markdown={job.result} />;
   if (job.type === "video" && job.video) return <VideoResult job={job} />;
   return <Markdown className="card md">{job.result}</Markdown>;
 }

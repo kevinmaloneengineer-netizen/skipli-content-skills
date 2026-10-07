@@ -6,6 +6,7 @@ import { ago } from "../lib/format.js";
 import { useParallax } from "../lib/motion.js";
 import { FLOWS } from "../lib/workflows.js";
 import Backdrop from "./Backdrop.jsx";
+import ChatWidget from "./ChatWidget.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
 import Footer from "./Footer.jsx";
 import HealthStatus from "./HealthStatus.jsx";
@@ -217,6 +218,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
+      <ChatWidget />
       <CommandPalette open={palette} onClose={closePalette} onToggleTheme={toggle} />
     </div>
   );

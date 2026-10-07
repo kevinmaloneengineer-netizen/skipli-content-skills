@@ -299,8 +299,16 @@ const VIDEO = JSON.stringify({
 
 const REPLIES = { "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
+function mockChat(q) {
+  const url = q.match(/(?:https?:\/\/)?(?:www\.)?facebook\.com\/[^\s]+/i)?.[0];
+  if (/quét|phân tích/i.test(q) && url) return `Được, mình chuẩn bị quét **100 reel mới nhất** của kênh này, chọn ra 5 reel đáng học nhất.\n\n\`\`\`action\n{"type":"fb-reels","input":{"url":"${url}","top":5,"depth":100}}\n\`\`\``;
+  if (/viết|bài/i.test(q)) return 'Mình viết giúp **3 phương án bài Facebook**. Bấm Chạy là có sau khoảng 1 phút.\n\n```action\n{"type":"write","input":{"platform":"facebook","topic":"Lẩu bò nhúng giấm, combo 2 người","variants":3}}\n```';
+  return "Chào bạn! Mình là **Trợ lý Skipli**. Mình có thể:\n- Giải thích từng công cụ và cách dùng\n- Tư vấn content cho nhà hàng\n- Chạy công cụ giúp bạn, ví dụ: *\"quét kênh facebook.com/tenkenh\"* hoặc *\"viết 3 bài cho quán lẩu\"*\n\n_(Dữ liệu mẫu, GOCLAW_MOCK=1)_";
+}
+
 export async function mockReply({ kind, prompt, delayMs, signal }) {
   await sleep(delayMs, undefined, { signal });
+  if (kind === "chat") return { content: mockChat(prompt), usage: null };
   if (/mock-fail/i.test(prompt)) throw new Error("Mock failure requested (input contains 'mock-fail')");
   return { content: REPLIES[kind] ?? WRITE, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
 }

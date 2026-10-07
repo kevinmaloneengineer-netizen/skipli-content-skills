@@ -65,6 +65,19 @@ export function createGoclawClient({ url, token, userId, mock, mockDelayMs }) {
       }
     },
 
+    /** Multi-turn chat (the web assistant): system + history in, one answer out. */
+    async chat({ agent, messages, timeoutMs = 120_000, signal }) {
+      if (mock) return mockReply({ kind: "chat", prompt: messages.at(-1)?.content ?? "", delayMs: Math.min(mockDelayMs, 800), signal });
+      const res = await request("POST", "/v1/chat/completions", { body: { model: `goclaw:${agent}`, messages, stream: false }, timeoutMs, signal });
+      if (res.status !== 200) {
+        const msg = res.json?.error?.message ?? res.json?.error ?? res.text.slice(0, 500);
+        throw new Error(`GoClaw ${res.status}: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`);
+      }
+      const content = res.json?.choices?.[0]?.message?.content;
+      if (typeof content !== "string" || !content.trim()) throw new Error("GoClaw returned an empty answer");
+      return { content, usage: res.json.usage ?? null };
+    },
+
     /**
      * Run one agent turn in a fresh GoClaw session (each call gets its own
      * session key server-side, so earlier results never leak into a new run).

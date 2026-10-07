@@ -10,6 +10,7 @@ import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
 import { buildJob, InputError } from "./prompts.mjs";
 import { openStore } from "./store/index.mjs";
+import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 
@@ -179,6 +180,31 @@ export async function createApp(config, adapter) {
     res.status(201).json({ ok: true });
   });
 
+  api.post("/chat", async (req, res) => {
+    const raw = Array.isArray(req.body?.messages) ? req.body.messages.slice(-12) : [];
+    const messages = raw
+      .filter((m) => (m?.role === "user" || m?.role === "assistant") && typeof m.content === "string" && m.content.trim())
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+    if (!messages.length || messages.at(-1).role !== "user") throw new HttpError(400, "Thiếu câu hỏi");
+    const path = typeof req.body?.path === "string" ? req.body.path.slice(0, 200) : "";
+    const jobId = path.match(/^\/jobs\/([0-9a-f-]{36})$/)?.[1];
+    const job = jobId ? await store.getJob(jobId) : null;
+    try {
+      const system = systemPrompt({ path, job });
+      let content = goclaw.mock ? null : await askDirect({ system, messages: messages.slice(-8) });
+      if (content === null) {
+        // GoClaw agents keep their own system prompt and ignore ours, so the instructions ride on the latest user turn.
+        const last = messages.at(-1);
+        const turns = [...messages.slice(0, -1), { role: "user", content: `${system}\n\n=== TIN NHẮN CỦA NGƯỜI DÙNG ===\n${last.content}` }];
+        ({ content } = await goclaw.chat({ agent: config.agents.writer, messages: turns }));
+      }
+      res.json(extractAction(content, { hasUpload: video.hasUpload }));
+    } catch (e) {
+      console.error("chat:", e.message);
+      throw new HttpError(502, /429|usage|limit/i.test(e.message) ? "Trợ lý đang hết lượt dùng, thử lại sau nhé." : "Trợ lý chưa trả lời được, thử lại sau ít phút.");
+    }
+  });
+
   api.get("/jobs", (req, res) => {
     const { type } = req.query;
     const limit = Math.min(200, Number(req.query.limit) || 50);
@@ -291,7 +317,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));

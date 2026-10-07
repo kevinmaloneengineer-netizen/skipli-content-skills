@@ -46,6 +46,8 @@ Then a section **Pattern chung / Common patterns** (3–5 bullets: hook styles, 
 
 ## Rules
 
+- If every source fails with `RATE_LIMITED` (HTTP 429), do not retry in a loop and never invent posts: answer in one or two plain sentences that Threads is temporarily limiting requests and to run it again in 30 to 60 minutes.
+- **Write for a business owner, not a developer:** never mention scripts, flags, HTTP codes, "chạy lại script"; say what was scanned in plain words.
 - **Hạn chế dấu gạch ngang.** Không dùng "—", "–" hay " - " để nối ý trong câu hoặc trong tiêu đề; dùng dấu phẩy, dấu chấm hoặc dấu hai chấm. Khoảng số viết "từ 3 đến 5", không viết "3–5". (Gạch đầu dòng của danh sách thì vẫn dùng bình thường.)
 
 - **Always run the script fresh for every request.** Never reuse results from earlier in the conversation unless asked.

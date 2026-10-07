@@ -23,6 +23,7 @@ import re
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 HEADERS = {
@@ -40,6 +41,33 @@ def fail(msg):
 
 
 def fetch(url):
+    """GET with retries: Threads answers 429 when one IP scans a lot; back off and try again before giving up."""
+    for attempt in range(3):
+        try:
+            return _fetch_once(url)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 2:
+                if e.code == 429:
+                    try:
+                        return _fetch_via_reader(url)
+                    except Exception:  # noqa: BLE001
+                        raise RuntimeError("RATE_LIMITED: Threads is temporarily limiting this network (HTTP 429); try again in 30 to 60 minutes") from e
+                raise
+            time.sleep(8 * (attempt + 1))
+
+
+def _fetch_via_reader(url):
+    """Fallback when Threads rate-limits this IP: a public page reader (r.jina.ai) fetches the same public page
+    from its own servers and returns the raw HTML, which carries the same embedded post JSON."""
+    req = urllib.request.Request("https://r.jina.ai/" + url, headers={"X-Return-Format": "html", "User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        html = r.read().decode("utf-8", "ignore")
+    if not extract_posts(html):
+        raise RuntimeError("reader returned no posts")
+    return html
+
+
+def _fetch_once(url):
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read().decode("utf-8", "ignore")
