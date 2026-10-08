@@ -84,6 +84,16 @@ export const SKILLS = [
     plan: ["Quét video theo từ khoá, hashtag hoặc kênh", "Xếp hạng theo lượt xem, thích, bình luận, chia sẻ", "AI tóm tắt hook, nhịp dựng và lời thoại của từng video"],
   },
   {
+    id: "maps",
+    type: "maps",
+    path: "/maps",
+    tone: "brick",
+    title: "Phân tích review Google Maps",
+    short: "Review đối thủ",
+    pitch: "Đọc 80 đánh giá Google Maps gần nhất của quán đối thủ: khách khen gì, chê gì, và quán bạn nên nhấn vào điểm nào.",
+    eta: "1 đến 2 phút",
+    etaLong: "Mở Google Maps và đọc đánh giá mất khoảng 30 giây, AI phân tích thêm chưa tới 1 phút.",
+  },  {
     id: "fanpage",
     type: "fanpage",
     path: "/fanpage",
@@ -127,7 +137,37 @@ export const SKILLS = [
     eta: "khoảng 1 phút",
     etaLong: "Thường mất khoảng 1 phút.",
   },
-];
+  {
+    id: "menu",
+    type: "menu",
+    path: "/menu",
+    tone: "mint",
+    title: "Viết menu và mô tả món",
+    short: "Menu",
+    pitch: "Từ danh sách món, AI viết dòng menu in, mô tả cho GrabFood, ShopeeFood và caption đăng mạng xã hội cho từng món.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút.",
+  },  {
+    id: "review",
+    type: "review",
+    path: "/review",
+    tone: "amber",
+    title: "Trả lời review khách",
+    short: "Trả lời review",
+    pitch: "Dán đánh giá của khách, AI viết 3 câu trả lời khéo léo. Review chê có thêm cách xin lỗi và mời khách quay lại.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút.",
+  },  {
+    id: "inbox",
+    type: "inbox",
+    path: "/inbox",
+    tone: "indigo",
+    title: "Kịch bản inbox chốt đơn",
+    short: "Inbox",
+    pitch: "Câu trả lời mẫu cho những gì khách hay nhắn: hỏi giá, ship, còn hàng, đặt bàn, chê đắt. Câu nào cũng dẫn tới chốt đơn.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút.",
+  },];
 
 /** Home-page grouping by skill type: each type is one pinned, horizontally scrolling scene. */
 export const CATEGORIES = [
@@ -138,7 +178,7 @@ export const CATEGORIES = [
     word: "NGHIÊN CỨU",
     dark: true,
     desc: "Biết đối thủ đang làm gì hiệu quả, bài nào viral và vì sao viral, trước khi bạn viết chữ nào.",
-    skills: ["reels", "threads", "tiktok", "fanpage"],
+    skills: ["reels", "threads", "tiktok", "fanpage", "maps"],
     deco: ["search", "chart", "heart", "eye", "play", "trend", "comment", "search"],
   },
   {
@@ -148,16 +188,16 @@ export const CATEGORIES = [
     word: "SÁNG TẠO",
     dark: true,
     desc: "Biến những gì học được thành bài viết, hình ảnh và kịch bản của riêng bạn, không chép của ai.",
-    skills: ["write", "clone", "video", "image", "livestream"],
+    skills: ["write", "clone", "video", "image", "livestream", "menu"],
     deco: ["pen", "spark", "image", "quote", "lines", "wand", "spark", "pen"],
   },
   {
     id: "organize",
     tag: "Tổ chức & vận hành",
-    title: "Quản lý & đăng bài",
-    word: "ĐĂNG BÀI",
-    desc: "Giữ lại mẫu hay, xếp lịch và đăng đúng giờ khách đang online.",
-    skills: ["library", "schedule"],
+    title: "Đăng bài & chăm khách",
+    word: "CHĂM KHÁCH",
+    desc: "Giữ lại mẫu hay, xếp lịch đăng đúng giờ, trả lời review và tin nhắn để khách quay lại.",
+    skills: ["library", "schedule", "review", "inbox"],
     deco: ["calendar", "clock", "bookmark", "check", "folder", "bell", "check", "clock"],
   },
 ];

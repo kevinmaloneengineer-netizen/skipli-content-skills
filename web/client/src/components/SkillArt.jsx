@@ -217,7 +217,91 @@ function Video() {
   );
 }
 
-const ART = { reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream };
+function Menu() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(70 12) rotate(-3 60 63)">
+        <rect width="120" height="126" rx="12" className="art-card" />
+        <rect x="34" y="12" width="52" height="9" rx="4.5" className="art-fg" />
+        {[0, 1, 2, 3].map((i) => (
+          <g key={i} transform={`translate(14 ${36 + i * 22})`}>
+            <rect width={[58, 46, 64, 50][i]} height="7" rx="3.5" className="art-mid" />
+            <rect x="74" width="18" height="7" rx="3.5" className={i === 1 ? "art-hi" : "art-mid"} />
+          </g>
+        ))}
+      </g>
+      <g transform="translate(232 76)">
+        <circle r="36" className="art-hi" />
+        <circle r="26" className="art-card" />
+        <path d="M-14 4 h28 a14 14 0 0 1 -28 0z" className="art-fg" />
+        <path d="M-6 -4 c0 -6 6 -6 6 -12 M4 -4 c0 -6 6 -6 6 -12" fill="none" strokeWidth="3" strokeLinecap="round" className="art-stroke-fg" />
+      </g>
+    </svg>
+  );
+}
+
+function Review() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(36 22)">
+        <rect width="150" height="58" rx="16" className="art-card" />
+        {[0, 1, 2, 3, 4].map((k) => (
+          <path key={k} transform={`translate(${20 + k * 18} 20)`} d="M0 -7 l2.1 4.4 4.9 .6 -3.6 3.4 .9 4.8 -4.3 -2.3 -4.3 2.3 .9 -4.8 -3.6 -3.4 4.9 -.6z" className={k < 2 ? "art-fg" : "art-mid"} />
+        ))}
+        <rect x="14" y="36" width="108" height="8" rx="4" className="art-mid" />
+      </g>
+      <g transform="translate(124 74)">
+        <rect width="160" height="54" rx="16" className="art-fg" />
+        <rect x="16" y="16" width="112" height="8" rx="4" className="art-hi" />
+        <rect x="16" y="31" width="80" height="8" rx="4" className="art-mid" />
+        <path d="M136 54 l10 12 v-12z" className="art-fg" />
+      </g>
+    </svg>
+  );
+}
+
+function Inbox() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(108 10)">
+        <rect width="104" height="132" rx="16" className="art-fg" />
+        <rect x="7" y="9" width="90" height="114" rx="11" className="art-card" />
+        <rect x="16" y="24" width="50" height="16" rx="8" className="art-mid" />
+        <rect x="38" y="48" width="50" height="16" rx="8" className="art-hi" />
+        <rect x="16" y="72" width="60" height="16" rx="8" className="art-mid" />
+        <rect x="46" y="96" width="42" height="16" rx="8" className="art-hi" />
+      </g>
+      <g transform="translate(250 50)">
+        <circle r="22" className="art-card" />
+        <path d="M-9 0 l6 6 12 -12" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className="art-stroke-fg" />
+      </g>
+      <circle cx="66" cy="96" r="14" className="art-mid" />
+    </svg>
+  );
+}
+
+function Maps() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(40 20)">
+        <rect width="120" height="110" rx="14" className="art-card" />
+        <path d="M0 70 C30 60 50 90 120 64 V96 a14 14 0 0 1 -14 14 H14 A14 14 0 0 1 0 96z" className="art-mid" />
+        <path d="M60 18 a18 18 0 0 1 18 18 c0 14 -18 32 -18 32 s-18 -18 -18 -32 a18 18 0 0 1 18 -18z" className="art-fg" />
+        <circle cx="60" cy="36" r="7" className="art-hi" />
+      </g>
+      {[0, 1, 2].map((i) => (
+        <g key={i} transform={`translate(182 ${26 + i * 34})`}>
+          <rect width="104" height="26" rx="13" className={i === 0 ? "art-hi" : "art-card"} />
+          {[0, 1, 2, 3, 4].map((k) => (
+            <path key={k} transform={`translate(${12 + k * 15} 13)`} d="M0 -6 l1.8 3.8 4.2 .5 -3.1 2.9 .8 4.1 -3.7 -2 -3.7 2 .8 -4.1 -3.1 -2.9 4.2 -.5z" className={k < 5 - i * 2 ? "art-fg" : "art-mid"} />
+          ))}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+const ART = { reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, menu: Menu, review: Review, inbox: Inbox, maps: Maps };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

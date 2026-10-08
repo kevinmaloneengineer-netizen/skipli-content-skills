@@ -84,4 +84,36 @@ export const GUIDE = {
     ],
     output: ["Lịch tuần, tháng của mọi bài sắp đăng", "Kế hoạch 7 hoặc 14 ngày viết sẵn bài", "Theo dõi bài đã đăng, chưa đăng"],
   },
-};
+  menu: {
+    perks: ["Tối đa 12 món", "3 kiểu nội dung mỗi món", "Không bịa giá"],
+    steps: [
+      ["Liệt kê món", "Tên món, giá, nguyên liệu nổi bật."],
+      ["Chọn nơi dùng", "Menu in, app giao đồ ăn hay mạng xã hội."],
+      ["Nhận nội dung", "Mỗi món một thẻ, sao chép là dùng."],
+    ],
+    output: ["Dòng menu in ngắn gọn", "Mô tả cho GrabFood, ShopeeFood", "Caption mạng xã hội và gợi ý món ăn kèm"],
+  },  review: {
+    perks: ["3 phương án", "An toàn khi đăng công khai"],
+    steps: [
+      ["Dán đánh giá", "Từ Google Maps, Facebook hay Foody."],
+      ["Chọn giọng", "Chân thành, chuyên nghiệp hay gần gũi."],
+      ["Đăng trả lời", "Sao chép phương án ưng ý."],
+    ],
+    output: ["Khách đang nói gì và cảm xúc ra sao", "3 câu trả lời khác giọng", "Việc nên làm thêm để khách quay lại"],
+  },  inbox: {
+    perks: ["8 đến 12 tình huống", "Hướng tới chốt đơn"],
+    steps: [
+      ["Mô tả cửa hàng", "Bán gì, giá, chính sách có thật."],
+      ["Chọn kênh", "Messenger, Zalo hoặc TikTok."],
+      ["Lưu mẫu trả lời", "Sao chép từng tình huống khi khách nhắn."],
+    ],
+    output: ["Câu trả lời cho từng câu khách hay hỏi", "Tin nhắn gửi lại khi khách im lặng", "Mẹo chốt đơn qua inbox"],
+  },  maps: {
+    perks: ["Miễn phí", "Không cần đăng nhập", "80 đánh giá mỗi lần"],
+    steps: [
+      ["Dán link quán", "Link Google Maps, hoặc tên quán kèm khu vực."],
+      ["Đọc đánh giá", "Lấy khoảng 80 đánh giá gần nhất, đếm số sao."],
+      ["Tìm điểm yếu", "Khách khen gì, chê gì, và cơ hội cho quán bạn."],
+    ],
+    output: ["Phân bố số sao", "Bảng điểm khen, điểm chê kèm trích dẫn", "Việc nên làm để hơn đối thủ"],
+  },};

@@ -11,21 +11,26 @@ export function toPlainText(md) {
     .trim();
 }
 
-/** Split a content-writer answer into "## Phương án …" sections + everything else (notes). */
-export function splitVariants(md) {
+/**
+ * Split an answer into copyable "## Phương án …" sections + everything else (notes).
+ * Other skills use their own heading word: "## Món: …", "## Tình huống: …", "## Bộ 1 · …".
+ */
+export function splitVariants(md, prefix = "Phương án") {
   const variants = [];
   const rest = [];
+  const intro = [];
+  const head = new RegExp(`^## ((?:${prefix})[^\\n]*)\\n([\\s\\S]*)$`, "i");
   for (const part of String(md ?? "").split(/^(?=## )/m)) {
-    const m = part.match(/^## (Phương án[^\n]*)\n([\s\S]*)$/i);
+    const m = part.match(head);
     if (!m) {
-      rest.push(part);
+      (variants.length ? rest : intro).push(part); // text before the first card is a lead-in
       continue;
     }
     const [body, ...tail] = m[2].split(/^---\s*$/m); // notes after a rule are not part of the post
-    variants.push({ title: m[1].trim(), body: body.trim() });
+    variants.push({ title: m[1].replace(/^(Món|Tình huống):\s*/i, "").trim(), body: body.trim() });
     if (tail.length) rest.push(tail.join("---"));
   }
-  return { variants, rest: rest.join("\n").trim() };
+  return { variants, intro: intro.join("\n").trim(), rest: rest.join("\n").trim() };
 }
 
 export async function copyText(text) {

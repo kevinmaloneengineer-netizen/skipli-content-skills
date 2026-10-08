@@ -16,6 +16,10 @@ import SchedulePage from "./pages/SchedulePage.jsx";
 import ThreadsPage from "./pages/ThreadsPage.jsx";
 import VideoPage from "./pages/VideoPage.jsx";
 import WritePage from "./pages/WritePage.jsx";
+import MapsPage from "./pages/MapsPage.jsx";
+import InboxPage from "./pages/InboxPage.jsx";
+import MenuPage from "./pages/MenuPage.jsx";
+import ReviewPage from "./pages/ReviewPage.jsx";
 
 /** Remount the writer when its query (?ref, ?template) changes so the form re-prefills. */
 function WriteRoute() {
@@ -40,6 +44,10 @@ export default function App() {
               <Route path="livestream" element={<LivestreamPage />} />
               <Route path="image" element={<ImagePage />} />
               <Route path="schedule" element={<SchedulePage />} />
+              <Route path="menu" element={<MenuPage />} />
+              <Route path="review" element={<ReviewPage />} />
+              <Route path="inbox" element={<InboxPage />} />
+              <Route path="maps" element={<MapsPage />} />
               <Route path="library" element={<LibraryPage />} />
               <Route path="history" element={<HistoryPage />} />
               <Route path="jobs/:id" element={<JobPage />} />

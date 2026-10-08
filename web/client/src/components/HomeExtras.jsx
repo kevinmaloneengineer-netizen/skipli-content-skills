@@ -61,7 +61,7 @@ export default function HomeExtras() {
     ["runs", stats?.runs, "Lần chạy hoàn tất", "Bài viết, báo cáo, video AI đã làm xong"],
     ["reels", stats?.reels, "Reel đối thủ đã quét", "Đọc kèm cảm xúc, bình luận, chia sẻ"],
     ["saved", stats?.saved, "Bài đã lưu", "Sẵn sàng dùng lại trong thư viện"],
-    ["tools", ready.length, "Công cụ sẵn sàng", `Thêm ${SKILLS.length - ready.length} công cụ đang phát triển`],
+    ["tools", ready.length, "Công cụ sẵn sàng", SKILLS.length > ready.length ? `Thêm ${SKILLS.length - ready.length} công cụ đang phát triển` : "Nghiên cứu, sáng tạo, đăng bài và chăm khách"],
   ];
   const byTool = ready
     .filter((s) => s.type)
@@ -114,7 +114,7 @@ export default function HomeExtras() {
               <span className="hx-tag">Cách dùng</span>
               <h2>3 bước cho một tuần content</h2>
             </div>
-            <p className="hx-lead">Không cần biết hết 11 công cụ. Đi theo đúng thứ tự này, mỗi tuần bạn có đủ bài để đăng mà vẫn bám sát những gì khách đang thích.</p>
+            <p className="hx-lead">Không cần biết hết {SKILLS.length} công cụ. Đi theo đúng thứ tự này, mỗi tuần bạn có đủ bài để đăng mà vẫn bám sát những gì khách đang thích.</p>
           </div>
           <ol>
             {GUIDE_STEPS.map((s) => (

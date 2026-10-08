@@ -297,7 +297,74 @@ const VIDEO = JSON.stringify({
   ],
 }, null, 2);
 
-const REPLIES = { "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const REVIEW = `**Khách đang nói gì:** khen nước lẩu đậm đà nhưng phải chờ món khá lâu, hơi thất vọng.
+
+## Phương án 1 · Chân thành
+Dạ quán cảm ơn anh đã ghé và khen nước lẩu ạ. Quán thành thật xin lỗi vì hôm đó anh phải chờ món lâu, quán đã nhắc bếp chuẩn bị sẵn phần ăn vào giờ cao điểm. Mong lần tới được phục vụ anh nhanh và chu đáo hơn ạ.
+
+## Phương án 2 · Chuyên nghiệp
+Cảm ơn anh đã dành thời gian đánh giá. Quán ghi nhận góp ý về thời gian lên món và đang điều chỉnh quy trình giờ cao điểm. Anh có thể inbox [SỐ ĐIỆN THOẠI] để quán gửi lời xin lỗi riêng ạ.
+
+## Phương án 3 · Gần gũi
+Hihi cảm ơn anh mê nước lẩu nhà mình nha! Vụ chờ lâu là lỗi của quán, tụi mình xin lỗi anh nhiều. Lần sau anh ghé báo tên, quán ưu tiên lên món cho anh liền ạ.
+
+---
+**Việc nên làm thêm:**
+- Chuẩn bị sẵn khay rau, thịt vào giờ cao điểm.
+- Nhắn riêng cho khách để xin lỗi.`;
+const MENU = `## Món: Lẩu bò nhúng giấm
+**Menu in:** Lẩu bò nhúng giấm chua thanh, thịt bò mềm cuốn rau rừng
+**Mô tả app giao đồ ăn:** Nồi giấm chua thanh nấu với sả và hành, ăn kèm thịt bò thái mỏng, bánh tráng và rau rừng. Phần vừa cho 2 người.
+**Caption mạng xã hội:** Trời se lạnh là phải có nồi bò nhúng giấm 🍲\nCuốn một miếng là ghiền, inbox đặt bàn nha!
+**Gợi ý ăn kèm:** Gỏi bò bóp thấu
+
+## Món: Gỏi bò bóp thấu
+**Menu in:** Gỏi bò bóp thấu chua ngọt, giòn mát
+**Mô tả app giao đồ ăn:** Bò tái chanh trộn khế, chuối chát và đậu phộng rang, chua ngọt giòn mát. Hợp ăn khai vị.
+**Caption mạng xã hội:** Khai vị kiểu miền Tây, giòn sần sật 😋
+**Gợi ý ăn kèm:** Lẩu bò nhúng giấm`;
+const INBOX = `## Tình huống: Khách hỏi giá
+**Khách nhắn:** "Shop ơi áo này bao nhiêu?"
+**Trả lời:**
+Dạ áo này giá [GIÁ] ạ, chất cotton mát, có 4 màu.
+Mình mặc size nào để shop check còn hàng ạ?
+**Nếu khách im lặng:** Dạ mẫu này đang được hỏi nhiều, mình cần shop giữ size giúp không ạ?
+
+## Tình huống: Khách chê đắt
+**Khách nhắn:** "Sao đắt vậy shop"
+**Trả lời:**
+Dạ shop hiểu ạ. Áo dùng vải [CHẤT LIỆU], giặt nhiều không xù, đổi size miễn phí trong 7 ngày.
+Mình thử 1 cái trước nha?
+**Nếu khách im lặng:** Dạ shop gửi thêm ảnh khách mặc thật để mình tham khảo ạ.`;
+const MAPS = `## Tổng quan
+Lẩu Bò Quán Gỗ được 3,8 sao trên 1.547 lượt đánh giá. Đã đọc 80 bài gần đây: 41 bài 5 sao, 14 bài từ 1 đến 2 sao.
+
+## Phân bố số sao
+| Số sao | Số bài |
+|---|---|
+| 5 sao | 41 |
+| 4 sao | 15 |
+| 3 sao | 10 |
+| 2 sao | 8 |
+| 1 sao | 6 |
+
+## Khách khen gì
+| Điểm khen | Số bài nhắc |
+|---|---|
+| Nước lẩu đậm đà | 24 |
+| Thịt bò mềm | 18 |
+| Phần ăn nhiều | 11 |
+
+## Khách chê gì
+| Điểm chê | Số bài nhắc |
+|---|---|
+| Vệ sinh | 9 |
+| Thái độ phục vụ | 7 |
+
+## Nên học và nên tránh
+- Nên: giữ nước lẩu đậm đà
+- Tránh: để khách ngồi gần khu rửa chén`;
+const REPLIES = { review: REVIEW, menu: MENU, inbox: INBOX, maps: MAPS, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 function mockChat(q) {
   const url = q.match(/(?:https?:\/\/)?(?:www\.)?facebook\.com\/[^\s]+/i)?.[0];

@@ -18,6 +18,10 @@ const INPUTS = {
   image: 'topic (bắt buộc), size ("1:1" | "4:5" | "9:16" | "16:9"), count (1 | 2 | 4), style (real | cinematic | pixar | anime | clay | cyberpunk)',
   plan: 'topic (kênh, bắt buộc), start (YYYY-MM-DD, bắt buộc), days (7 | 14), perDay (1 | 2), platform (facebook | threads | tiktok)',
   video: 'mode "topic", topic (bắt buộc), seconds (15 | 30 | 45 | 60), ratio ("9:16" | "16:9" | "1:1"), engine ("wan" | "ltx")',
+  review: "review (nội dung đánh giá của khách, bắt buộc), stars (1 đến 5), business (tên quán), style (giọng trả lời), facts (việc quán đã xử lý, ưu đãi có thật)",
+  menu: "dishes (chuỗi, mỗi dòng một món, tối đa 12, bắt buộc), business (tên và phong cách quán), use (in menu | app giao đồ ăn | mạng xã hội)",
+  inbox: 'business (cửa hàng hoặc quán, bắt buộc), kind ("shop" | "restaurant"), policies (giá, ship, giờ mở cửa có thật), channel (Messenger | Zalo | TikTok), tone',
+  maps: "place (link Google Maps hoặc tên quán kèm khu vực, bắt buộc), focus (điều muốn tìm hiểu)",
 };
 
 function knowledge() {
@@ -46,7 +50,7 @@ export function systemPrompt(context = {}) {
     "Câu hỏi thông tin (ai, cái gì, là gì, khi nào, vì sao...) thì TRẢ LỜI TRỰC TIẾP, không đề xuất công cụ. Nếu thông tin có thể đã cũ hoặc bạn không chắc thì nói rõ, đừng bịa. Chỉ được gợi ý thêm 1 câu ngắn về công cụ liên quan ở cuối nếu thật sự hữu ích, không kèm khối action.",
     "Cách đề xuất hành động: viết 1 câu giải thích, rồi một khối duy nhất ở cuối câu trả lời:",
     '```action\n{"type": "<loại công cụ>", "input": { ...các thông tin cần... }}\n```',
-    "QUAN TRỌNG: Khi người dùng NHỜ LÀM (động từ như quét, tìm bài, phân tích, viết, tạo, lên lịch) và yêu cầu quét kênh, phân tích fanpage, tìm bài viral, viết bài, nhân bản kênh, viết kịch bản livestream, tạo ảnh, tạo video hoặc lên lịch, KHÔNG tự làm trong khung chat (không tự viết bài, không tự phân tích): luôn đề xuất khối action của công cụ tương ứng để người dùng bấm Chạy. Khi người dùng hỏi có công cụ nào làm được việc gì, chỉ giới thiệu công cụ CỦA WEB NÀY (danh sách bên dưới), không giới thiệu phần mềm bên ngoài.",
+    "QUAN TRỌNG: Khi người dùng NHỜ LÀM (động từ như quét, tìm bài, phân tích, viết, tạo, lên lịch) và yêu cầu quét kênh, phân tích fanpage, tìm bài viral, viết bài, nhân bản kênh, viết kịch bản livestream, tạo ảnh, tạo video, lên lịch, trả lời review, phân tích review Google Maps, viết menu hoặc kịch bản inbox, KHÔNG tự làm trong khung chat (không tự viết bài, không tự phân tích): luôn đề xuất khối action của công cụ tương ứng để người dùng bấm Chạy. Khi người dùng hỏi có công cụ nào làm được việc gì, chỉ giới thiệu công cụ CỦA WEB NÀY (danh sách bên dưới), không giới thiệu phần mềm bên ngoài.",
     "Chỉ cần đủ thông tin BẮT BUỘC là đề xuất ngay, KHÔNG hỏi thêm thông tin tuỳ chọn (brief, tone, số lượng...): tự điền từ những gì người dùng đã nói, còn lại để mặc định. Thiếu thông tin bắt buộc thì mới hỏi lại (ví dụ xin link fanpage). Không bịa link, giá hay ưu đãi. Công cụ SẮP CÓ thì nói rõ là chưa dùng được và gợi ý cách khác. Không tự nói là đã chạy: người dùng sẽ bấm nút để chạy.",
     "",
     knowledge(),

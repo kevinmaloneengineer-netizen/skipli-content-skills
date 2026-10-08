@@ -5,6 +5,7 @@ import CloneBoard from "../components/CloneBoard.jsx";
 import ImageBoard from "../components/ImageBoard.jsx";
 import PlanBoard from "../components/PlanBoard.jsx";
 import FanpageResult from "../components/FanpageResult.jsx";
+import MapsResult from "../components/MapsResult.jsx";
 import ReelsResult from "../components/ReelsResult.jsx";
 import { BackLink } from "../components/SkillShell.jsx";
 import { JobHistory, StatusBadge } from "../components/JobBits.jsx";
@@ -43,6 +44,10 @@ function inputRows(job) {
       ["Giọng văn", i.tone],
     ],
     fanpage: [["Fanpage", i.url], ["Tìm hiểu thêm", i.focus]],
+    review: [["Đánh giá", i.review && (i.review.length > 200 ? `${i.review.slice(0, 200)}…` : i.review)], ["Số sao", i.stars ? `${i.stars} sao` : null], ["Quán", i.business], ["Giọng", i.style], ["Thông tin thêm", i.facts]],
+    menu: [["Món", i.dishes], ["Quán", i.business], ["Dùng cho", i.use]],
+    inbox: [["Kinh doanh", i.business], ["Loại", i.kind === "restaurant" ? "Nhà hàng, quán ăn" : "Bán hàng online"], ["Kênh", i.channel], ["Chính sách", i.policies], ["Giọng văn", i.tone]],
+    maps: [["Quán", i.place], ["Chú ý thêm", i.focus]],
     image: [["Sản phẩm", i.topic], ["Thông tin thêm", i.brief], ["Khung ảnh", i.size], ["Số ảnh", i.count], ["Có chữ trên ảnh", i.withText ? "Có" : "Không"], ["Ảnh sản phẩm", i.referenceImageId ? "Có" : null]],
     plan: [["Kênh", i.topic], ["Bắt đầu", i.start], ["Thời gian", i.days && `${i.days} ngày, ${i.perDay} bài/ngày`], ["Nền tảng", CLONE_PLATFORMS[i.platform]], ["Thông tin thêm", i.brief], ["Giọng văn", i.tone]],
     livestream: [
@@ -68,12 +73,14 @@ function inputRows(job) {
   return rows.filter(([, v]) => v !== undefined && v !== null && v !== "");
 }
 
-function Variants({ job, onSave }) {
+function Variants({ job, onSave, prefix }) {
   const copy = useCopy();
-  const { variants, rest } = splitVariants(job.result);
+  const { variants, intro, rest } = splitVariants(job.result, prefix);
   if (!variants.length) return <Markdown className="card md">{job.result}</Markdown>;
+  const name = job.input?.topic ?? job.input?.business ?? job.title;
   return (
     <>
+      {intro && <Markdown className="card md notes lead">{intro}</Markdown>}
       <div className="variants">
         {variants.map((v, i) => (
           <section key={i} className="card variant">
@@ -81,7 +88,7 @@ function Variants({ job, onSave }) {
               <h2>{v.title}</h2>
               <div className="actions">
                 <button className="btn small" onClick={() => copy(toPlainText(v.body))}><CopyIcon />Sao chép</button>
-                <button className="btn small" onClick={() => onSave(`${job.input?.topic ?? job.title} · ${v.title}`, toPlainText(v.body))}><SaveIcon />Lưu</button>
+                <button className="btn small" onClick={() => onSave(`${name} · ${v.title}`, toPlainText(v.body))}><SaveIcon />Lưu</button>
               </div>
             </div>
             <Markdown>{v.body}</Markdown>
@@ -148,6 +155,24 @@ function VideoResult({ job }) {
   );
 }
 
+/** What the fact check changed: invented numbers replaced, gift/free offers to double-check. */
+function FactCheck({ check }) {
+  if (!check || (!check.replaced && !check.warnings?.length)) return null;
+  return (
+    <div className="fact-check" role="status">
+      <b>Đã kiểm tra thông tin</b>
+      {check.replaced > 0 && <p>AI tự thêm {check.replaced} con số (giá, % giảm, giờ mở cửa) không có trong thông tin bạn nhập, đã đổi thành chỗ trống như [GIÁ], [ƯU ĐÃI], [GIỜ] để bạn tự điền.</p>}
+      {check.warnings?.length > 0 && (
+        <>
+          <p>Kiểm tra lại các ưu đãi sau, bạn chưa nhập chúng (sửa hoặc xoá trước khi đăng):</p>
+          <ul>{check.warnings.map((w) => <li key={w}>“{w}”</li>)}</ul>
+        </>
+      )}
+      <p className="fact-tip">Lần sau ghi giá, giờ mở cửa và ưu đãi thật vào ô thông tin thêm để AI dùng đúng.</p>
+    </div>
+  );
+}
+
 function Result({ job, onSave }) {
   if (ACTIVE.has(job.status)) return <Waiting job={job} />;
   if (job.status === "failed") {
@@ -159,7 +184,10 @@ function Result({ job, onSave }) {
     );
   }
   if (job.status === "canceled") return <section className="card empty">Tác vụ đã bị huỷ.</section>;
-  if (job.type === "write") return <Variants job={job} onSave={onSave} />;
+  if (job.type === "write" || job.type === "review") return <Variants job={job} onSave={onSave} />;
+  if (job.type === "menu") return <Variants job={job} onSave={onSave} prefix="Món" />;
+  if (job.type === "inbox") return <Variants job={job} onSave={onSave} prefix="Tình huống" />;
+  if (job.type === "maps") return <MapsResult job={job} />;
   if (job.type === "clone") return <CloneBoard job={job} />;
   if (job.type === "livestream") return <LivestreamResult job={job} />;
   if (job.type === "image" && job.images) return <ImageBoard job={job} />;
@@ -244,10 +272,12 @@ export default function JobPage() {
   const channel = (job.type === "fb-reels" && job.input?.mode === "channel") || job.type === "fanpage";
   const next = done
     ? [
-        (job.type === "fb-reels" || job.type === "threads" || job.type === "fanpage") && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
+        ["fb-reels", "threads", "fanpage", "maps"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
         channel && { to: `/clone?url=${url}`, label: "Nhân bản kênh này", hint: "Viết hàng loạt bài mới học từ kênh này" },
         job.type === "fb-reels" && job.input?.mode === "channel" && { to: `/fanpage?url=${url}`, label: "Phân tích fanpage này", hint: "Ngày giờ đăng, độ dài video, chủ đề ăn khách" },
-        job.type !== "video" && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
+        job.type === "maps" && { to: "/review", label: "Trả lời review của quán bạn", hint: "Xử lý khéo những điểm khách hay chê" },
+        job.type === "inbox" && { to: "/review", label: "Trả lời review khách", hint: "Giữ chân khách sau khi mua" },
+        !["video", "review", "inbox"].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
       ].filter(Boolean)
     : [];
   const full = job.type === "clone" || job.type === "image";
@@ -272,6 +302,7 @@ export default function JobPage() {
         </div>
       </header>
       {job.notice && <div className="notice" role="status">{job.notice}</div>}
+      {job.status === "done" && <FactCheck check={job.factCheck} />}
 
       <div className="job-layout">
         <div className="job-main">

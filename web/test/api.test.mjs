@@ -99,7 +99,7 @@ test("100-reel channel scan: free path tells the skill to page 100 reels itself"
   const j = (await call("POST", "/api/jobs", { type: "fb-reels", input: { url: "https://www.facebook.com/someshop/reels/", depth: 100 } })).body.job;
   assert.equal(j.input.depth, 100);
   const done = await waitFor(j.id, ["done"]);
-  assert.match(done.prompt, /Quét 100 reel mới nhất .*--count 100/);
+  assert.match(done.prompt, /Quét 100 reel gần nhất .*--count 100/);
   assert.equal(done.notice, null, "no backup configured is not an error");
   assert.equal(done.phase, null, "phase cleared when finished");
   const health = (await call("GET", "/api/health")).body;

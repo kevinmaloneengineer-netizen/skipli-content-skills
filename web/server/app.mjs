@@ -9,6 +9,7 @@ import { createJobRunner, ACTIVE } from "./jobs.mjs";
 import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
 import { buildJob, InputError } from "./prompts.mjs";
+import { CHECKED_TYPES, checkFacts } from "./facts.mjs";
 import { openStore } from "./store/index.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
@@ -104,7 +105,16 @@ export async function createApp(config, adapter) {
   // Tests build a config without `video`: keep their files out of the repo.
   const video = createVideoService(config.video ?? { dataDir: path.join(tmpdir(), `skipli-video-${process.pid}`), timeoutMs: 60_000, mock: config.goclaw.mock });
   await video.init();
-  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook }), finish: video.finish });
+  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock }),
+    finish: async (job, content, ctx) => {
+      if (CHECKED_TYPES.has(job.type)) {
+        // Prices, discounts, hours the user never gave → placeholders; gifts → warnings shown on the result page.
+        const { text, replaced, warnings } = checkFacts(content, Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n")); // what the user typed, not our prompt wording
+        return { result: text, fields: { factCheck: { replaced, warnings } } };
+      }
+      return video.finish(job, content, ctx);
+    },
+  });
   await runner.recover();
 
   async function jobSpec(type, input = {}) {

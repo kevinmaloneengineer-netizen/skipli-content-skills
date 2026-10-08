@@ -367,7 +367,90 @@ export function buildJob(type, raw, refs = {}) {
       };
     }
 
+    case "review": {
+      const review = str(raw.review, "nội dung đánh giá", { required: true, max: 3000 });
+      const stars = num(raw.stars, "số sao", 0, 5, 0);
+      const business = str(raw.business, "tên quán", { max: 120 });
+      const style = str(raw.style, "giọng trả lời", { max: 100 });
+      const facts = str(raw.facts, "thông tin thêm", { max: 1000 });
+      const sections = ["Viết 3 phương án trả lời công khai cho đánh giá dưới đây, theo skill review-replier, bằng tiếng Việt."];
+      sections.push(`Đánh giá của khách${stars ? ` (${stars} sao)` : ""}:\n<<<ĐÁNH GIÁ\n${review}\nĐÁNH GIÁ>>>`);
+      if (business) sections.push(`Tên quán / cửa hàng: ${business}`);
+      if (style) sections.push(`Giọng trả lời ưu tiên: ${style}`);
+      if (facts) sections.push(`Thông tin có thật từ chủ quán (đã xử lý gì, ưu đãi mời quay lại…):\n${facts}`);
+      return {
+        agent: "writer",
+        direct: "review-replier",
+        title: `Trả lời review${stars ? ` ${stars}★` : ""} · ${review.replace(/\s+/g, " ").slice(0, 50)}`,
+        input: { review, stars, business, style, facts },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "menu": {
+      const dishes = str(raw.dishes, "danh sách món", { required: true, max: 3000 });
+      const lines = dishes.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.length > 12) throw new InputError("Tối đa 12 món mỗi lần");
+      const business = str(raw.business, "tên và phong cách quán", { max: 200 });
+      const use = str(raw.use, "nơi dùng", { max: 100 });
+      const sections = [`Viết nội dung menu cho ${lines.length} món dưới đây theo skill menu-writer, bằng tiếng Việt.`, `Danh sách món (mỗi dòng một món):\n${dishes}`];
+      if (business) sections.push(`Quán: ${business}`);
+      if (use) sections.push(`Dùng chủ yếu cho: ${use}`);
+      return {
+        agent: "writer",
+        direct: "menu-writer",
+        title: `Menu ${lines.length} món · ${(business || lines[0]).slice(0, 50)}`,
+        input: { dishes, business, use },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "inbox": {
+      const business = str(raw.business, "cửa hàng / quán", { required: true, max: 300 });
+      const kind = raw.kind === "restaurant" ? "restaurant" : "shop";
+      const policies = str(raw.policies, "chính sách", { max: 2000 });
+      const channel = str(raw.channel, "kênh", { max: 40 }) || "Messenger";
+      const tone = str(raw.tone, "giọng văn", { max: 100 });
+      const sections = [
+        `Viết kịch bản trả lời inbox cho ${kind === "restaurant" ? "nhà hàng / quán ăn" : "cửa hàng bán hàng online"} theo skill inbox-scripter, bằng tiếng Việt.`,
+        `Kinh doanh: ${business}`,
+        `Kênh nhắn tin: ${channel}`,
+      ];
+      if (policies) sections.push(`Thông tin có thật (giá, ship, giờ mở cửa, đổi trả, đặt cọc…):\n${policies}`);
+      if (!/\d+\s*(k|đ|vnd|nghìn|ngàn|triệu)\b/i.test(`${business} ${policies}`)) sections.push("Người dùng KHÔNG cho giá: mọi chỗ nói về giá đều ghi [GIÁ], không tự đặt con số.");
+      else sections.push("Chưa có chính sách cụ thể: dùng chỗ trống như [GIÁ], [PHÍ SHIP], không tự bịa.");
+      if (tone) sections.push(`Giọng văn: ${tone}`);
+      return {
+        agent: "writer",
+        direct: "inbox-scripter",
+        title: `Kịch bản inbox · ${business.slice(0, 60)}`,
+        input: { business, kind, policies, channel, tone },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "maps": {
+      const place = str(raw.place, "quán cần phân tích", { required: true, max: 300 });
+      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
+      const isLink = /^https?:\/\//i.test(place);
+      if (isLink && !/google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./i.test(place)) throw new InputError("Link phải là link Google Maps của quán");
+      return {
+        agent: "scout",
+        direct: "review-analyzer",
+        title: `Review Google Maps · ${isLink ? "quán đối thủ" : place.slice(0, 60)}`,
+        input: { place, focus },
+        prompt: "", // filled by prepare.mjs once the reviews are collected
+      };
+    }
+
     default:
       throw new InputError(`Loại tác vụ không hợp lệ: ${type}`);
   }
+}
+
+/** Skill for older writer jobs that need no tools, so they can run straight on the model (llm.mjs). */
+export function directSkill(job) {
+  if (job.direct) return job.direct;
+  if (job.agent !== "writer") return null;
+  return { write: "content-writer", livestream: "livestream-scripter", plan: "content-planner", image: "image-prompter", video: "video-scripter", clone: "channel-cloner" }[job.type] ?? null;
 }

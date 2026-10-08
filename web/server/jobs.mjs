@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { directEnabled, runSkill } from "./llm.mjs";
+import { directSkill } from "./prompts.mjs";
 
 export const ACTIVE = new Set(["queued", "running"]);
 
@@ -40,18 +42,20 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
     try {
       // Server-side groundwork (e.g. fetching the 100-reel list) before the agent run.
       const setPhase = (phase) => store.updateJob(job.id, { phase });
-      const { prompt, notice } = await prepare(job, { setPhase, signal: ctrl.signal });
+      const { prompt, notice, fields, direct } = await prepare(job, { setPhase, signal: ctrl.signal });
       if (ctrl.signal.aborted) throw new Error("canceled");
-      await store.updateJob(job.id, { prompt, notice: notice ?? null });
-      const { content, usage } = await goclaw.run({
-        agent: agents[job.agent],
-        kind: job.type,
-        prompt,
-        timeoutMs,
-        signal: ctrl.signal,
-      });
+      await store.updateJob(job.id, { prompt, notice: notice ?? null, ...fields }); // fields: data the result page draws (e.g. the Maps scorecard)
+      // Jobs that need no tools run straight on the model when a key is set (much cheaper than an agent run).
+      // Scan jobs whose data the server collected itself (prepare → direct) also skip the agent.
+      const skill = direct?.skill ?? directSkill(job);
+      const { content, usage, meta } =
+        skill && directEnabled() && !goclaw.mock
+          ? await runSkill({ skill, from: direct?.from, prompt, signal: ctrl.signal })
+          : await goclaw.run({ agent: agents[job.agent], kind: job.type, prompt, timeoutMs, signal: ctrl.signal });
       const extra = await finish(job, content, { setPhase, signal: ctrl.signal });
-      await store.updateJob(job.id, { status: "done", result: extra?.result ?? content, usage, ...extra?.fields, phase: null, finishedAt: new Date().toISOString() });
+      // llm: which engine answered and how many model calls it took (rate limits show up as tries > 1).
+      const llm = meta ? { engine: "groq", ...meta } : { engine: "goclaw" };
+      await store.updateJob(job.id, { status: "done", result: extra?.result ?? content, usage, llm, ...extra?.fields, phase: null, finishedAt: new Date().toISOString() });
     } catch (e) {
       const canceled = ctrl.signal.aborted;
       if (!canceled) log.error(`job ${job.id} failed:`, e.message);
@@ -70,11 +74,12 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
   return {
     recover,
 
-    async submit({ type, agent, title, input, prompt }) {
+    async submit({ type, agent, direct = null, title, input, prompt }) {
       const job = {
         id: randomUUID(),
         type,
         agent,
+        direct,
         title,
         input,
         prompt,

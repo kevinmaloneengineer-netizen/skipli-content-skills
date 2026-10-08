@@ -6,7 +6,7 @@ const REEL_URL_G = new RegExp(REEL_URL.source, "g");
 
 /** "1.300" / "4,6" / "562K" → number (Vietnamese thousands dots, decimal comma). */
 export function toNumber(raw) {
-  const s = String(raw).replace(/\*|\s/g, "");
+  const s = String(raw).replace(/\*|\s|^[~≈<>]+|^(khoảng|gần|hơn)/gi, "");
   const m = s.match(/^([\d.,]+)([KkMm]?)$/);
   if (!m) return null;
   const n = Number(m[1].replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
