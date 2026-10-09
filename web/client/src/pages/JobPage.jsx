@@ -6,6 +6,7 @@ import ImageBoard from "../components/ImageBoard.jsx";
 import PlanBoard from "../components/PlanBoard.jsx";
 import FanpageResult from "../components/FanpageResult.jsx";
 import MapsResult from "../components/MapsResult.jsx";
+import CompareResult from "../components/CompareResult.jsx";
 import ReelsResult from "../components/ReelsResult.jsx";
 import { BackLink } from "../components/SkillShell.jsx";
 import { JobHistory, StatusBadge } from "../components/JobBits.jsx";
@@ -44,10 +45,15 @@ function inputRows(job) {
       ["Giọng văn", i.tone],
     ],
     fanpage: [["Fanpage", i.url], ["Tìm hiểu thêm", i.focus]],
+    tiktok: [["Từ khoá", i.keywords?.join(", ")], ["Tài khoản", i.profiles?.join(", ")], ["Số video", i.top], ["Kinh doanh của bạn", i.business]],
+    maps: [["Quán", i.place], ["Chú ý thêm", i.focus]],
+    compare: [["Fanpage", i.urls?.join("\n")], ["Chú ý thêm", i.focus]],
+    watch: [["Kênh theo dõi", i.url]],
+    campaign: [["Đối thủ", i.url], ["Kênh của bạn", i.topic], ["Thông tin thêm", i.brief], ["Bắt đầu", i.start], ["Thời gian", i.days && `${i.days} ngày, ${i.perDay} bài/ngày`], ["Nền tảng", CLONE_PLATFORMS[i.platform]]],
     review: [["Đánh giá", i.review && (i.review.length > 200 ? `${i.review.slice(0, 200)}…` : i.review)], ["Số sao", i.stars ? `${i.stars} sao` : null], ["Quán", i.business], ["Giọng", i.style], ["Thông tin thêm", i.facts]],
     menu: [["Món", i.dishes], ["Quán", i.business], ["Dùng cho", i.use]],
     inbox: [["Kinh doanh", i.business], ["Loại", i.kind === "restaurant" ? "Nhà hàng, quán ăn" : "Bán hàng online"], ["Kênh", i.channel], ["Chính sách", i.policies], ["Giọng văn", i.tone]],
-    maps: [["Quán", i.place], ["Chú ý thêm", i.focus]],
+    hashtag: [["Kinh doanh", i.business], ["Khu vực", i.area], ["Khách hàng", i.audience], ["Nền tảng", i.platforms?.join(", ")]],
     image: [["Sản phẩm", i.topic], ["Thông tin thêm", i.brief], ["Khung ảnh", i.size], ["Số ảnh", i.count], ["Có chữ trên ảnh", i.withText ? "Có" : "Không"], ["Ảnh sản phẩm", i.referenceImageId ? "Có" : null]],
     plan: [["Kênh", i.topic], ["Bắt đầu", i.start], ["Thời gian", i.days && `${i.days} ngày, ${i.perDay} bài/ngày`], ["Nền tảng", CLONE_PLATFORMS[i.platform]], ["Thông tin thêm", i.brief], ["Giọng văn", i.tone]],
     livestream: [
@@ -155,6 +161,35 @@ function VideoResult({ job }) {
   );
 }
 
+/** Follow a competitor channel: re-checked weekly, new or viral reels arrive as a notification. */
+function FollowButton({ url }) {
+  const toast = useToast();
+  const [state, setState] = useState("idle");
+  useEffect(() => {
+    api("/watch").then(({ items }) => items.some((w) => w.url === url) && setState("on"), () => {});
+  }, [url]);
+  async function follow() {
+    setState("busy");
+    try {
+      await api("/watch", { method: "POST", body: { url } });
+      setState("on");
+      toast("Đã theo dõi. Mỗi tuần hệ thống kiểm tra lại kênh, có reel mới hay viral sẽ báo ở chuông.", { to: "/history" });
+    } catch (e) {
+      setState("idle");
+      toast(e.message, { kind: "error" });
+    }
+  }
+  return (
+    <button type="button" className={state === "on" ? "follow-btn on" : "follow-btn"} disabled={state !== "idle"} onClick={follow}>
+      <span aria-hidden="true">{state === "on" ? "✓" : "🔔"}</span>
+      <span>
+        <b>{state === "on" ? "Đang theo dõi kênh này" : "Theo dõi kênh này mỗi tuần"}</b>
+        <small>{state === "on" ? "Quản lý ở trang Lịch sử" : "Báo khi đối thủ có reel mới hoặc reel viral"}</small>
+      </span>
+    </button>
+  );
+}
+
 /** What the fact check changed: invented numbers replaced, gift/free offers to double-check. */
 function FactCheck({ check }) {
   if (!check || (!check.replaced && !check.warnings?.length)) return null;
@@ -187,13 +222,38 @@ function Result({ job, onSave }) {
   if (job.type === "write" || job.type === "review") return <Variants job={job} onSave={onSave} />;
   if (job.type === "menu") return <Variants job={job} onSave={onSave} prefix="Món" />;
   if (job.type === "inbox") return <Variants job={job} onSave={onSave} prefix="Tình huống" />;
+  if (job.type === "hashtag") return <Variants job={job} onSave={onSave} prefix="Bộ" />;
   if (job.type === "maps") return <MapsResult job={job} />;
+  if (job.type === "compare") return <CompareResult job={job} />;
   if (job.type === "clone") return <CloneBoard job={job} />;
   if (job.type === "livestream") return <LivestreamResult job={job} />;
   if (job.type === "image" && job.images) return <ImageBoard job={job} />;
   if (job.type === "plan") return <PlanBoard job={job} />;
+  if (job.type === "campaign") {
+    return (
+      <>
+        {job.learned?.length > 0 && (
+          <section className="card learned">
+            <h2>Học từ {job.learned.length} reel hiệu quả nhất của đối thủ</h2>
+            <ol>
+              {job.learned.map((r) => (
+                <li key={r.url}>
+                  <a href={r.url} target="_blank" rel="noopener noreferrer">{r.caption || "Xem reel"}</a>
+                  <small>{r.engagement?.toLocaleString("vi-VN")} tương tác · {r.source === "video" ? "AI đã xem video" : r.source === "lời thoại" ? "AI đã nghe lời thoại" : "chỉ đọc caption"}</small>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+        <PlanBoard job={job} />
+      </>
+    );
+  }
   if (job.type === "fanpage") return <FanpageResult markdown={job.result} />;
-  if (["fb-reels", "threads"].includes(job.type)) return <ReelsResult markdown={job.result} />;
+  if (["fb-reels", "threads", "tiktok", "watch"].includes(job.type)) {
+    const clips = Object.fromEntries((job.watch ?? []).filter((w) => w.clip).map((w) => [w.url.match(/(\d{15,20})/)?.[1], w.clip]));
+    return <ReelsResult markdown={job.result} clips={clips} />;
+  }
   if (job.type === "video" && job.video) return <VideoResult job={job} />;
   return <Markdown className="card md">{job.result}</Markdown>;
 }
@@ -272,12 +332,13 @@ export default function JobPage() {
   const channel = (job.type === "fb-reels" && job.input?.mode === "channel") || job.type === "fanpage";
   const next = done
     ? [
-        ["fb-reels", "threads", "fanpage", "maps"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
+        ["fb-reels", "threads", "fanpage", "tiktok", "maps", "compare", "watch"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
         channel && { to: `/clone?url=${url}`, label: "Nhân bản kênh này", hint: "Viết hàng loạt bài mới học từ kênh này" },
         job.type === "fb-reels" && job.input?.mode === "channel" && { to: `/fanpage?url=${url}`, label: "Phân tích fanpage này", hint: "Ngày giờ đăng, độ dài video, chủ đề ăn khách" },
         job.type === "maps" && { to: "/review", label: "Trả lời review của quán bạn", hint: "Xử lý khéo những điểm khách hay chê" },
+        job.type === "menu" && { to: "/hashtag", label: "Gợi ý hashtag cho các món", hint: "Bộ hashtag theo khu vực và giờ đăng" },
         job.type === "inbox" && { to: "/review", label: "Trả lời review khách", hint: "Giữ chân khách sau khi mua" },
-        !["video", "review", "inbox"].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
+        !["video", "review", "inbox", "hashtag"].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
       ].filter(Boolean)
     : [];
   const full = job.type === "clone" || job.type === "image";
@@ -327,6 +388,7 @@ export default function JobPage() {
           {next.length > 0 && (
             <section className="aside-card">
               <h2>Bước tiếp theo</h2>
+              {channel && <FollowButton url={job.input.url} />}
               <div className="next-list">
                 {next.map((n) => (
                   <Link key={n.to} className={n.primary ? "next-item primary" : "next-item"} to={n.to}>

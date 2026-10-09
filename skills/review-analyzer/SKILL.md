@@ -11,7 +11,7 @@ Read the Google Maps reviews collected by the server (place name, overall rating
 
 ```
 ## Tổng quan
-<Tên quán> được <rating> sao trên <total> lượt đánh giá. Đã đọc <N> bài gần đây: <x> bài 5 sao, <y> bài từ 1 đến 2 sao. One sentence on the overall impression.
+<Tên quán> được <rating> sao trên <total> lượt đánh giá. Then say exactly which reviews were read, as the request describes them (e.g. "Đã đọc 22 bài ít sao nhất và 30 bài nhiều sao nhất", or "Đã đọc <N> bài gần đây"). One sentence on the overall impression.
 
 ## Phân bố số sao
 | Số sao | Số bài |

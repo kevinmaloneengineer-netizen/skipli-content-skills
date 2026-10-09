@@ -336,6 +336,20 @@ Mình mặc size nào để shop check còn hàng ạ?
 Dạ shop hiểu ạ. Áo dùng vải [CHẤT LIỆU], giặt nhiều không xù, đổi size miễn phí trong 7 ngày.
 Mình thử 1 cái trước nha?
 **Nếu khách im lặng:** Dạ shop gửi thêm ảnh khách mặc thật để mình tham khảo ạ.`;
+const HASHTAG = `## Bộ 1 · Tiếp cận rộng
+#amthuc #reviewanngon #ancungtiktok #foodtiktok #anngon
+
+## Bộ 2 · Khách quanh khu vực
+#anngonquan3 #saigonfood #quan3saigon #anvatsaigon
+
+## Bộ 3 · Ngách
+#laubo #laubonhunggiam #laubongon
+
+## Giờ đăng gợi ý
+| Nền tảng | Ngày | Khung giờ | Vì sao |
+|---|---|---|---|
+| Facebook | Thứ 2 đến thứ 6 | 10:30 đến 11:30 | Khách tính chuyện ăn trưa |
+| TikTok | Cuối tuần | 18:00 đến 20:00 | Lướt nhiều nhất trước bữa tối |`;
 const MAPS = `## Tổng quan
 Lẩu Bò Quán Gỗ được 3,8 sao trên 1.547 lượt đánh giá. Đã đọc 80 bài gần đây: 41 bài 5 sao, 14 bài từ 1 đến 2 sao.
 
@@ -364,7 +378,20 @@ Lẩu Bò Quán Gỗ được 3,8 sao trên 1.547 lượt đánh giá. Đã đ�
 ## Nên học và nên tránh
 - Nên: giữ nước lẩu đậm đà
 - Tránh: để khách ngồi gần khu rửa chén`;
-const REPLIES = { review: REVIEW, menu: MENU, inbox: INBOX, maps: MAPS, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const TIKTOK = `## Tổng quan
+Đã đọc 8 video cho "lẩu bò". Video có tình huống hài và giá rõ ràng ăn đứt video quay món thuần.
+
+## Top video
+### 1. Cô giáo mời ăn lẩu
+👁 1.6M · ❤️ 179K · 💬 881 · 🔁 9.5K · 15s · 2026-09-01
+https://www.tiktok.com/@tn.170604/video/7680434571602709768
+- **Hook:** câu mời "qua ăn lẩu nha" kèm biểu cảm
+- **Vì sao viral:** tình huống quen thuộc, video ngắn 15 giây
+
+## Ý tưởng quay cho bạn
+1. **Một ngày làm chủ quán lẩu**: quay nhanh từ sáng nấu nước dùng đến tối đông khách.`;
+const COMPARE = `## Tổng quan\nKênh A đăng đều nhất, kênh B có tương tác trung vị cao gấp đôi.\n\n## Mỗi kênh mạnh ở đâu\n### @a\n- Đăng 3 reel mỗi tuần.\n- Điểm yếu: video dài, giữ chân kém.\n\n## Bài học cho bạn\n- Học kênh B: mở đầu bằng món ăn cận cảnh.`;
+const REPLIES = { campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 function mockChat(q) {
   const url = q.match(/(?:https?:\/\/)?(?:www\.)?facebook\.com\/[^\s]+/i)?.[0];

@@ -8,8 +8,13 @@ import { createGoclawClient } from "./goclaw.mjs";
 import { createJobRunner, ACTIVE } from "./jobs.mjs";
 import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
-import { buildJob, InputError } from "./prompts.mjs";
+import { buildJob, cleanHashtags, InputError } from "./prompts.mjs";
 import { CHECKED_TYPES, checkFacts } from "./facts.mjs";
+import { directEnabled } from "./llm.mjs";
+import { createWatcher } from "./watcher.mjs";
+import { makeClip } from "./watch.mjs";
+import { createLimits } from "./limits.mjs";
+import { pageConfigured, publishToPage } from "./facebookPage.mjs";
 import { openStore } from "./store/index.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
@@ -105,8 +110,21 @@ export async function createApp(config, adapter) {
   // Tests build a config without `video`: keep their files out of the repo.
   const video = createVideoService(config.video ?? { dataDir: path.join(tmpdir(), `skipli-video-${process.pid}`), timeoutMs: 60_000, mock: config.goclaw.mock });
   await video.init();
-  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock }),
+  const clipsDir = path.join(config.video?.dataDir ?? path.join(tmpdir(), `skipli-clips-${process.pid}`), "clips"); // watched videos, for playback
+  // Clips older than CLIP_KEEP_DAYS are removed daily; an old report re-downloads one when it is played.
+  const sweepClips = async () => {
+    const maxAge = (Number(process.env.CLIP_KEEP_DAYS) || 30) * 86_400_000;
+    const { readdir, stat: statFile, unlink } = await import("node:fs/promises");
+    for (const name of await readdir(clipsDir).catch(() => [])) {
+      const file = path.join(clipsDir, name);
+      const info = await statFile(file).catch(() => null);
+      if (info && Date.now() - info.mtimeMs > maxAge) await unlink(file).catch(() => {});
+    }
+  };
+  if (!config.goclaw.mock) setInterval(sweepClips, 86_400_000).unref();
+  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir }),
     finish: async (job, content, ctx) => {
+      if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
       if (CHECKED_TYPES.has(job.type)) {
         // Prices, discounts, hours the user never gave → placeholders; gifts → warnings shown on the result page.
         const { text, replaced, warnings } = checkFacts(content, Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n")); // what the user typed, not our prompt wording
@@ -190,7 +208,9 @@ export async function createApp(config, adapter) {
     res.status(201).json({ ok: true });
   });
 
-  api.post("/chat", async (req, res) => {
+  const limits = createLimits({ store });
+
+  api.post("/chat", limits.chat, async (req, res) => {
     const raw = Array.isArray(req.body?.messages) ? req.body.messages.slice(-12) : [];
     const messages = raw
       .filter((m) => (m?.role === "user" || m?.role === "assistant") && typeof m.content === "string" && m.content.trim())
@@ -208,11 +228,81 @@ export async function createApp(config, adapter) {
         const turns = [...messages.slice(0, -1), { role: "user", content: `${system}\n\n=== TIN NHẮN CỦA NGƯỜI DÙNG ===\n${last.content}` }];
         ({ content } = await goclaw.chat({ agent: config.agents.writer, messages: turns }));
       }
-      res.json(extractAction(content, { hasUpload: video.hasUpload }));
+      let answer = extractAction(content, { hasUpload: video.hasUpload });
+      // The free models sometimes write the posts right in the chat instead of proposing the tool.
+      // A task request ("viết…", "quét…") answered with a long text and no action gets one strict retry.
+      const task = /^\s*(viết|tạo|làm|lên (lịch|kế hoạch)|quét|phân tích|tìm|so sánh|nhân bản|trả lời review|gợi ý hashtag)/i.test(messages.at(-1).content);
+      if (task && !answer.action && (answer.text ?? "").length > 500 && directEnabled()) {
+        const retry = await askDirect({
+          system,
+          messages: [...messages.slice(-8, -1), { role: "user", content: `${messages.at(-1).content}\n\n(Chỉ trả lời 1 câu ngắn rồi khối \`\`\`action\`\`\` của công cụ phù hợp. KHÔNG tự viết nội dung.)` }],
+        });
+        const second = extractAction(retry ?? "", { hasUpload: video.hasUpload });
+        if (second.action) answer = second;
+      }
+      // With the action card there, the tool writes the content: keep only the lead-in paragraph.
+      if (task && answer.action && (answer.text ?? "").length > 400) {
+        answer = { ...answer, text: `Việc này để công cụ **${answer.action.skill}** làm nhé: mình đã điền sẵn thông tin bên dưới. Bấm **Chạy** để nhận bài đầy đủ, có nút sao chép và lưu cho từng bài.` };
+      }
+      res.json(answer);
     } catch (e) {
       console.error("chat:", e.message);
       throw new HttpError(502, /429|usage|limit/i.test(e.message) ? "Trợ lý đang hết lượt dùng, thử lại sau nhé." : "Trợ lý chưa trả lời được, thử lại sau ít phút.");
     }
+  });
+
+  // ---- competitor watch ----
+  const watcher = createWatcher({ store });
+  if (!goclaw.mock) watcher.start();
+
+  api.get("/watch", (req, res) => {
+    res.json({ items: store.listWatch() });
+  });
+
+  api.post("/watch", async (req, res) => {
+    let url;
+    try {
+      url = buildJob("fanpage", { url: req.body?.url }).input.url; // same link validation as the fanpage tool
+    } catch (e) {
+      throw new HttpError(400, e.message);
+    }
+    const existing = store.listWatch().find((w) => w.url === url);
+    if (existing) return res.json({ item: existing });
+    const name = new URL(url).pathname.split("/").filter(Boolean)[0] ?? url;
+    const item = await store.addWatch({ url, name });
+    // First read sets the baseline, so the next check reports only reels posted after today.
+    watcher.check(item).catch((e) => store.updateWatch(item.id, { lastError: e.message }));
+    res.status(201).json({ item });
+  });
+
+  api.post("/watch/:id/check", async (req, res) => {
+    const item = store.getWatch(req.params.id);
+    if (!item) throw new HttpError(404, "Không tìm thấy kênh đang theo dõi");
+    try {
+      res.json({ ...(await watcher.check(item)), item: store.getWatch(item.id) });
+    } catch (e) {
+      throw new HttpError(502, `Không đọc được kênh: ${e.message}`);
+    }
+  });
+
+  api.delete("/watch/:id", async (req, res) => {
+    await store.deleteWatch(req.params.id);
+    res.json({ ok: true });
+  });
+
+  /** How the AI pipeline is doing over the cached recent jobs: watch sources, Groq retries, failures. */
+  api.get("/ai-stats", (req, res) => {
+    const jobs = store.listJobs();
+    const watch = jobs.flatMap((j) => j.watch ?? []);
+    const by = (src) => watch.filter((w) => w.source === src).length;
+    const llmJobs = jobs.filter((j) => j.llm?.engine === "groq");
+    const failed = jobs.filter((j) => j.status === "failed");
+    res.json({
+      watched: { total: watch.length, video: by("video"), speech: by("lời thoại"), caption: by("caption"), avgSeconds: watch.length ? Math.round(watch.reduce((a, w) => a + (w.ms ?? 0), 0) / watch.length / 1000) : 0 },
+      groq: { jobs: llmJobs.length, retried: llmJobs.filter((j) => j.llm.tries > 1).length, waited: llmJobs.filter((j) => j.llm.waited).length },
+      failed: { total: failed.length, rateLimit: failed.filter((j) => /429|rate limit|hết lượt/i.test(j.error ?? "")).length },
+      since: jobs.at(-1)?.createdAt ?? null,
+    });
   });
 
   api.get("/jobs", (req, res) => {
@@ -222,7 +312,7 @@ export async function createApp(config, adapter) {
     res.json({ jobs: jobs.map((j) => summary(j, runner)) });
   });
 
-  api.post("/jobs", async (req, res) => {
+  api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
     const job = await runner.submit({ type, ...(await jobSpec(type, input)) });
     res.status(201).json({ job: summary(job, runner) });
@@ -239,7 +329,7 @@ export async function createApp(config, adapter) {
     res.json({ ok: true });
   });
 
-  api.post("/jobs/:id/retry", async (req, res) => {
+  api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
     const fresh = await runner.submit({ type: job.type, ...(await jobSpec(job.type, job.input)) });
@@ -268,6 +358,34 @@ export async function createApp(config, adapter) {
   api.put("/schedule/:id", async (req, res) => {
     if (!store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
     res.json({ slot: await store.updateSlot(req.params.id, slotFields(req.body ?? {}, true)) });
+  });
+
+  /** Download a reel / TikTok on demand and return a playable clip id (the platform embed is blocked or missing). */
+  const clipJobs = new Map(); // video url → pending promise, so double clicks share one download
+  api.get("/clip", async (req, res) => {
+    const url = String(req.query.url ?? "");
+    if (!/^https:\/\/(www\.|m\.)?(tiktok\.com\/@[\w.-]+\/video\/\d{15,20}|facebook\.com\/(reel\/\d{9,25}|[^\s/]+\/videos\/\d{9,25}|watch\/?\?v=\d{9,25}))/.test(url)) throw new HttpError(400, "Link video không hợp lệ");
+    if (!clipJobs.has(url)) clipJobs.set(url, makeClip(url, clipsDir).finally(() => setTimeout(() => clipJobs.delete(url), 60_000)));
+    const clip = await clipJobs.get(url);
+    if (!clip) throw new HttpError(502, "Không tải được video này, hãy mở trên nền tảng gốc.");
+    res.json({ clip });
+  });
+
+  api.get("/facebook", (req, res) => {
+    res.json({ configured: pageConfigured() });
+  });
+
+  /** Post a calendar slot to the Facebook Page (now, or scheduled on Facebook for its time). */
+  api.post("/schedule/:id/publish", async (req, res) => {
+    const slot = store.getSlot(req.params.id);
+    if (!slot) throw new HttpError(404, "Không tìm thấy bài trong lịch");
+    if (slot.fbPostId) throw new HttpError(409, "Bài này đã được gửi lên Facebook");
+    try {
+      const out = await publishToPage({ message: [slot.body || slot.title].join(""), at: slot.at });
+      res.json({ slot: await store.updateSlot(slot.id, { status: out.scheduled ? "scheduled" : "posted", fbPostId: out.id }), ...out });
+    } catch (e) {
+      throw new HttpError(pageConfigured() ? 502 : 400, e.message);
+    }
   });
 
   api.delete("/schedule/:id", async (req, res) => {
@@ -315,6 +433,13 @@ export async function createApp(config, adapter) {
     if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
     res.set("X-Content-Type-Options", "nosniff").sendFile(file, { dotfiles: "allow" }); // DATA_DIR defaults to web/.data
   });
+  // 480p copies of the reels / TikToks the AI watched: played on the result page (platform embeds get blocked).
+  app.get("/media/clips/:file", (req, res) => {
+    const m = req.params.file.match(/^([0-9a-f-]{36}|v\d{9,25})\.mp4$/);
+    const file = m && path.join(clipsDir, `${m[1]}.mp4`);
+    if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
+    res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
+  });
   app.get("/media/images/:file", (req, res) => {
     const file = video.imagePath(req.params.file);
     if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy ảnh");
@@ -327,7 +452,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data: blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));

@@ -9,9 +9,19 @@ export function memoryAdapter() {
   const library = new Map();
   const feedback = [];
   const schedule = new Map();
+  const watch = new Map();
   let seeded = false;
 
   return {
+    async loadWatch() {
+      return [...watch.values()].map(clone);
+    },
+    async saveWatch(w) {
+      watch.set(w.id, clone(w));
+    },
+    async deleteWatch(id) {
+      watch.delete(id);
+    },
     async loadRecentJobs(limit) {
       return [...jobs.values()].sort(newestFirst).slice(0, limit).map(clone);
     },

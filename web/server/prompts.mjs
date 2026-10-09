@@ -387,6 +387,20 @@ export function buildJob(type, raw, refs = {}) {
       };
     }
 
+    case "maps": {
+      const place = str(raw.place, "quán cần phân tích", { required: true, max: 300 });
+      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
+      const isLink = /^https?:\/\//i.test(place);
+      if (isLink && !/google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./i.test(place)) throw new InputError("Link phải là link Google Maps của quán");
+      return {
+        agent: "scout",
+        direct: "review-analyzer",
+        title: `Review Google Maps · ${isLink ? "quán đối thủ" : place.slice(0, 60)}`,
+        input: { place, focus },
+        prompt: "", // filled by prepare.mjs once the reviews are collected
+      };
+    }
+
     case "menu": {
       const dishes = str(raw.dishes, "danh sách món", { required: true, max: 3000 });
       const lines = dishes.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -429,17 +443,71 @@ export function buildJob(type, raw, refs = {}) {
       };
     }
 
-    case "maps": {
-      const place = str(raw.place, "quán cần phân tích", { required: true, max: 300 });
-      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
-      const isLink = /^https?:\/\//i.test(place);
-      if (isLink && !/google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./i.test(place)) throw new InputError("Link phải là link Google Maps của quán");
+    case "hashtag": {
+      const business = str(raw.business, "quán / sản phẩm", { required: true, max: 300 });
+      const area = str(raw.area, "khu vực", { max: 100 });
+      const audience = str(raw.audience, "khách hàng", { max: 200 });
+      const platforms = list(raw.platforms, "nền tảng", 4);
+      const sections = ["Gợi ý bộ hashtag và khung giờ đăng theo skill hashtag-planner, bằng tiếng Việt.", `Kinh doanh: ${business}`];
+      sections.push(`Tag chắc chắn đúng, dùng làm gốc (có thể thêm tag khác nhưng phải đúng món, đúng khu vực): ${baseHashtags(business, area).join(" ")}`);
+      if (area) sections.push(`Khu vực: ${area}`);
+      sections.push(`Nền tảng: ${(platforms.length ? platforms : ["Facebook", "TikTok", "Instagram"]).join(", ")}`);
+      if (audience) sections.push(`Khách hàng: ${audience}`);
+      return {
+        agent: "writer",
+        direct: "hashtag-planner",
+        title: `Hashtag & giờ đăng · ${business.slice(0, 60)}`,
+        input: { business, area, audience, platforms },
+        prompt: sections.join("\n\n"),
+      };
+    }
+
+    case "tiktok": {
+      const keywords = list(raw.keywords, "từ khoá", 3);
+      const profiles = list(raw.profiles, "tài khoản", 3).map((p) => {
+        const m = p.match(/tiktok\.com\/@([\w.-]+)/i) ?? p.match(/^@?([\w.-]+)$/);
+        if (!m) throw new InputError(`Tài khoản TikTok không hợp lệ: ${p}`);
+        return `@${m[1]}`;
+      });
+      if (!keywords.length && !profiles.length) throw new InputError("Nhập ít nhất một từ khoá hoặc tài khoản");
+      const top = num(raw.top, "số video", 3, 10, 6);
+      const business = str(raw.business, "kinh doanh của bạn", { max: 200 });
       return {
         agent: "scout",
-        direct: "review-analyzer",
-        title: `Review Google Maps · ${isLink ? "quán đối thủ" : place.slice(0, 60)}`,
-        input: { place, focus },
-        prompt: "", // filled by prepare.mjs once the reviews are collected
+        direct: "tiktok-viral-finder",
+        title: `TikTok · ${[...keywords, ...profiles].join(", ").slice(0, 70)}`,
+        input: { keywords, profiles, top, business },
+        prompt: "", // filled by prepare.mjs once the videos are collected
+      };
+    }
+
+    case "campaign": {
+      // One click: scan a competitor, watch its best reels, then plan a week of posts that learns from them.
+      const url = facebookUrl(raw.url);
+      if (isSingleVideo(url)) throw new InputError("Hãy dán link trang/kênh đối thủ, không phải link một reel");
+      const plan = buildJob("plan", { ...raw, days: raw.days ?? 7, perDay: raw.perDay ?? 1 });
+      const name = new URL(url).pathname.split("/").filter(Boolean)[0] ?? url;
+      return {
+        agent: "writer",
+        direct: "content-planner",
+        title: `Chiến dịch ${plan.input.days} ngày · học từ @${name}`.slice(0, 120),
+        input: { ...plan.input, url },
+        prompt: plan.prompt, // prepare.mjs adds what the competitor's best reels did
+      };
+    }
+
+    case "compare": {
+      const urls = [...new Set((Array.isArray(raw.urls) ? raw.urls : String(raw.urls ?? "").split(/[\n,\s]+/)).map((u) => String(u).trim()).filter(Boolean))].map(facebookUrl);
+      if (urls.length < 2 || urls.length > 3) throw new InputError("Nhập 2 hoặc 3 link fanpage để so sánh");
+      if (urls.some(isSingleVideo)) throw new InputError("Hãy dán link trang/kênh, không phải link một reel");
+      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
+      const names = urls.map((u) => new URL(u).pathname.split("/").filter(Boolean)[0] ?? u);
+      return {
+        agent: "scout",
+        direct: "competitor-compare",
+        title: `So sánh ${names.map((n) => `@${n}`).join(" · ")}`.slice(0, 120),
+        input: { urls, focus },
+        prompt: "", // filled by prepare.mjs once every page is read
       };
     }
 
@@ -453,4 +521,50 @@ export function directSkill(job) {
   if (job.direct) return job.direct;
   if (job.agent !== "writer") return null;
   return { write: "content-writer", livestream: "livestream-scripter", plan: "content-planner", image: "image-prompter", video: "video-scripter", clone: "channel-cloner" }[job.type] ?? null;
+}
+
+// ---- hashtags: the free models invent tags (#lauchay for a beef hotpot shop, other cities): seed safe
+// tags built from the user's own words, then drop wrong ones from the answer.
+
+const slug = (t) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().replace(/[^a-z0-9]+/g, "");
+const STOP = /^(quan|tiem|nha|hang|shop|cua|binh|dan|ngon|re|cho|va|cac|cua hang)$/;
+const CITIES = { saigon: /sai\s*g|hcm|hồ chí minh|ho chi minh|quận|quan \d/i, hanoi: /hà nội|ha noi|hanoi/i, danang: /đà nẵng|da nang/i, dalat: /đà lạt|da lat/i, cantho: /cần thơ|can tho/i, haiphong: /hải phòng|hai phong/i, nhatrang: /nha trang/i, hue: /\bhuế\b|\bhue\b/i, hoian: /hội an|hoi an/i, vungtau: /vũng tàu|vung tau/i, phuquoc: /phú quốc|phu quoc/i };
+// Districts people tag by name: a tag for a district the user did not give is wrong.
+const DISTRICTS = ["phunhuan", "binhthanh", "govap", "tanbinh", "tanphu", "thuduc", "binhtan", "nhabe", "cuchi", "hoankiem", "caugiay", "dongda", "badinh", "haibatrung", "tayho"];
+
+export function baseHashtags(business, area) {
+  const words = business.split(/[\s,.;:()]+/).map(slug).filter((w) => w && !STOP.test(w));
+  const dish = words.slice(0, 2).join(""); // "Quán lẩu bò bình dân" → "laubo"
+  const district = area.match(/quận\s*(\d+|[\p{L}]+)/iu)?.[1];
+  const tags = [dish, ...words.slice(0, 3)].filter((t) => t.length > 2);
+  if (district) tags.push(`quan${slug(district)}`, `${dish}quan${slug(district)}`, `anngonquan${slug(district)}`);
+  for (const [city, re] of Object.entries(CITIES)) if (re.test(area)) tags.push(city, `${city}food`, `${dish}${city}`);
+  tags.push("amthuc", "reviewanngon", "anngon");
+  return [...new Set(tags)].map((t) => `#${t}`);
+}
+
+/** Remove tags that contradict the business or area, plus spam tags; drop empty lines it leaves. */
+export function cleanHashtags(md, { business = "", area = "" } = {}) {
+  const facts = `${business} ${area}`;
+  const vegetarian = /chay/i.test(slug(business));
+  const bad = (tag) => {
+    const t = slug(tag);
+    if (/follow|like4like|f4f|instagood|viral$|xuhuong$|^spam|^tag$|^hashtag$/.test(t)) return true;
+    if (!vegetarian && /chay/.test(t)) return true;
+    if (/quang\d/.test(t)) return true; // "quang3": misspelt "quận 3"
+    if (DISTRICTS.some((d) => t.includes(d) && !slug(facts).includes(d))) return true;
+    const q = t.match(/quan(\d+)/)?.[1]; // "#anngonquan5" when the user is in Quận 3
+    if (q && !new RegExp(`quan${q}(?!\\d)`).test(slug(facts))) return true;
+    if (/^lobo|^vietlau|^vietl/.test(t)) return true; // seen typos of "laubo"
+    return Object.entries(CITIES).some(([city, re]) => t.includes(city) && !re.test(facts) && !(city === "saigon" && /hcm/.test(t)));
+  };
+  return md
+    .split("\n")
+    .map((line) => {
+      const seen = new Set(); // one tag once per set
+      return line.replace(/#[\p{L}\p{N}_]+/gu, (tag) => (bad(tag) || seen.has(slug(tag)) || !seen.add(slug(tag)) ? "" : tag));
+    })
+    .join("\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/^[ \t]+$/gm, "");
 }

@@ -28,6 +28,7 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   await adapter.seedOnce(templates.map((t) => ({ id: randomUUID(), kind: "template", tags: [], ...t, createdAt: stamp, updatedAt: stamp })));
   const library = await adapter.loadLibrary(); // newest first
   const schedule = await adapter.loadSchedule(); // small: one row per planned post
+  const watch = (await adapter.loadWatch?.()) ?? []; // competitor channels to re-check
 
   function trim() {
     // Evict the oldest finished jobs; they stay readable through adapter.loadJob.
@@ -39,6 +40,27 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   }
 
   return {
+    // ---- watched competitor channels ----
+    listWatch: () => [...watch].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    getWatch: (id) => watch.find((w) => w.id === id),
+    async addWatch(w) {
+      const item = { id: randomUUID(), createdAt: now(), lastCheckedAt: null, knownIds: [], ...w };
+      await adapter.saveWatch(item);
+      watch.push(item);
+      return item;
+    },
+    async updateWatch(id, patch) {
+      const item = watch.find((w) => w.id === id);
+      if (!item) return undefined;
+      Object.assign(item, patch);
+      await adapter.saveWatch(item);
+      return item;
+    },
+    async deleteWatch(id) {
+      await adapter.deleteWatch(id);
+      const i = watch.findIndex((w) => w.id === id);
+      if (i >= 0) watch.splice(i, 1);
+    },
     listSchedule(from, to) {
       return schedule.filter((s) => (!from || s.at >= from) && (!to || s.at < to)).sort((a, b) => a.at.localeCompare(b.at));
     },

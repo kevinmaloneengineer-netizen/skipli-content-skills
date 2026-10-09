@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkFacts } from "../server/facts.mjs";
-import { buildJob, directSkill, InputError } from "../server/prompts.mjs";
+import { buildJob, baseHashtags, cleanHashtags, directSkill, InputError } from "../server/prompts.mjs";
 import { fixDashes, tidyMarkdown } from "../server/llm.mjs";
 import { splitVariants } from "../client/src/lib/text.js";
 
@@ -18,6 +18,14 @@ test("checkFacts: keeps stated numbers, replaces invented ones, flags gifts", ()
   assert.match(text, /48\.6K/); // stat lines untouched
   assert.equal(replaced, 4);
   assert.deepEqual(warnings, ["tặng tô bún miễn phí"]);
+});
+
+test("hashtags: seeds from the user's words, drops wrong city, district, meaning, spam, duplicates", () => {
+  const tags = baseHashtags("Quán lẩu bò bình dân", "Quận 3, TP.HCM");
+  assert.ok(tags.includes("#laubo") && tags.includes("#quan3") && tags.includes("#saigon"));
+  const out = cleanHashtags("#laubo #laubochay #quanhanoi #hoian #phunhuan #lauboquang3 #followforfollow #anngonquan5 #laubo #saigon", { business: "Quán lẩu bò bình dân", area: "Quận 3, TP.HCM" });
+  assert.equal(out.trim(), "#laubo #saigon");
+  assert.match(cleanHashtags("#laubochay", { business: "Quán lẩu chay", area: "" }), /#laubochay/); // vegetarian shop keeps it
 });
 
 test("tidyMarkdown and fixDashes", () => {
@@ -38,6 +46,15 @@ test("new job types build and validate", () => {
   assert.equal(buildJob("menu", { dishes: "A\nB" }).direct, "menu-writer");
   assert.throws(() => buildJob("menu", { dishes: Array.from({ length: 13 }, (_, i) => `Món ${i}`).join("\n") }), /12 món/);
   assert.match(buildJob("inbox", { business: "Shop áo" }).prompt, /\[GIÁ\]/); // no prices given → placeholders
+  assert.match(buildJob("hashtag", { business: "Quán lẩu bò", area: "Quận 3" }).prompt, /#laubo/);
+  assert.deepEqual(buildJob("tiktok", { profiles: "tiktok.com/@abc, @def" }).input.profiles, ["@abc", "@def"]);
+  assert.throws(() => buildJob("tiktok", {}), InputError);
   assert.throws(() => buildJob("maps", { place: "https://example.com/x" }), /Google Maps/);
   assert.equal(buildJob("maps", { place: "Lẩu bò Quận 3" }).direct, "review-analyzer");
+  assert.throws(() => buildJob("compare", { urls: ["facebook.com/a"] }), /2 hoặc 3/);
+  assert.equal(buildJob("compare", { urls: "facebook.com/a\nfacebook.com/b" }).input.urls.length, 2);
+  const c = buildJob("campaign", { url: "facebook.com/doithu", topic: "Quán bún bò", start: "2026-10-12" });
+  assert.equal(c.direct, "content-planner");
+  assert.equal(c.input.days, 7);
+  assert.throws(() => buildJob("campaign", { url: "facebook.com/reel/123456789", topic: "x", start: "2026-10-12" }), /không phải link một reel/);
 });

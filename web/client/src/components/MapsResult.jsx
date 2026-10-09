@@ -52,6 +52,7 @@ function placeOf(job, secs) {
 function Scorecard({ place, summary }) {
   const rating = toNumber(place.rating) ?? 0;
   const counts = [5, 4, 3, 2, 1].map((n) => Number(place.starCounts?.[n]) || 0);
+  const hasCounts = counts.some(Boolean); // the histogram comes from the Maps page; it can be missing
   const sum = counts.reduce((a, b) => a + b, 0) || 1;
   const max = Math.max(1, ...counts);
   const pos = (counts[0] + counts[1]) / sum;
@@ -64,12 +65,21 @@ function Scorecard({ place, summary }) {
         <span className="mp-kicker">Điểm Google Maps</span>
         <b className="mp-big">{place.rating || "?"}</b>
         <Stars value={rating} />
-        <span className="mp-total">{place.total ? `${place.total} đánh giá` : ""}{place.read ? ` · đã đọc ${place.read} bài gần nhất` : ""}</span>
+        <span className="mp-total">
+          {place.total ? `${place.total} đánh giá` : ""}
+          {place.readLow != null ? ` · đã đọc ${place.readLow} bài ít sao nhất và ${place.readHigh} bài nhiều sao nhất` : place.read ? ` · đã đọc ${place.read} bài gần nhất` : ""}
+        </span>
         <h2 className="mp-name">{place.name}</h2>
         {place.address && <p className="mp-addr">{place.address.replace(/[\ue000-\uf8ff]/g, "").trim()}</p>}
         {place.url && <a className="mp-link" href={place.url} target="_blank" rel="noopener noreferrer">Mở trên Google Maps ↗</a>}
       </div>
-      <div className="mp-hist" aria-label="Phân bố số sao">
+      {!hasCounts && (
+        <div className="mp-sides">
+          <div data-k="neg"><b>{place.readLow ?? 0}</b><span>bài ít sao nhất</span><small>AI đọc để tìm điều khách chê</small></div>
+          <div data-k="pos"><b>{place.readHigh ?? 0}</b><span>bài nhiều sao nhất</span><small>AI đọc để tìm điều khách khen</small></div>
+        </div>
+      )}
+      {hasCounts && <div className="mp-hist" aria-label="Phân bố số sao">
         {counts.map((c, i) => (
           <div key={i} className="mp-hist-row" data-star={5 - i}>
             <span>{5 - i}</span>
@@ -77,8 +87,8 @@ function Scorecard({ place, summary }) {
             <small>{c.toLocaleString("vi-VN")}</small>
           </div>
         ))}
-      </div>
-      <div className="mp-mood">
+      </div>}
+      {hasCounts && <div className="mp-mood">
         <div className="mp-donut" style={{ "--pos": `${pos * 360}deg`, "--mid": `${(pos + mid) * 360}deg` }}>
           <span><b>{pct(pos)}</b><small>hài lòng</small></span>
         </div>
@@ -87,7 +97,7 @@ function Scorecard({ place, summary }) {
           <li data-k="mid"><i /><span>Bình thường<small>3 sao</small></span><b>{pct(mid)}</b></li>
           <li data-k="neg"><i /><span>Chưa hài lòng<small>1 đến 2 sao</small></span><b>{pct(neg)}</b></li>
         </ul>
-      </div>
+      </div>}
       {summary && <p className="mp-summary">{summary}</p>}
     </section>
   );

@@ -16,10 +16,14 @@ import SchedulePage from "./pages/SchedulePage.jsx";
 import ThreadsPage from "./pages/ThreadsPage.jsx";
 import VideoPage from "./pages/VideoPage.jsx";
 import WritePage from "./pages/WritePage.jsx";
-import MapsPage from "./pages/MapsPage.jsx";
+import HashtagPage from "./pages/HashtagPage.jsx";
 import InboxPage from "./pages/InboxPage.jsx";
+import MapsPage from "./pages/MapsPage.jsx";
 import MenuPage from "./pages/MenuPage.jsx";
 import ReviewPage from "./pages/ReviewPage.jsx";
+import TiktokPage from "./pages/TiktokPage.jsx";
+import ComparePage from "./pages/ComparePage.jsx";
+import CampaignPage from "./pages/CampaignPage.jsx";
 
 /** Remount the writer when its query (?ref, ?template) changes so the form re-prefills. */
 function WriteRoute() {
@@ -44,10 +48,15 @@ export default function App() {
               <Route path="livestream" element={<LivestreamPage />} />
               <Route path="image" element={<ImagePage />} />
               <Route path="schedule" element={<SchedulePage />} />
+              <Route path="tiktok" element={<TiktokPage />} />
+              <Route path="compare" element={<ComparePage />} />
+              <Route path="campaign" element={<CampaignPage />} />
+              <Route path="maps" element={<MapsPage />} />
               <Route path="menu" element={<MenuPage />} />
               <Route path="review" element={<ReviewPage />} />
               <Route path="inbox" element={<InboxPage />} />
-              <Route path="maps" element={<MapsPage />} />
+              <Route path="hashtag" element={<HashtagPage />} />
+              <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
               <Route path="library" element={<LibraryPage />} />
               <Route path="history" element={<HistoryPage />} />
               <Route path="jobs/:id" element={<JobPage />} />

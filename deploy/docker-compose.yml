@@ -59,7 +59,9 @@ services:
   # the job queue lives in-process. Only reachable from this machine unless
   # WEB_BIND=0.0.0.0; set APP_PASSWORD before exposing it (every run spends model quota).
   web:
-    build: ../web
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
     ports:
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"
     environment:
@@ -79,8 +81,24 @@ services:
       - APIFY_TOKEN=${APIFY_TOKEN:-}
       - APIFY_FB_REELS_ACTOR=${APIFY_FB_REELS_ACTOR:-apify~facebook-reels-scraper}
       - REEL_LIST_CACHE_HOURS=${REEL_LIST_CACHE_HOURS:-6}
+      # Free AI path (no GoClaw agent run): Groq for writing and reports, Gemini to watch videos.
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Google Maps reviews (lowest and highest rated) through Apify, paid per review.
+      - APIFY_REVIEWS_TOKEN=${APIFY_REVIEWS_TOKEN:-}
+      # Google Maps reviews are read in the Chrome sidecar.
+      - CHROME_CDP_URL=http://chrome:9222
+      # Usage limits (0 = off) and the competitor watch interval.
+      - DAILY_JOB_LIMIT=${DAILY_JOB_LIMIT:-80}
+      - JOB_LIMIT_PER_IP_HOUR=${JOB_LIMIT_PER_IP_HOUR:-20}
+      - CHAT_LIMIT_PER_IP_MINUTE=${CHAT_LIMIT_PER_IP_MINUTE:-8}
+      - WATCH_INTERVAL_HOURS=${WATCH_INTERVAL_HOURS:-168}
+    # Rendered videos, uploads, the AI-watched clips and the GPU worker settings live here.
+    volumes:
+      - web-data:/app/.data
     depends_on:
       - goclaw
+      - chrome
     restart: unless-stopped
 
   postgres:
@@ -127,6 +145,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  web-data:
   goclaw-data:
   goclaw-skills:
   goclaw-workspace:

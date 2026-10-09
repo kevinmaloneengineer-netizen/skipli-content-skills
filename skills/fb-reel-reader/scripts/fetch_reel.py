@@ -59,7 +59,7 @@ def probe_duration(video):
         return None
 
 
-def download(url, out_root, cookies):
+def download(url, out_root, cookies, height=720):
     try:
         import yt_dlp
     except ImportError:
@@ -71,8 +71,9 @@ def download(url, out_root, cookies):
         "noprogress": True,
         "logger": _SilentLogger(),
         "noplaylist": True,
-        # Prefer a single mp4 file <=720p to stay small; fall back to best available.
-        "format": "best[ext=mp4][height<=720]/best[height<=720]/best",
+        # Prefer a single mp4 file at or below `height` to stay small (long reels at 720p can pass 100MB);
+        # fall back to the smallest available.
+        "format": f"best[ext=mp4][height<={height}]/best[height<={height}]/worst[ext=mp4]/worst",
         "max_filesize": MAX_BYTES,
         "outtmpl": os.path.join(out_root, "%(id)s", "video.%(ext)s"),
         "retries": 2,
@@ -139,12 +140,13 @@ def main():
     p.add_argument("--out", default="reels", help="workspace-relative output folder")
     p.add_argument("--frames", type=int, default=6, help="number of frames to extract (0 to skip)")
     p.add_argument("--cookies", help="Netscape cookies.txt for login-required reels")
+    p.add_argument("--height", type=int, default=720, help="max video height to download (lower for long reels)")
     args = p.parse_args()
 
     if not re.match(r"^https?://", args.url):
         fail("URL must start with http:// or https://")
 
-    info, raw_path = download(args.url, args.out, args.cookies)
+    info, raw_path = download(args.url, args.out, args.cookies, args.height)
 
     out_dir = os.path.join(args.out, safe_id(info.get("id")))
     os.makedirs(out_dir, exist_ok=True)

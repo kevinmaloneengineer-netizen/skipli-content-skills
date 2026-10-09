@@ -124,16 +124,22 @@
   :root:not([data-theme="light"]) [data-tone="olive"] { --tone: #a6b65a; --tone-on: #1d220a; --tone-soft: #272c14; }
   :root:not([data-theme="light"]) [data-tone="amber"] { --tone: #eba04a; --tone-on: #2a1703; --tone-soft: #36240f; }
   :root:not([data-theme="light"]) [data-tone="brick"] { --tone: #e77565; --tone-on: #2c0b06; --tone-soft: #3a1c18; }
-  :root:not([data-theme="light"]) [data-tone="brick"] {
-  --tone: #b23a2c; --tone-on: #fff5f3; --tone-soft: #f3d6d1;
-  --art-bg: #b23a2c; --art-card: #fff3f0; --art-mid: #e79a8f; --art-hi: #ffd166; --art-fg: #3b0f09; --art-text: #fff5f3;
-}
-[data-tone="mint"] { --tone: #4fcca8; --tone-on: #052a20; --tone-soft: #123329; }
+  :root:not([data-theme="light"]) [data-tone="mint"] { --tone: #4fcca8; --tone-on: #052a20; --tone-soft: #123329; }
   :root:not([data-theme="light"]) [data-tone="indigo"] { --tone: #9a9ef0; --tone-on: #10123a; --tone-soft: #1f2146; }
+  :root:not([data-theme="light"]) [data-tone="steel"] { --tone: #8fb0cc; --tone-on: #0e1a24; --tone-soft: #1c2a36; }
+  :root:not([data-theme="light"]) [data-tone="lime"] { --tone: #b7d84a; --tone-on: #1c1a16; --tone-soft: #2a3310; }
+}
+[data-tone="steel"] {
+  --tone: #3d5a73; --tone-on: #f2f6f9; --tone-soft: #d8e2ea;
+  --art-bg: #3d5a73; --art-card: #f2f6f9; --art-mid: #9db3c6; --art-hi: #ffb547; --art-fg: #12222f; --art-text: #f2f6f9;
 }
 [data-tone="amber"] {
   --tone: #c06a12; --tone-on: #fff8ef; --tone-soft: #f6e0c6;
   --art-bg: #d9821f; --art-card: #fff6ea; --art-mid: #f1bf7f; --art-hi: #1c1a16; --art-fg: #3a2205; --art-text: #fff8ef;
+}
+[data-tone="brick"] {
+  --tone: #b23a2c; --tone-on: #fff5f3; --tone-soft: #f3d6d1;
+  --art-bg: #b23a2c; --art-card: #fff3f0; --art-mid: #e79a8f; --art-hi: #ffd166; --art-fg: #3b0f09; --art-text: #fff5f3;
 }
 [data-tone="mint"] {
   --tone: #138a6a; --tone-on: #f0fbf7; --tone-soft: #cfeee3;
@@ -142,6 +148,10 @@
 [data-tone="indigo"] {
   --tone: #3b3f9e; --tone-on: #f3f3ff; --tone-soft: #dcddf6;
   --art-bg: #3b3f9e; --art-card: #f3f3ff; --art-mid: #a3a6e6; --art-hi: #5fe0c0; --art-fg: #12143d; --art-text: #f3f3ff;
+}
+[data-tone="lime"] {
+  --tone: #5a7d0c; --tone-on: #1c1a16; --tone-soft: #e4efc6;
+  --art-bg: #b7d84a; --art-card: #f8fde9; --art-mid: #dbeca0; --art-hi: #1c1a16; --art-fg: #1c1a16; --art-text: #1c1a16;
 }
 
 * { box-sizing: border-box; }
@@ -1903,14 +1913,32 @@ html[data-on-dark] .running-pill .pulse::after { background: none; }
 .ai-nudge::after { content: ""; position: absolute; right: -7px; bottom: 14px; width: 14px; height: 14px; background: var(--surface); border-right: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg); border-radius: 0 3px 0 0; }
 @media (max-width: 560px) { .ai-nudge { right: 100px; bottom: 50px; max-width: 200px; white-space: normal; } }
 
+/* multi-select chips (hashtag platforms) */
+.chip-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-pick { position: relative; display: inline-flex; align-items: center; padding: 8px 15px; border: 1px solid var(--line-strong); border-radius: 99px; font-size: 14px; font-weight: 500; cursor: pointer; background: var(--field); transition: background .15s, color .15s, border-color .15s; }
+.chip-pick input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.chip-pick:hover { border-color: var(--ink); }
+.chip-pick.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.chip-pick:has(input:focus-visible) { outline: 2px solid var(--tone, var(--ink)); outline-offset: 2px; }
+/* TikTok's embed shows the caption under the video: give it a taller frame */
+.tiktok-player iframe { aspect-ratio: 9 / 18; background: #fff; }
 .card.notes.lead { margin-bottom: 4px; }
-
-/* ---- Fact check banner (result page) ---- */
-.fact-check { margin: 0 0 16px; padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, #f5a623 13%, var(--surface)); border: 1px solid color-mix(in srgb, #f5a623 45%, transparent); font-size: 14px; line-height: 1.55; }
-.fact-check b { display: block; margin-bottom: 4px; }
-.fact-check p { margin: 4px 0; }
-.fact-check ul { margin: 4px 0 8px; padding-left: 20px; }
-.fact-tip { color: var(--muted); }
+/* TikTok card (click to load the real player) */
+.tt-card { position: relative; width: 100%; aspect-ratio: 9 / 16; border: 0; border-radius: 16px; padding: 14px; cursor: pointer; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; text-align: left; font: inherit; color: #fff;
+  background: radial-gradient(circle at 25% 15%, rgb(37 244 238 / .35), transparent 45%), radial-gradient(circle at 80% 75%, rgb(254 44 85 / .4), transparent 50%), #111; }
+.tt-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(transparent 45%, rgb(0 0 0 / .65)); pointer-events: none; }
+.tt-card > * { position: relative; z-index: 1; }
+.tt-top { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.tt-top small { padding: 2px 8px; border-radius: 99px; background: rgb(255 255 255 / .18); font-weight: 600; }
+.tt-play { position: absolute; left: 50%; top: 42%; width: 64px; height: 64px; translate: -50% -50%; border-radius: 50%; background: rgb(255 255 255 / .18); backdrop-filter: blur(4px); transition: scale .2s; }
+.tt-play::after { content: ""; position: absolute; left: 25px; top: 19px; border-left: 20px solid #fff; border-top: 13px solid transparent; border-bottom: 13px solid transparent; }
+.tt-card:hover .tt-play { scale: 1.1; }
+.tt-title { font-weight: 700; font-size: 14.5px; line-height: 1.35; padding-right: 54px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tt-side { position: absolute; right: 10px; bottom: 48px; display: grid; gap: 12px; justify-items: center; }
+.tt-side i { display: grid; justify-items: center; gap: 2px; font-style: normal; font-size: 11.5px; font-weight: 700; }
+.tt-side svg { width: 26px; height: 26px; fill: #fff; }
+.tt-views { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; opacity: .9; }
+.tt-views svg { width: 14px; height: 14px; fill: #fff; }
 
 /* ---- Google Maps review result ---- */
 .mp { display: grid; gap: 18px; }
@@ -1995,3 +2023,137 @@ html[data-on-dark] .running-pill .pulse::after { background: none; }
 .mp-legend b { font-size: 18px; }
 @media (max-width: 680px) { .mp-score { grid-template-columns: 1fr; } .mp-mood { flex-direction: column; align-items: stretch; } .mp-donut { align-self: center; } .mp-legend { grid-template-columns: 1fr; } }
 .mp-warn { margin: 0; padding: 12px 16px; border-radius: 14px; background: color-mix(in srgb, #f5a623 16%, var(--surface)); border: 1px solid color-mix(in srgb, #f5a623 45%, transparent); font-size: 14px; }
+/* greeting bubble: let longer lines wrap instead of running under the mascot */
+.ai-nudge { white-space: normal; width: max-content; max-width: min(320px, calc(100vw - 150px)); }
+
+.fact-check { margin: 0 0 16px; padding: 14px 16px; border-radius: 16px; background: color-mix(in srgb, #f5a623 13%, var(--surface)); border: 1px solid color-mix(in srgb, #f5a623 45%, transparent); font-size: 14px; line-height: 1.55; }
+.fact-check b { display: block; margin-bottom: 4px; }
+.fact-check p { margin: 4px 0; }
+.fact-check ul { margin: 4px 0 8px; padding-left: 20px; }
+.fact-tip { color: var(--muted); }
+
+/* ---- AI health (history page) ---- */
+.ai-health { margin: 0 0 18px; padding: 20px 22px; }
+.ai-health h2 { margin: 0 0 12px; font-size: 19px; }
+.ai-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.ai-health-grid > div { display: grid; gap: 3px; padding: 14px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line); }
+.ai-health-grid b { font: 600 30px/1 var(--display); }
+.ai-health-grid span { font-weight: 600; font-size: 14px; }
+.ai-health-grid small { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+
+/* ---- Competitor comparison ---- */
+.cmp { display: grid; gap: 18px; }
+.cmp-board { padding: 22px; display: grid; gap: 20px; }
+.cmp-legend { display: flex; flex-wrap: wrap; gap: 10px; }
+.cmp-legend a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); font-weight: 700; color: var(--ink); text-decoration: none; }
+.cmp-legend i { width: 12px; height: 12px; border-radius: 4px; background: var(--c); }
+.cmp-legend small { font-weight: 500; color: var(--muted); }
+.cmp-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.cmp-metric { padding: 14px 16px; border-radius: 16px; background: var(--paper); border: 1px solid var(--line); display: grid; gap: 8px; }
+.cmp-metric h3 { margin: 0 0 2px; font-size: 16px; display: flex; flex-direction: column; }
+.cmp-metric h3 small { font: 400 12.5px var(--text); color: var(--muted); }
+.cmp-bar { display: grid; grid-template-columns: minmax(70px, 110px) 1fr 64px; gap: 10px; align-items: center; font-size: 13px; }
+.cmp-bar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.cmp-bar i { height: 12px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden; }
+.cmp-bar em { display: block; height: 100%; border-radius: inherit; background: var(--c); }
+.cmp-bar b { text-align: right; font-size: 14px; }
+.cmp-crown { margin-left: 4px; color: #f5a623; }
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cmp-table th, .cmp-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.cmp-table td:first-child { font-weight: 600; color: var(--muted); width: 22%; }
+.cmp-reel { display: block; margin-bottom: 6px; color: var(--ink); text-decoration: none; line-height: 1.4; }
+.cmp-reel small { display: block; color: var(--tone); font-weight: 600; }
+.cmp-failed { margin: 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 680px) { .cmp-table { display: block; overflow-x: auto; } }
+.cmp-reel { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---- Campaign: competitor reels it learned from ---- */
+.learned { padding: 20px 22px; margin-bottom: 16px; }
+.learned h2 { margin: 0 0 10px; font-size: 18px; }
+.learned ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.learned a { color: var(--ink); font-weight: 600; text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.learned small { display: block; color: var(--muted); font-size: 12.5px; }
+
+/* ---- Competitor watch ---- */
+.follow-btn { width: 100%; display: flex; gap: 12px; align-items: center; margin: 0 0 10px; padding: 12px 14px; border-radius: 14px; border: 1px dashed var(--line-strong); background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.follow-btn:hover:not(:disabled) { border-color: var(--ink); }
+.follow-btn.on { border-style: solid; background: color-mix(in srgb, #2f8f5b 10%, var(--surface)); cursor: default; }
+.follow-btn > span:last-child { display: grid; }
+.follow-btn small { color: var(--muted); font-size: 12.5px; }
+.watchlist { margin: 0 0 18px; padding: 20px 22px; }
+.watchlist h2 { margin: 0 0 4px; font-size: 19px; }
+.watchlist ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.watchlist li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; padding: 12px 14px; border-radius: 14px; background: var(--paper); border: 1px solid var(--line); }
+.watchlist li a { color: var(--ink); text-decoration: none; }
+.watchlist li small { grid-column: 1; color: var(--muted); font-size: 12.5px; }
+.watch-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; }
+@media (max-width: 560px) { .watchlist li { grid-template-columns: 1fr; } .watch-actions { grid-column: 1; grid-row: auto; } }
+/* compare v2: podium + radar, habits per page with its best reel */
+.cmp-hero { display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; padding: 22px; align-items: center; }
+.cmp-podium { display: grid; gap: 10px; }
+.cmp-rank { display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "medal avatar name" "medal avatar score" "wins wins wins"; gap: 2px 12px; align-items: center; padding: 14px 16px; border-radius: 18px; text-decoration: none; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-left: 5px solid var(--c); transition: transform .15s; }
+.cmp-rank:hover { transform: translateX(3px); }
+.cmp-rank[data-rank="0"] { background: color-mix(in srgb, var(--c) 9%, var(--surface)); box-shadow: 0 14px 30px -22px var(--c); }
+.cmp-medal { grid-area: medal; font-size: 30px; }
+.cmp-avatar { grid-area: avatar; width: 42px; height: 42px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--c); color: #fff; font-weight: 800; font-size: 18px; }
+.cmp-avatar.small { width: 28px; height: 28px; font-size: 13px; margin-right: 8px; vertical-align: middle; }
+.cmp-rank b { grid-area: name; font-size: 17px; }
+.cmp-score { grid-area: score; color: var(--muted); font-size: 13px; }
+.cmp-score strong { color: var(--c); font-size: 18px; }
+.cmp-wins { grid-area: wins; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cmp-wins i { font-style: normal; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); }
+.cmp-wins.muted { color: var(--muted); font-size: 12.5px; }
+.cmp-radar-box { display: grid; justify-items: center; gap: 6px; }
+.cmp-radar { width: 100%; max-width: 330px; overflow: visible; }
+.cmp-radar-ring { fill: none; stroke: var(--line); }
+.cmp-radar-axis { stroke: var(--line); }
+.cmp-radar-label { font: 600 11px var(--text); fill: var(--muted); }
+.cmp-radar-shape { fill-opacity: .16; stroke-width: 2.5; stroke-linejoin: round; }
+.cmp-radar-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; font-size: 13px; font-weight: 600; }
+.cmp-radar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 5px; }
+.cmp-radar-box small { color: var(--muted); font-size: 12px; text-align: center; }
+.cmp-board h2 { margin: 0; font-size: 19px; }
+.cmp-habits { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.cmp-habit { padding: 18px; border-top: 5px solid var(--c); display: grid; gap: 12px; align-content: start; }
+.cmp-habit h3 { margin: 0; font-size: 16px; }
+.cmp-habit ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cmp-habit li { display: grid; grid-template-columns: 28px 1fr; grid-template-areas: "icon label" "icon value"; align-items: center; padding: 8px 10px; border-radius: 12px; background: var(--paper); }
+.cmp-habit li > span { grid-area: icon; font-size: 18px; }
+.cmp-habit li small { grid-area: label; color: var(--muted); font-size: 11.5px; }
+.cmp-habit li b { grid-area: value; font-size: 14px; }
+.cmp-tags { margin: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.cmp-tags i { font-style: normal; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: color-mix(in srgb, var(--c) 12%, transparent); color: var(--c); font-weight: 600; }
+.cmp-top { display: grid; gap: 6px; }
+.cmp-top > small { font-weight: 700; color: var(--c); }
+.cmp-top p { margin: 0; font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cmp-top .reel-player { position: static; }
+@media (max-width: 860px) { .cmp-hero { grid-template-columns: 1fr; } }
+
+/* compare: the three page cards share row tracks, so the reels line up whatever the hashtags take */
+.cmp-habits { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); grid-template-rows: auto auto auto 1fr; }
+.cmp-habit { grid-row: span 4; grid-template-rows: subgrid; gap: 12px; }
+.cmp-tags { align-content: start; }
+.cmp-tags span { color: var(--muted); font-size: 12.5px; }
+.cmp-top { align-content: start; }
+.cmp-top-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cmp-top-tabs { display: inline-flex; gap: 4px; }
+.cmp-top-tabs button { width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--paper); font: 700 12px var(--text); color: var(--ink); cursor: pointer; }
+.cmp-top-tabs button.on { background: var(--c); border-color: var(--c); color: #fff; }
+.cmp-top-hint { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+@media (max-width: 860px) { .cmp-habit { grid-row: auto; grid-template-rows: none; } }
+.cmp-top > .cmp-top-hint { color: var(--muted); font-weight: 400; }
+.tt-video { width: 100%; aspect-ratio: 9 / 16; border-radius: 16px; background: #000; display: block; object-fit: contain; }
+.tt-play.loading::after { display: none; }
+.tt-play.loading { border: 4px solid rgb(255 255 255 / .35); border-top-color: #fff; animation: spin .9s linear infinite; }
+.tt-loading { position: absolute; left: 0; right: 0; top: calc(42% + 44px); text-align: center; font-size: 13px; font-weight: 600; }
+@keyframes spin { to { rotate: 360deg; } }
+.reel-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; }
+.reel-fallback { border: 0; background: none; padding: 0; font: 600 12.5px var(--text); color: var(--muted); text-decoration: underline; cursor: pointer; }
+.reel-fallback:disabled { cursor: default; text-decoration: none; }
+/* Maps via Apify: no histogram, show how many low / high star reviews were read */
+.mp-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mp-sides > div { display: grid; gap: 2px; padding: 16px; border-radius: 16px; background: var(--paper); border: 1px solid var(--line); border-left: 5px solid #2f8f5b; }
+.mp-sides > div[data-k="neg"] { border-left-color: #d4513a; }
+.mp-sides b { font: 600 34px/1 var(--display); }
+.mp-sides span { font-weight: 700; }
+.mp-sides small { color: var(--muted); font-size: 12.5px; }

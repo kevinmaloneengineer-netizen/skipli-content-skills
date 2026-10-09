@@ -25,7 +25,7 @@ export default function WritePage() {
     reference: "",
   });
   const [submit, busy, error] = useSubmitJob("write");
-  const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e?.target ? e.target.value : e }));
+    const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e?.target ? e.target.value : e }));
 
   useEffect(() => {
     api("/library?kind=template").then(({ items }) => setTemplates(items), () => setTemplates([]));

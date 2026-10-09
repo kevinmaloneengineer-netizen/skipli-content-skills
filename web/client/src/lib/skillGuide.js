@@ -84,6 +84,24 @@ export const GUIDE = {
     ],
     output: ["Lịch tuần, tháng của mọi bài sắp đăng", "Kế hoạch 7 hoặc 14 ngày viết sẵn bài", "Theo dõi bài đã đăng, chưa đăng"],
   },
+  tiktok: {
+    perks: ["Miễn phí", "Không cần đăng nhập", "Số liệu thật từng video"],
+    steps: [
+      ["Nhập từ khoá", "Hoặc tài khoản TikTok của đối thủ."],
+      ["Tìm và đọc số liệu", "Lượt xem, thích, bình luận, chia sẻ, lưu của từng video."],
+      ["Rút ra công thức", "Hook, độ dài, âm thanh và ý tưởng quay cho bạn."],
+    ],
+    output: ["Top video kèm số liệu và xem ngay trên trang", "Hook và lý do viral của từng video", "5 ý tưởng quay cho kênh của bạn"],
+  },
+  maps: {
+    perks: ["Miễn phí", "Không cần đăng nhập", "80 đánh giá mỗi lần"],
+    steps: [
+      ["Dán link quán", "Link Google Maps, hoặc tên quán kèm khu vực."],
+      ["Đọc đánh giá", "Lấy khoảng 80 đánh giá gần nhất, đếm số sao."],
+      ["Tìm điểm yếu", "Khách khen gì, chê gì, và cơ hội cho quán bạn."],
+    ],
+    output: ["Phân bố số sao", "Bảng điểm khen, điểm chê kèm trích dẫn", "Việc nên làm để hơn đối thủ"],
+  },
   menu: {
     perks: ["Tối đa 12 món", "3 kiểu nội dung mỗi món", "Không bịa giá"],
     steps: [
@@ -92,7 +110,8 @@ export const GUIDE = {
       ["Nhận nội dung", "Mỗi món một thẻ, sao chép là dùng."],
     ],
     output: ["Dòng menu in ngắn gọn", "Mô tả cho GrabFood, ShopeeFood", "Caption mạng xã hội và gợi ý món ăn kèm"],
-  },  review: {
+  },
+  review: {
     perks: ["3 phương án", "An toàn khi đăng công khai"],
     steps: [
       ["Dán đánh giá", "Từ Google Maps, Facebook hay Foody."],
@@ -100,7 +119,8 @@ export const GUIDE = {
       ["Đăng trả lời", "Sao chép phương án ưng ý."],
     ],
     output: ["Khách đang nói gì và cảm xúc ra sao", "3 câu trả lời khác giọng", "Việc nên làm thêm để khách quay lại"],
-  },  inbox: {
+  },
+  inbox: {
     perks: ["8 đến 12 tình huống", "Hướng tới chốt đơn"],
     steps: [
       ["Mô tả cửa hàng", "Bán gì, giá, chính sách có thật."],
@@ -108,12 +128,32 @@ export const GUIDE = {
       ["Lưu mẫu trả lời", "Sao chép từng tình huống khi khách nhắn."],
     ],
     output: ["Câu trả lời cho từng câu khách hay hỏi", "Tin nhắn gửi lại khi khách im lặng", "Mẹo chốt đơn qua inbox"],
-  },  maps: {
-    perks: ["Miễn phí", "Không cần đăng nhập", "80 đánh giá mỗi lần"],
+  },
+  hashtag: {
+    perks: ["4 bộ hashtag", "Theo khu vực", "Kèm giờ đăng"],
     steps: [
-      ["Dán link quán", "Link Google Maps, hoặc tên quán kèm khu vực."],
-      ["Đọc đánh giá", "Lấy khoảng 80 đánh giá gần nhất, đếm số sao."],
-      ["Tìm điểm yếu", "Khách khen gì, chê gì, và cơ hội cho quán bạn."],
+      ["Nhập quán", "Món hoặc sản phẩm chính, khu vực."],
+      ["Chọn nền tảng", "Facebook, TikTok, Instagram, Threads."],
+      ["Dùng ngay", "Sao chép từng bộ, đăng đúng khung giờ."],
     ],
-    output: ["Phân bố số sao", "Bảng điểm khen, điểm chê kèm trích dẫn", "Việc nên làm để hơn đối thủ"],
-  },};
+    output: ["4 bộ hashtag theo mục đích", "Khung giờ đăng cho từng nền tảng", "Cách xoay vòng hashtag"],
+  },
+  compare: {
+    perks: ["Miễn phí", "Không cần đăng nhập", "2 đến 3 kênh"],
+    steps: [
+      ["Dán link fanpage", "2 hoặc 3 kênh đối thủ."],
+      ["Đọc và tính số liệu", "50 reel gần nhất mỗi kênh, cùng một cách tính."],
+      ["So sánh", "Biểu đồ cạnh nhau và bài học từ từng kênh."],
+    ],
+    output: ["Biểu đồ so sánh tần suất, tương tác, reel viral", "Ngày, giờ, độ dài video hiệu quả của từng kênh", "Điểm mạnh, điểm yếu và bài học cho bạn"],
+  },
+  campaign: {
+    perks: ["3 bước trong 1 lần chạy", "AI xem video đối thủ", "Thêm vào lịch 1 nút"],
+    steps: [
+      ["Dán link đối thủ", "Và mô tả kênh của bạn."],
+      ["AI học từ đối thủ", "Quét kênh, xem 3 reel nhiều tương tác nhất."],
+      ["Nhận kế hoạch tuần", "Mỗi ngày một bài viết sẵn, kèm giờ đăng."],
+    ],
+    output: ["3 reel đối thủ AI đã học", "Kế hoạch 7 hoặc 14 ngày, bài viết sẵn", "Thêm cả tuần vào lịch đăng"],
+  },
+};

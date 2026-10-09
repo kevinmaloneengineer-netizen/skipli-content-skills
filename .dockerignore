@@ -1,0 +1,16 @@
+# Build context is the repo root (web image needs web/ and skills/). Keep secrets and bulk out.
+**/node_modules
+**/.DS_Store
+**/__pycache__
+.git
+deploy
+dist
+docs
+agents
+examples
+tests
+video-worker
+web/client/dist
+web/.data
+web/test
+web/scripts

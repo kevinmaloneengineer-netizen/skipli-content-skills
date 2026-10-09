@@ -129,6 +129,10 @@ export default function Layout() {
   useParallax();
 
   useEffect(() => setMenu(false), [pathname, search]);
+  // A new page starts at the top (the browser keeps the old scroll offset on client-side navigation).
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -169,7 +173,7 @@ export default function Layout() {
     <div className="app">
       <Backdrop />
       <header ref={barRef} className={["topbar", scrolled && "is-scrolled", menu && "menu-open"].filter(Boolean).join(" ")}>
-        <Link className="brand" to="/">
+        <Link className="brand" to="/" onClick={() => pathname === "/" && window.scrollTo({ top: 0, behavior: "smooth" })}>
           <img className="brand-logo" src="/logo.jpg" alt="" width="32" height="32" />
           <span>
             Skipli <em>Content</em>

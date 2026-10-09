@@ -1,4 +1,6 @@
+import { useState } from "react";
 import Markdown from "./Markdown.jsx";
+import { api } from "../lib/api.js";
 
 const THREADS_URL = /https:\/\/(?:www\.)?threads\.(?:com|net)\/@[\w.]+\/post\/[\w-]+/;
 export const REEL_URL = /https:\/\/(?:www\.|m\.)?facebook\.com\/(?:reel\/\d{6,25}|[^\s/)]+\/videos\/\d{6,25}|watch\/?\?v=\d{6,25})[^\s)]*/;
@@ -6,13 +8,108 @@ export const REEL_URL = /https:\/\/(?:www\.|m\.)?facebook\.com\/(?:reel\/\d{6,25
 /** Facebook's own video embed, shown right away (the browser only loads it when scrolled near: loading="lazy"). */
 export function ReelPlayer({ url, compact = false }) {
   const src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&width=320`;
+  // Some owners turn embedding off ("Không khả dụng") and the page cannot see inside the iframe:
+  // the user can ask for a copy downloaded by the server instead.
+  const [clip, setClip] = useState(null);
+  const [state, setState] = useState("idle");
+  async function fallback() {
+    setState("loading");
+    try {
+      setClip((await api(`/clip?url=${encodeURIComponent(url)}`)).clip);
+      setState("idle");
+    } catch {
+      setState("failed");
+    }
+  }
   return (
     <div className={compact ? "reel-player compact" : "reel-player"}>
-      <iframe src={src} title="Reel Facebook" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />
-      <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên Facebook ↗</a>
+      {clip ? <video className="tt-video" src={`/media/clips/${clip}.mp4`} controls autoPlay playsInline /> : <iframe src={src} title="Reel Facebook" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />}
+      <span className="reel-links">
+        <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên Facebook ↗</a>
+        {!clip && (
+          <button type="button" className="reel-fallback" disabled={state === "loading"} onClick={fallback}>
+            {state === "loading" ? "Đang tải…" : state === "failed" ? "Không tải được" : "Không xem được? Phát bản tải về"}
+          </button>
+        )}
+      </span>
     </div>
   );
 }
+
+const TIKTOK_URL = /https:\/\/(?:www\.)?tiktok\.com\/@[\w.-]+\/video\/(\d{15,20})/;
+
+/**
+ * TikTok card drawn from the report (numbers, caption), loading TikTok's player only on click:
+ * several embeds at once make TikTok answer "overload-protect triggered".
+ */
+function TiktokPlayer({ url, section, clip: kept }) {
+  const [play, setPlay] = useState(false);
+  const [clip, setClip] = useState(kept);
+  const [loading, setLoading] = useState(false);
+  // No kept copy (older report): fetch one now; TikTok's own embed is the last resort.
+  async function start() {
+    if (clip) return setPlay(true);
+    setLoading(true);
+    try {
+      setClip((await api(`/clip?url=${encodeURIComponent(url)}`)).clip);
+    } catch {
+      /* fall back to the embed */
+    } finally {
+      setLoading(false);
+      setPlay(true);
+    }
+  }
+  const id = url.match(TIKTOK_URL)[1];
+  const author = url.match(/@([\w.-]+)/)[1];
+  const stat = (re) => section.match(re)?.[1]?.trim() ?? "";
+  const views = stat(/👁\s*([\d.,]+[KkMm]?)/);
+  const likes = stat(/❤️?\s*([\d.,]+[KkMm]?)/);
+  const comments = stat(/💬\s*([\d.,]+[KkMm]?)/);
+  const shares = stat(/🔁\s*([\d.,]+[KkMm]?)/);
+  const secs = stat(/·\s*(\d{1,4})s\b/);
+  const title = section.match(/^###\s*(?:\d+\.\s*)?(.+)$/m)?.[1]?.replace(/\*\*/g, "") ?? "";
+  if (play && clip) {
+    // Our own 480p copy (kept when the AI watched it): TikTok's embed is often blocked ("overload-protect").
+    return (
+      <div className="reel-player tiktok-player">
+        <video className="tt-video" src={`/media/clips/${clip}.mp4`} controls autoPlay playsInline />
+        <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
+      </div>
+    );
+  }
+  if (play) {
+    return (
+      <div className="reel-player tiktok-player">
+        <iframe src={`https://www.tiktok.com/embed/v2/${id}?lang=vi-VN&autoplay=1`} title="Video TikTok" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />
+        <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
+      </div>
+    );
+  }
+  return (
+    <div className="reel-player">
+      <button type="button" className="tt-card" onClick={start} disabled={loading} aria-busy={loading} aria-label={`Xem video của @${author}`}>
+        <span className="tt-top"><b>@{author}</b>{secs && <small>{secs}s</small>}</span>
+        <span className={loading ? "tt-play loading" : "tt-play"} aria-hidden="true" />
+        {loading && <span className="tt-loading">Đang tải video…</span>}
+        <span className="tt-title">{title}</span>
+        <span className="tt-side" aria-hidden="true">
+          {likes && <i><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>{likes}</i>}
+          {comments && <i><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4A8 8 0 1 1 20 12z" /></svg>{comments}</i>}
+          {shares && <i><svg viewBox="0 0 24 24"><path d="M14 5l7 6.5-7 6.5v-4c-5 0-8 1.5-10 5 .7-5.5 3.5-9.5 10-10z" /></svg>{shares}</i>}
+        </span>
+        {views && <span className="tt-views"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>{views} lượt xem</span>}
+      </button>
+      <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
+    </div>
+  );
+}
+
+/** The TikTok card shows the link and numbers: keep the heading and the hook / why-viral notes. */
+const tiktokText = (section) =>
+  section
+    .split("\n")
+    .filter((l) => !TIKTOK_URL.test(l) && !/👁|❤|💬|🔁/.test(l))
+    .join("\n");
 
 const num = (v) => (v ? v.trim() : "");
 
@@ -61,10 +158,11 @@ const reasonOnly = (section) =>
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
 
-const linkOf = (p) => (/^###\s/.test(p) ? p.match(REEL_URL)?.[0] ?? p.match(THREADS_URL)?.[0] : null);
+const linkOf = (p) => (/^###\s/.test(p) ? p.match(REEL_URL)?.[0] ?? p.match(THREADS_URL)?.[0] ?? p.match(TIKTOK_URL)?.[0] : null);
 
 /** Scan reports: every "### N." section that links a reel or a Threads post gets an embed beside it. */
-export default function ReelsResult({ markdown, bare = false }) {
+/** clips: { "<video id>": "<clip id>" } for videos the AI watched (job.watch), played from our server. */
+export default function ReelsResult({ markdown, bare = false, clips = {} }) {
   const parts = String(markdown ?? "").split(/^(?=###? )/m);
   if (!parts.some(linkOf)) return <Markdown className={bare ? "md" : "card md"}>{markdown}</Markdown>;
   return (
@@ -73,8 +171,8 @@ export default function ReelsResult({ markdown, bare = false }) {
         const url = linkOf(p);
         return url ? (
           <div key={i} className="reel-row">
-            <Markdown className="md reel-text">{THREADS_URL.test(url) ? reasonOnly(p) : p}</Markdown>
-            {THREADS_URL.test(url) ? <ThreadsCard section={p} url={url} /> : <ReelPlayer url={url} />}
+            <Markdown className="md reel-text">{THREADS_URL.test(url) ? reasonOnly(p) : TIKTOK_URL.test(url) ? tiktokText(p) : p}</Markdown>
+            {THREADS_URL.test(url) ? <ThreadsCard section={p} url={url} /> : TIKTOK_URL.test(url) ? <TiktokPlayer url={url} section={p} clip={clips[url.match(TIKTOK_URL)[1]]} /> : <ReelPlayer url={url} />}
           </div>
         ) : (
           <Markdown key={i}>{p}</Markdown>
