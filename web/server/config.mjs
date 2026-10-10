@@ -36,6 +36,7 @@ export function loadConfig() {
       prefix: env.FIRESTORE_PREFIX ?? "content_",
     },
     appPassword: env.APP_PASSWORD ?? "",
+    accounts: env.ACCOUNTS === "1", // one login per customer (server/accounts.mjs)
     goclaw: {
       url: (env.GOCLAW_URL ?? "http://localhost:18790").replace(/\/+$/, ""),
       token: env.GOCLAW_GATEWAY_TOKEN ?? "",

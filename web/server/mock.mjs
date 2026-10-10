@@ -391,7 +391,10 @@ https://www.tiktok.com/@tn.170604/video/7680434571602709768
 ## Ý tưởng quay cho bạn
 1. **Một ngày làm chủ quán lẩu**: quay nhanh từ sáng nấu nước dùng đến tối đông khách.`;
 const COMPARE = `## Tổng quan\nKênh A đăng đều nhất, kênh B có tương tác trung vị cao gấp đôi.\n\n## Mỗi kênh mạnh ở đâu\n### @a\n- Đăng 3 reel mỗi tuần.\n- Điểm yếu: video dài, giữ chân kém.\n\n## Bài học cho bạn\n- Học kênh B: mở đầu bằng món ăn cận cảnh.`;
-const REPLIES = { campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const REPLIES = { yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+
+/** Canned report for the "Xem kết quả mẫu" page of a skill (null for skills whose result is media). */
+export const sampleReply = (type) => (type === "image" || type === "video" ? null : REPLIES[type] ?? null);
 
 function mockChat(q) {
   const url = q.match(/(?:https?:\/\/)?(?:www\.)?facebook\.com\/[^\s]+/i)?.[0];

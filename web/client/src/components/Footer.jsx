@@ -4,6 +4,7 @@ import { api } from "../lib/api.js";
 import { CATEGORIES, skillById } from "../lib/constants.js";
 import { FAQ } from "../lib/workflows.js";
 import HealthStatus from "./HealthStatus.jsx";
+import { logout, useAuth } from "./AuthGate.jsx";
 
 const GROUPS = CATEGORIES.map((c) => ({ ...c, items: c.skills.map(skillById).filter(Boolean) }));
 
@@ -73,6 +74,7 @@ export const openSupport = () => window.dispatchEvent(new Event("open-support"))
 
 export default function Footer() {
   const [support, setSupport] = useState(false);
+  const locked = useAuth().mode !== "open"; // a password or accounts: offer "Đăng xuất"
   useEffect(() => {
     const open = () => setSupport(true);
     window.addEventListener("open-support", open);
@@ -108,6 +110,7 @@ export default function Footer() {
           <Link to="/library?kind=saved">Bài đã lưu</Link>
           <Link to="/library?kind=template">Mẫu content</Link>
           <button type="button" className="foot-link" onClick={() => setSupport(true)}>Hỗ trợ và góp ý</button>
+          {locked && <button type="button" className="foot-link" onClick={logout}>Đăng xuất</button>}
         </nav>
       </div>
       <div className="foot-bottom">

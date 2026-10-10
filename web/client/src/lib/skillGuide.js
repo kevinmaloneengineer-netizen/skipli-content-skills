@@ -94,13 +94,31 @@ export const GUIDE = {
     output: ["Top video kèm số liệu và xem ngay trên trang", "Hook và lý do viral của từng video", "5 ý tưởng quay cho kênh của bạn"],
   },
   maps: {
-    perks: ["Miễn phí", "Không cần đăng nhập", "80 đánh giá mỗi lần"],
+    perks: ["Không cần đăng nhập", "30 ít sao + 30 nhiều sao", "Có phân bố số sao"],
     steps: [
       ["Dán link quán", "Link Google Maps, hoặc tên quán kèm khu vực."],
-      ["Đọc đánh giá", "Lấy khoảng 80 đánh giá gần nhất, đếm số sao."],
+      ["Đọc đánh giá", "Lấy 30 đánh giá ít sao và 30 nhiều sao nhất, đếm số sao."],
       ["Tìm điểm yếu", "Khách khen gì, chê gì, và cơ hội cho quán bạn."],
     ],
     output: ["Phân bố số sao", "Bảng điểm khen, điểm chê kèm trích dẫn", "Việc nên làm để hơn đối thủ"],
+  },
+  yelp: {
+    perks: ["Cho quán ở Mỹ", "30 ít sao + 30 nhiều sao", "Khoảng $0,06 mỗi lần"],
+    steps: [
+      ["Dán link Yelp", "Trang quán trên Yelp, dạng yelp.com/biz/ten-quan."],
+      ["Đọc review", "Lấy 30 review ít sao và 30 review nhiều sao nhất."],
+      ["Tìm điểm yếu", "Khách khen gì, chê gì, và cơ hội cho quán bạn."],
+    ],
+    output: ["Điểm Yelp và số review", "Bảng điểm khen, điểm chê kèm trích dẫn", "Nút soạn trả lời cho review ít sao"],
+  },
+  instagram: {
+    perks: ["40 bài gần nhất", "Có số liệu", "Khoảng $0,07 mỗi lần"],
+    steps: [
+      ["Nhập tài khoản", "Tên Instagram như @franklinbbq, hoặc link trang cá nhân."],
+      ["Tính số liệu", "Tần suất đăng, ngày giờ, loại bài, caption, hashtag."],
+      ["AI nhận xét", "Loại bài và chủ đề ăn khách, điều nên học và nên tránh."],
+    ],
+    output: ["Đăng ngày nào, giờ nào tương tác cao", "Ảnh, album hay reel hiệu quả hơn", "Top bài xem ngay trên trang"],
   },
   menu: {
     perks: ["Tối đa 12 món", "3 kiểu nội dung mỗi món", "Không bịa giá"],

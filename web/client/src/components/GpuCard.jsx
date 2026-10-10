@@ -1,10 +1,13 @@
 import { useState } from "react";
+import { useAuth } from "./AuthGate.jsx";
 import { api } from "../lib/api.js";
 import { crop, loadImage } from "../lib/image.js";
 import { Field } from "./Form.jsx";
 
 /** GPU worker status + connect form (the Kaggle URL and token change every session). */
 export function GpuCard({ status, onChange }) {
+  const { mode, user } = useAuth();
+  const canConnect = mode !== "accounts" || user?.role === "admin"; // customers use the admin's GPU
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
@@ -42,7 +45,7 @@ export function GpuCard({ status, onChange }) {
       <div className="gpu-row">
         <span className="gpu-dot" aria-hidden="true" />
         <span className="gpu-label">{label}</span>
-        <button type="button" className="btn small" onClick={() => setOpen((v) => !v)}>{status.ok ? "Đổi GPU" : "Kết nối GPU"}</button>
+        {canConnect && <button type="button" className="btn small" onClick={() => setOpen((v) => !v)}>{status.ok ? "Đổi GPU" : "Kết nối GPU"}</button>}
       </div>
       {status.modelError && <p className="form-error">Lỗi model: {status.modelError}</p>}
       {open && (
@@ -69,7 +72,58 @@ export function GpuCard({ status, onChange }) {
 }
 
 /** One optional photo (character / product / narrator), resized in the browser. */
-export function PhotoPick({ label, hint, value, onChange }) {
+/** Several photos in order (real photos of the restaurant for a slideshow). */
+export function PhotosPick({ label, hint, value, onChange, max = 6 }) {
+  const [error, setError] = useState("");
+  async function pick(e) {
+    const files = [...(e.target.files ?? [])].slice(0, max - value.length);
+    e.target.value = "";
+    setError("");
+    try {
+      const added = [];
+      for (const f of files) {
+        const img = await loadImage(f);
+        added.push(crop(img, 0, 0, img.naturalWidth, img.naturalHeight, 1920));
+      }
+      onChange([...value, ...added]);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+  const move = (i, d) => {
+    const next = [...value];
+    [next[i], next[i + d]] = [next[i + d], next[i]];
+    onChange(next);
+  };
+  return (
+    <div className="field">
+      <span className="field-label">{label} ({value.length}/{max})</span>
+      <div className="photos-pick">
+        {value.map((src, i) => (
+          <figure key={i}>
+            <img src={src} alt={`Ảnh ${i + 1}`} />
+            <span className="photos-num">{i + 1}</span>
+            <span className="photos-tools">
+              {i > 0 && <button type="button" onClick={() => move(i, -1)} aria-label="Lên trước">←</button>}
+              {i < value.length - 1 && <button type="button" onClick={() => move(i, 1)} aria-label="Ra sau">→</button>}
+              <button type="button" onClick={() => onChange(value.filter((_, k) => k !== i))} aria-label="Bỏ ảnh">✕</button>
+            </span>
+          </figure>
+        ))}
+        {value.length < max && (
+          <label className="drop photos-add">
+            <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={pick} />
+            <span>+ Thêm ảnh</span>
+          </label>
+        )}
+      </div>
+      {hint && <small>{hint}</small>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+export function PhotoPick({ label, hint, value, onChange, png = false }) {
   const [error, setError] = useState("");
   async function pick(e) {
     const file = e.target.files?.[0];
@@ -78,7 +132,7 @@ export function PhotoPick({ label, hint, value, onChange }) {
     setError("");
     try {
       const img = await loadImage(file);
-      onChange(crop(img, 0, 0, img.naturalWidth, img.naturalHeight, 1280));
+      onChange(crop(img, 0, 0, img.naturalWidth, img.naturalHeight, png ? 600 : 1280, png ? "image/png" : "image/jpeg"));
     } catch (err) {
       setError(err.message);
     }

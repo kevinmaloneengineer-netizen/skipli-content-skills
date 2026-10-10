@@ -2,26 +2,30 @@ import express from "express";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { WEB_ROOT } from "./config.mjs";
 import { createGoclawClient } from "./goclaw.mjs";
 import { createJobRunner, ACTIVE } from "./jobs.mjs";
 import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
 import { buildJob, cleanHashtags, InputError } from "./prompts.mjs";
-import { CHECKED_TYPES, checkFacts } from "./facts.mjs";
-import { directEnabled } from "./llm.mjs";
+import { CHECKED_TYPES, checkFacts, englishBlanks } from "./facts.mjs";
+import { complete, directEnabled, fixDashes } from "./llm.mjs";
+import { sampleReply } from "./mock.mjs";
 import { createWatcher } from "./watcher.mjs";
 import { makeClip } from "./watch.mjs";
 import { createLimits } from "./limits.mjs";
 import { pageConfigured, publishToPage } from "./facebookPage.mjs";
 import { openStore } from "./store/index.mjs";
+import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 
 const CLIENT_DIST = path.join(WEB_ROOT, "client", "dist");
 const LIBRARY_KINDS = new Set(["template", "saved"]);
+
+const vnDay = (iso) => new Date(Date.parse(iso) + 7 * 3600_000).toISOString().slice(0, 10);
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -30,15 +34,57 @@ class HttpError extends Error {
   }
 }
 
-function basicAuth(password) {
-  return (req, res, next) => {
-    if (!password) return next();
+const SESSION_COOKIE = "skipli_session";
+const SESSION_DAYS = 30;
+/** Session token: derived from the password, so changing APP_PASSWORD logs everyone out. */
+const sessionToken = (password) => createHmac("sha256", password).update("skipli-content-session").digest("hex");
+const same = (a, b) => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+const cookieOf = (req, name) => (req.headers.cookie ?? "").split(";").map((c) => c.trim().split("=")).find(([k]) => k === name)?.[1] ?? "";
+
+/**
+ * APP_PASSWORD gate: the login page sets a session cookie; scripts can still send Basic auth.
+ * The React app itself (index.html, assets) loads without it so the login page can render;
+ * every /api call and media file needs the session.
+ */
+function passwordGate(password) {
+  const token = password ? sessionToken(password) : "";
+  const signedIn = (req) => {
+    if (!password) return true;
+    if (same(cookieOf(req, SESSION_COOKIE), token)) return true;
     const [scheme, value] = (req.headers.authorization ?? "").split(" ");
     const pass = scheme === "Basic" && value ? Buffer.from(value, "base64").toString("utf8").split(":").slice(1).join(":") : "";
-    const a = Buffer.from(pass);
-    const b = Buffer.from(password);
-    if (a.length === b.length && timingSafeEqual(a, b)) return next();
-    res.set("WWW-Authenticate", 'Basic realm="Skipli Content", charset="UTF-8"').status(401).send("Cần đăng nhập");
+    return same(pass, password);
+  };
+  const attempts = new Map(); // ip → failed login timestamps
+  return {
+    signedIn,
+    middleware(req, res, next) {
+      if (signedIn(req)) return next();
+      const open = req.path === "/api/login" || req.path === "/api/session" || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      if (open) return next();
+      if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
+      res.status(401).send("Cần đăng nhập");
+    },
+    login(req, res) {
+      const ip = req.ip ?? "?";
+      const recent = (attempts.get(ip) ?? []).filter((t) => Date.now() - t < 15 * 60_000);
+      if (recent.length >= 10) return res.status(429).json({ error: "Sai mật khẩu nhiều lần, thử lại sau 15 phút." });
+      const pass = typeof req.body?.password === "string" ? req.body.password : "";
+      if (!password || !same(pass, password)) {
+        attempts.set(ip, [...recent, Date.now()]);
+        return res.status(401).json({ error: "Sai mật khẩu" });
+      }
+      attempts.delete(ip);
+      const secure = req.secure || req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+      res.set("Set-Cookie", `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86_400}${secure}`).json({ ok: true });
+    },
+    logout(req, res) {
+      res.set("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`).json({ ok: true });
+    },
   };
 }
 
@@ -69,6 +115,12 @@ function libraryFields(body, partial = false) {
   return out;
 }
 
+function nextMondayYmd() {
+  const d = new Date();
+  d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
+  return d.toISOString().slice(0, 10);
+}
+
 const SLOT_PLATFORMS = new Set(["facebook", "threads", "tiktok", "instagram"]);
 function slotFields(body, partial = false) {
   const out = {};
@@ -92,7 +144,7 @@ function slotFields(body, partial = false) {
     out.platform = body.platform;
   }
   if (body.status !== undefined) {
-    if (body.status !== "planned" && body.status !== "posted") throw new HttpError(400, "Trạng thái không hợp lệ");
+    if (!["planned", "posted", "scheduled"].includes(body.status)) throw new HttpError(400, "Trạng thái không hợp lệ");
     out.status = body.status;
   }
   for (const k of ["pillar", "libraryId", "sourceJobId"]) if (!partial && typeof body[k] === "string") out[k] = body[k].slice(0, 60);
@@ -105,6 +157,12 @@ function slotFields(body, partial = false) {
  */
 export async function createApp(config, adapter) {
   const store = await openStore(adapter, { templates: SEED_TEMPLATES });
+  // ACCOUNTS=1: one login per customer, each sees only their own data (see ./accounts.mjs).
+  const accounts = config.accounts ? createAccounts({ store, dataDir: config.video?.dataDir ?? path.join(tmpdir(), `skipli-accounts-${process.pid}`) }) : null;
+  if (accounts) await accounts.bootstrap();
+  /** Is this record the signed-in customer's? (always true without accounts) */
+  const own = (req, item) => !accounts || accounts.ownerId(item) === req.user?.id;
+  const userId = (req) => (accounts ? req.user?.id ?? null : undefined);
   const goclaw = createGoclawClient(config.goclaw);
   const facebook = createFacebookSource(config.facebook);
   // Tests build a config without `video`: keep their files out of the repo.
@@ -124,13 +182,16 @@ export async function createApp(config, adapter) {
   if (!config.goclaw.mock) setInterval(sweepClips, 86_400_000).unref();
   const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir }),
     finish: async (job, content, ctx) => {
+      if (job.input?.lang === "en") content = englishBlanks(content);
+      // The fanpage report template says "reel"; most Instagram posts are photos and albums.
+      if (job.type === "instagram") content = content.replace(/(?<![/#@]\s?)\b(R|r)eels?\b/g, (w, r) => (r === "R" ? "Bài" : "bài"));
       if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
       if (CHECKED_TYPES.has(job.type)) {
         // Prices, discounts, hours the user never gave → placeholders; gifts → warnings shown on the result page.
         const { text, replaced, warnings } = checkFacts(content, Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n")); // what the user typed, not our prompt wording
         return { result: text, fields: { factCheck: { replaced, warnings } } };
       }
-      return video.finish(job, content, ctx);
+      return (await video.finish(job, content, ctx)) ?? { result: content }; // content may have been edited above
     },
   });
   await runner.recover();
@@ -151,10 +212,11 @@ export async function createApp(config, adapter) {
 
   async function loadJob(req) {
     const job = await store.getJob(req.params.id);
-    if (!job) throw new HttpError(404, "Không tìm thấy tác vụ");
+    if (!job || !own(req, job)) throw new HttpError(404, "Không tìm thấy tác vụ");
     return job;
   }
 
+  const gate = accounts ?? passwordGate(config.appPassword);
   const api = express.Router();
   // Reference images for videos arrive as data URLs; only this route accepts a large body.
   api.post("/uploads", express.json({ limit: "9mb" }), async (req, res) => {
@@ -172,6 +234,49 @@ export async function createApp(config, adapter) {
     next();
   });
 
+  api.get("/session", (req, res) => {
+    if (!accounts) return res.json({ mode: config.appPassword ? "password" : "open", required: !!config.appPassword, signedIn: gate.signedIn(req) });
+    const user = accounts.userOf(req);
+    res.json({ mode: "accounts", required: true, signedIn: !!user, user: publicUser(user), setup: accounts.needsSetup() });
+  });
+  api.post("/login", (req, res) => gate.login(req, res));
+  api.post("/logout", (req, res) => gate.logout(req, res));
+
+  // ---- accounts ----
+  const accountRoute = (fn) => async (req, res) => {
+    if (!accounts) throw new HttpError(404, "Chưa bật tài khoản (ACCOUNTS=1)");
+    try {
+      await fn(req, res);
+    } catch (e) {
+      throw e instanceof AccountError ? new HttpError(e.status, e.message) : e;
+    }
+  };
+  const adminOnly = (req) => {
+    if (req.user?.role !== "admin") throw new HttpError(403, "Chỉ quản trị viên mới làm được việc này");
+  };
+  api.post("/setup", accountRoute((req, res) => accounts.setup(req, res)));
+  api.put("/me/password", accountRoute((req, res) => accounts.changePassword(req, res)));
+  api.get("/admin/users", accountRoute((req, res) => {
+    adminOnly(req);
+    const today = vnDay(new Date().toISOString());
+    const jobs = store.listJobs();
+    res.json({
+      users: store.listUsers().map((u) => {
+        const mine = jobs.filter((j) => accounts.ownerId(j) === u.id);
+        return { ...publicUser(u), lastLoginAt: u.lastLoginAt ?? null, jobs: mine.length, today: mine.filter((j) => vnDay(j.createdAt) === today).length, lastJobAt: mine[0]?.createdAt ?? null };
+      }),
+      defaultLimit: limits.LIMITS.jobsPerUserDay,
+    });
+  }));
+  api.post("/admin/users", accountRoute(async (req, res) => {
+    adminOnly(req);
+    res.status(201).json({ user: publicUser(await accounts.create({ ...req.body, role: req.body?.role === "admin" ? "admin" : "member" })) });
+  }));
+  api.put("/admin/users/:id", accountRoute(async (req, res) => {
+    adminOnly(req);
+    res.json({ user: publicUser(await accounts.update(req.params.id, req.body ?? {})) });
+  }));
+
   api.get("/health", async (req, res) => {
     res.json({
       goclaw: await goclaw.health(),
@@ -187,6 +292,8 @@ export async function createApp(config, adapter) {
   });
 
   api.put("/video/worker", async (req, res) => {
+    // One GPU for everyone: with customer accounts only the admin connects or changes it.
+    if (accounts && req.user?.role !== "admin") throw new HttpError(403, "GPU do quản trị viên kết nối. Liên hệ quản trị viên nếu GPU đang tắt.");
     try {
       res.json(await video.setWorker(req.body ?? {}));
     } catch (e) {
@@ -195,7 +302,7 @@ export async function createApp(config, adapter) {
   });
 
   api.get("/stats", (req, res) => {
-    res.json(store.stats());
+    res.json(store.stats((x) => own(req, x)));
   });
 
   api.post("/feedback", async (req, res) => {
@@ -204,7 +311,7 @@ export async function createApp(config, adapter) {
     const page = typeof req.body?.page === "string" ? req.body.page.slice(0, 200) : "";
     if (message.length < 3) throw new HttpError(400, "Hãy viết vài chữ góp ý");
     if (message.length > 3000 || contact.length > 200) throw new HttpError(400, "Góp ý dài quá");
-    await store.addFeedback({ message, contact, page });
+    await store.addFeedback({ message, contact, page, ...(accounts ? { userId: req.user.id, email: req.user.email } : {}) });
     res.status(201).json({ ok: true });
   });
 
@@ -218,7 +325,8 @@ export async function createApp(config, adapter) {
     if (!messages.length || messages.at(-1).role !== "user") throw new HttpError(400, "Thiếu câu hỏi");
     const path = typeof req.body?.path === "string" ? req.body.path.slice(0, 200) : "";
     const jobId = path.match(/^\/jobs\/([0-9a-f-]{36})$/)?.[1];
-    const job = jobId ? await store.getJob(jobId) : null;
+    const found = jobId ? await store.getJob(jobId) : null;
+    const job = found && own(req, found) ? found : null;
     try {
       const system = systemPrompt({ path, job });
       let content = goclaw.mock ? null : await askDirect({ system, messages: messages.slice(-8) });
@@ -251,12 +359,55 @@ export async function createApp(config, adapter) {
     }
   });
 
+  /** Quick edit of one written post ("Ngắn hơn", "Vui hơn"…): one model call, no job. */
+  const REWRITE = {
+    shorter: "Viết lại ngắn hơn khoảng một nửa, giữ ý chính và lời kêu gọi.",
+    fun: "Viết lại vui hơn, trẻ trung, dí dỏm hơn nhưng vẫn tự nhiên.",
+    emoji: "Giữ nguyên nội dung, thêm emoji phù hợp ở đầu đoạn và các ý chính (không quá 8 emoji).",
+    formal: "Viết lại trang trọng, lịch sự, chuyên nghiệp hơn.",
+  };
+  api.post("/rewrite", limits.chat, async (req, res) => {
+    const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+    const ask = REWRITE[req.body?.style];
+    if (!ask) throw new HttpError(400, "Kiểu viết lại không hợp lệ");
+    if (text.length < 10 || text.length > 6000) throw new HttpError(400, "Bài cần viết lại phải từ 10 đến 6000 ký tự");
+    if (goclaw.mock || !directEnabled()) return res.json({ text: `${text}\n\n_(Bản viết lại mẫu, chưa có GROQ_API_KEY)_` });
+    try {
+      const { content } = await complete({
+        messages: [
+          { role: "system", content: "Bạn là người viết content cho quán ăn và người bán hàng. Viết lại bằng ĐÚNG ngôn ngữ của bài gốc (bài tiếng Anh thì trả lời tiếng Anh, không dịch). Chỉ trả về bài đã viết lại, không giải thích, không tiêu đề. Giữ nguyên định dạng markdown, hashtag và các chỗ trống dạng [GIÁ], [LINK]. Không thêm giá, ưu đãi, giờ mở cửa hay quà tặng nào không có trong bài gốc. Không dùng dấu gạch ngang để nối ý." },
+          { role: "user", content: `${ask}\n\nBÀI GỐC:\n${text}` },
+        ],
+      }, { maxTokens: 1500 });
+      // Same guard as the jobs: numbers that were not in the original become placeholders.
+      const { text: checked } = checkFacts(fixDashes(String(content ?? "").trim()), text);
+      if (!checked) throw new Error("empty");
+      res.json({ text: checked });
+    } catch (e) {
+      console.error("rewrite:", e.message);
+      throw new HttpError(502, /429|limit/i.test(e.message) ? "AI đang hết lượt dùng, thử lại sau ít phút." : "Chưa viết lại được, thử lại nhé.");
+    }
+  });
+
+  /** Canned result of a skill, rendered by the same result views, so a new user sees what it makes. */
+  const SAMPLE_INPUT = {
+    plan: () => ({ start: nextMondayYmd(), platform: "facebook", days: 7, perDay: 1, topic: "Quán cà phê" }),
+    campaign: () => ({ start: nextMondayYmd(), platform: "facebook", days: 7, perDay: 1, topic: "Quán cà phê" }),
+    clone: () => ({ platform: "facebook", topic: "Quán cà phê nhỏ", pillars: ["entertain", "educate", "engage", "sell"] }),
+  };
+  api.get("/samples/:type", (req, res) => {
+    const result = sampleReply(req.params.type);
+    if (!result) throw new HttpError(404, "Công cụ này chưa có kết quả mẫu");
+    const now = new Date().toISOString();
+    res.json({ job: { id: `sample-${req.params.type}`, type: req.params.type, sample: true, status: "done", title: "Kết quả mẫu", input: SAMPLE_INPUT[req.params.type]?.() ?? {}, result, createdAt: now, startedAt: now, finishedAt: now } });
+  });
+
   // ---- competitor watch ----
   const watcher = createWatcher({ store });
   if (!goclaw.mock) watcher.start();
 
   api.get("/watch", (req, res) => {
-    res.json({ items: store.listWatch() });
+    res.json({ items: store.listWatch().filter((w) => own(req, w)) });
   });
 
   api.post("/watch", async (req, res) => {
@@ -266,10 +417,10 @@ export async function createApp(config, adapter) {
     } catch (e) {
       throw new HttpError(400, e.message);
     }
-    const existing = store.listWatch().find((w) => w.url === url);
+    const existing = store.listWatch().find((w) => w.url === url && own(req, w));
     if (existing) return res.json({ item: existing });
     const name = new URL(url).pathname.split("/").filter(Boolean)[0] ?? url;
-    const item = await store.addWatch({ url, name });
+    const item = await store.addWatch({ url, name, ...(accounts ? { userId: req.user.id } : {}) });
     // First read sets the baseline, so the next check reports only reels posted after today.
     watcher.check(item).catch((e) => store.updateWatch(item.id, { lastError: e.message }));
     res.status(201).json({ item });
@@ -277,7 +428,7 @@ export async function createApp(config, adapter) {
 
   api.post("/watch/:id/check", async (req, res) => {
     const item = store.getWatch(req.params.id);
-    if (!item) throw new HttpError(404, "Không tìm thấy kênh đang theo dõi");
+    if (!item || !own(req, item)) throw new HttpError(404, "Không tìm thấy kênh đang theo dõi");
     try {
       res.json({ ...(await watcher.check(item)), item: store.getWatch(item.id) });
     } catch (e) {
@@ -286,13 +437,14 @@ export async function createApp(config, adapter) {
   });
 
   api.delete("/watch/:id", async (req, res) => {
+    if (!own(req, store.getWatch(req.params.id))) throw new HttpError(404, "Không tìm thấy kênh đang theo dõi");
     await store.deleteWatch(req.params.id);
     res.json({ ok: true });
   });
 
   /** How the AI pipeline is doing over the cached recent jobs: watch sources, Groq retries, failures. */
   api.get("/ai-stats", (req, res) => {
-    const jobs = store.listJobs();
+    const jobs = store.listJobs().filter((j) => own(req, j));
     const watch = jobs.flatMap((j) => j.watch ?? []);
     const by = (src) => watch.filter((w) => w.source === src).length;
     const llmJobs = jobs.filter((j) => j.llm?.engine === "groq");
@@ -308,13 +460,13 @@ export async function createApp(config, adapter) {
   api.get("/jobs", (req, res) => {
     const { type } = req.query;
     const limit = Math.min(200, Number(req.query.limit) || 50);
-    const jobs = store.listJobs().filter((j) => !type || j.type === type).slice(0, limit);
+    const jobs = store.listJobs().filter((j) => own(req, j) && (!type || j.type === type)).slice(0, limit);
     res.json({ jobs: jobs.map((j) => summary(j, runner)) });
   });
 
   api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
-    const job = await runner.submit({ type, ...(await jobSpec(type, input)) });
+    const job = await runner.submit({ type, ...(await jobSpec(type, input)), userId: userId(req) });
     res.status(201).json({ job: summary(job, runner) });
   });
 
@@ -332,7 +484,7 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
-    const fresh = await runner.submit({ type: job.type, ...(await jobSpec(job.type, job.input)) });
+    const fresh = await runner.submit({ type: job.type, ...(await jobSpec(job.type, job.input)), userId: userId(req) });
     res.status(201).json({ job: summary(fresh, runner) });
   });
 
@@ -345,18 +497,18 @@ export async function createApp(config, adapter) {
   });
 
   api.get("/schedule", (req, res) => {
-    res.json({ slots: store.listSchedule(req.query.from, req.query.to) });
+    res.json({ slots: store.listSchedule(req.query.from, req.query.to).filter((x) => own(req, x)) });
   });
 
   /** One slot, or { slots: [...] } to add a whole plan at once (max 31). */
   api.post("/schedule", async (req, res) => {
     const list = Array.isArray(req.body?.slots) ? req.body.slots : [req.body ?? {}];
     if (!list.length || list.length > 31) throw new HttpError(400, "Mỗi lần thêm từ 1 đến 31 bài");
-    res.status(201).json({ slots: await store.addSlots(list.map((x) => slotFields(x ?? {}))) });
+    res.status(201).json({ slots: await store.addSlots(list.map((x) => ({ ...slotFields(x ?? {}), ...(accounts ? { userId: req.user.id } : {}) }))) });
   });
 
   api.put("/schedule/:id", async (req, res) => {
-    if (!store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
+    if (!own(req, store.getSlot(req.params.id) ?? null) || !store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
     res.json({ slot: await store.updateSlot(req.params.id, slotFields(req.body ?? {}, true)) });
   });
 
@@ -378,7 +530,7 @@ export async function createApp(config, adapter) {
   /** Post a calendar slot to the Facebook Page (now, or scheduled on Facebook for its time). */
   api.post("/schedule/:id/publish", async (req, res) => {
     const slot = store.getSlot(req.params.id);
-    if (!slot) throw new HttpError(404, "Không tìm thấy bài trong lịch");
+    if (!slot || !own(req, slot)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
     if (slot.fbPostId) throw new HttpError(409, "Bài này đã được gửi lên Facebook");
     try {
       const out = await publishToPage({ message: [slot.body || slot.title].join(""), at: slot.at });
@@ -389,27 +541,29 @@ export async function createApp(config, adapter) {
   });
 
   api.delete("/schedule/:id", async (req, res) => {
-    if (!store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
+    if (!own(req, store.getSlot(req.params.id) ?? null) || !store.getSlot(req.params.id)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
     await store.deleteSlot(req.params.id);
     res.json({ ok: true });
   });
 
+  // Starter templates (no owner) are shown to every customer; only the admin can edit them.
+  const sharedTemplate = (x) => x.kind === "template" && !x.userId;
   api.get("/library", (req, res) => {
     const { kind } = req.query;
-    res.json({ items: store.listLibrary().filter((x) => !kind || x.kind === kind) });
+    res.json({ items: store.listLibrary().filter((x) => (!kind || x.kind === kind) && (sharedTemplate(x) || own(req, x))) });
   });
 
   api.post("/library", async (req, res) => {
-    res.status(201).json({ item: await store.addItem(libraryFields(req.body ?? {})) });
+    res.status(201).json({ item: await store.addItem({ ...libraryFields(req.body ?? {}), ...(accounts ? { userId: req.user.id } : {}) }) });
   });
 
   api.put("/library/:id", async (req, res) => {
-    if (!store.getItem(req.params.id)) throw new HttpError(404, "Không tìm thấy mục trong thư viện");
+    if (!store.getItem(req.params.id) || !own(req, store.getItem(req.params.id))) throw new HttpError(404, "Không tìm thấy mục trong thư viện");
     res.json({ item: await store.updateItem(req.params.id, libraryFields(req.body ?? {}, true)) });
   });
 
   api.delete("/library/:id", async (req, res) => {
-    if (!store.getItem(req.params.id)) throw new HttpError(404, "Không tìm thấy mục trong thư viện");
+    if (!store.getItem(req.params.id) || !own(req, store.getItem(req.params.id))) throw new HttpError(404, "Không tìm thấy mục trong thư viện");
     await store.deleteItem(req.params.id);
     res.json({ ok: true });
   });
@@ -426,9 +580,10 @@ export async function createApp(config, adapter) {
 
   const app = express();
   app.disable("x-powered-by");
-  app.use(basicAuth(config.appPassword));
-  app.get("/media/videos/:file", (req, res) => {
+  app.use(gate.middleware);
+  app.get("/media/videos/:file", async (req, res) => {
     const m = req.params.file.match(/^([0-9a-f-]{36})\.mp4$/);
+    if (accounts && m && !own(req, store.cachedJob(m[1]) ?? (await store.getJob(m[1])))) return res.status(404).send("Không tìm thấy video");
     const file = m && video.videoPath(m[1]);
     if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
     res.set("X-Content-Type-Options", "nosniff").sendFile(file, { dotfiles: "allow" }); // DATA_DIR defaults to web/.data
@@ -440,7 +595,16 @@ export async function createApp(config, adapter) {
     if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
     res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
   });
-  app.get("/media/images/:file", (req, res) => {
+  // Instagram post pictures kept by the Instagram analysis (the CDN links expire).
+  app.get("/media/thumbs/:file", (req, res) => {
+    const m = req.params.file.match(/^ig-[\w-]{5,40}\.jpg$/);
+    const file = m && path.join(clipsDir, req.params.file);
+    if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy ảnh");
+    res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
+  });
+  app.get("/media/images/:file", async (req, res) => {
+    const jobId = req.params.file.slice(0, 36);
+    if (accounts && !own(req, store.cachedJob(jobId) ?? (await store.getJob(jobId)))) return res.status(404).send("Không tìm thấy ảnh");
     const file = video.imagePath(req.params.file);
     if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy ảnh");
     res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
@@ -452,7 +616,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data: blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));

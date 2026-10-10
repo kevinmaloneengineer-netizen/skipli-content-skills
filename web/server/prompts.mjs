@@ -1,6 +1,8 @@
 // Validate job input from the UI and turn it into the agent prompt.
 // Prompts are written so the right skill triggers; the skill owns the method.
 
+import { instagramUser, yelpUrl } from "./sources/socialApify.mjs";
+
 export class InputError extends Error {}
 
 /** Channel-scan prompt when the server already has the reel list: the skill skips browser collection (step 1a). */
@@ -19,7 +21,7 @@ const PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "TikTok/Re
 const MAX_REFERENCE = 20_000;
 const CLONE_PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "video ngắn (kịch bản + caption)" };
 const VIDEO_RATIOS = ["9:16", "16:9", "1:1"];
-export const VIDEO_MODES = { topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
+export const VIDEO_MODES = { topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện", slideshow: "Trình chiếu ảnh" };
 export const VIDEO_STYLES = { real: "chân thực như quay thật (photorealistic)", cinematic: "điện ảnh (cinematic film still)", anime: "anime Nhật Bản (anime style)", pixar: "hoạt hình 3D (3D animation, Pixar style)", clay: "đất sét (claymation)", cyberpunk: "cyberpunk (neon cyberpunk)" };
 export const VIDEO_TONES = { warm: "nhẹ nhàng, ấm áp", fun: "vui nhộn", emotional: "cảm động", dramatic: "kịch tính", inspiring: "truyền cảm hứng" };
 const MAX_STORY_WORDS = 350;
@@ -65,6 +67,10 @@ function facebookUrl(raw) {
   return u.toString();
 }
 
+/** Where the page posts from: its posting hours are read in this zone (default Vietnam). */
+export const TIME_ZONES = { "Asia/Ho_Chi_Minh": "giờ Việt Nam", "America/New_York": "giờ miền Đông Mỹ (ET)", "America/Chicago": "giờ miền Trung Mỹ (CT)", "America/Denver": "giờ miền Núi Mỹ (MT)", "America/Los_Angeles": "giờ miền Tây Mỹ (PT)" };
+const timeZone = (v) => (TIME_ZONES[v] ? v : "Asia/Ho_Chi_Minh");
+
 const isSingleVideo = (url) => /fb\.watch|\/reel\/\d|\/videos\/|\/watch\/?\?v=|\/share\/(r|v)\//i.test(url);
 
 /**
@@ -73,7 +79,41 @@ const isSingleVideo = (url) => /fb\.watch|\/reel\/\d|\/videos\/|\/watch\/?\?v=|\
  * @returns {{ agent: "scout"|"writer", title: string, input: object, prompt: string }}
  */
 export function buildJob(type, raw, refs = {}) {
-  raw ??= {};
+  const spec = buildSpec(type, raw ?? {}, refs);
+  // English input (a US restaurant): what gets posted or sent to customers is written in English.
+  if (CONTENT_TYPES.has(type) && isEnglish(userText(raw)) && !spec.prompt.includes(ENGLISH_RULE)) {
+    spec.prompt = `${spec.prompt.replace(/,? bằng tiếng Việt/g, " (ngôn ngữ theo mục NGÔN NGỮ cuối tin nhắn)").replace(/Trả lời bằng tiếng Việt\./g, "").replace(/Lời thoại tiếng Việt\./g, "Lời thoại (narration) và tiêu đề viết bằng tiếng Anh kiểu Mỹ.")}\n\n${ENGLISH_RULE}`;
+    spec.input = { ...spec.input, lang: "en" };
+  }
+  return spec;
+}
+
+/** Job types whose result is copy for customers (scan reports stay in Vietnamese for the owner). */
+const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video"]);
+const ENGLISH_RULE = [
+  "NGÔN NGỮ: thông tin được nhập bằng tiếng Anh, khách của quán nói tiếng Anh (thị trường Mỹ).",
+  "Viết TOÀN BỘ nội dung dành cho khách (bài đăng, caption, câu trả lời, tin nhắn, mô tả món, lời thoại, chữ trên ảnh, hashtag) bằng tiếng Anh tự nhiên kiểu Mỹ. Tiền tệ là USD ($).",
+  "GIỮ NGUYÊN các tiêu đề mục và nhãn theo mẫu của skill bằng tiếng Việt (ví dụ \"## Phương án 1: …\", \"## Món: …\", \"## Tình huống: …\", \"**Khách nhắn:**\", \"**Trả lời:**\", \"## Bộ 1 · …\", \"## Ngày 1 · 19:30 · …\") để ứng dụng hiển thị đúng; phần tên sau dấu \":\" được viết tiếng Anh.",
+  "Ghi chú và giải thích cho chủ quán viết tiếng Việt. Chỗ chưa biết để dạng [PRICE], [LINK], [HOURS], [PHONE].",
+].join("\n");
+const VI_MARKS = /[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i;
+// Vietnamese typed without accents ("quan lau bo ngon") must not count as English.
+const VI_PLAIN = /\b(quan|lau|bo|pho|com|bun|ngon|gia|mon|khach|ban|cua|cho|nhe|nha hang|tiem|uu dai|giam)\b/gi;
+function userText(raw = {}) {
+  const skip = /^(url|urls|start|platform|platforms|tone|style|size|ratio|engine|voice|mode|kind|templateId|referenceJobId|referenceImageId|panelIds|pillars|source|lang)$/;
+  return Object.entries(raw)
+    .filter(([k, v]) => !skip.test(k) && (typeof v === "string" || Array.isArray(v)))
+    .map(([, v]) => [v].flat().join(" "))
+    .join(" ")
+    .replace(/https?:\/\/\S+/g, " ");
+}
+export function isEnglish(text) {
+  if (VI_MARKS.test(text)) return false;
+  if ((text.match(VI_PLAIN) ?? []).length >= 2) return false;
+  return (text.match(/\b[a-z]{3,}\b/gi) ?? []).length >= 3;
+}
+
+function buildSpec(type, raw, refs) {
   switch (type) {
     case "fb-reels": {
       const url = facebookUrl(raw.url);
@@ -222,8 +262,51 @@ export function buildJob(type, raw, refs = {}) {
       const common = [`Phong cách hình ảnh: ${VIDEO_STYLES[style]}`, `Tone cảm xúc: ${VIDEO_TONES[tone]}`, `Khung hình: ${ratio}`];
       if (brief) common.push(`Thông tin thêm:\n${brief}`);
       const engine = ["wan", "wan5b", "ltx"].includes(raw.engine) ? raw.engine : "wan";
-      const base = { mode, ratio, voice, style, tone, brief, engine };
+      const audio = raw.audio === "music" ? "music" : "voice";
+      const base = { mode, ratio, voice, style, tone, brief, engine, audio };
+      const kind = raw.kind === "showcase" ? "showcase" : "story";
+      base.kind = kind;
+      if (kind === "showcase") common.push("LOẠI VIDEO: Showcase (food and place) theo skill: không có nhân vật chính, không có cảnh người kể, món ăn và không gian quán là chủ thể của mọi cảnh.");
+      if (audio === "music") common.push('ÂM THANH: video KHÔNG có giọng đọc, chỉ có nhạc nền vui không lời. Mỗi cảnh khoảng 3 giây. "narration" là dòng chữ ngắn hiện trên màn hình (tối đa 6 từ, ví dụ tên món hoặc một lời mời), KHÔNG phải câu để đọc. Cảnh cuối là lời mời ghé quán (tên quán).');
       const head = "Viết kịch bản video ngắn theo định dạng JSON của skill video-scripter. Lời thoại tiếng Việt.";
+
+      if (mode === "slideshow") {
+        // AI-drawn photos of the dishes and the place, shown with slow zoom/pan and crossfades over soft music.
+        const topic = str(raw.topic, "quán / món ăn", { required: true, max: 300 });
+        const seconds = Number(raw.seconds) === 30 ? 30 : 15;
+        const count = seconds === 30 ? 6 : 5;
+        // Title card on the first photo (drawn by the server, not by the image model).
+        const card = { name: str(raw.name, "tên quán", { max: 60 }), city: str(raw.city, "thành phố", { max: 60 }), address: str(raw.address, "địa chỉ", { max: 160 }), phone: str(raw.phone, "số điện thoại", { max: 30 }), logoId: upload(raw.logoId, "Logo") };
+        // Real photos of the restaurant come first; the image model only fills the remaining slots.
+        const photoIds = (Array.isArray(raw.photoIds) ? raw.photoIds : []).slice(0, count).map((id) => upload(id, "Ảnh của quán"));
+        const ai = count - photoIds.length;
+        const want = Math.max(1, ai); // with every slot filled the model's answer is not drawn
+        const plan = photoIds.length
+          ? [
+              `Người dùng đã có ${photoIds.length} ảnh thật (thường là món ăn), dùng làm các ảnh đầu video. Viết đúng ${want} ý tưởng ảnh VẼ THÊM theo định dạng JSON của skill image-prompter, cho một video TRÌNH CHIẾU ảnh quảng bá quán (ảnh nối nhau, có nhạc nền, không chữ).`,
+              `Ưu tiên theo thứ tự cho ${want} ảnh: bên trong quán (phòng ăn ấm cúng, bàn ghế, đèn, không có khách); bên ngoài quán (mặt tiền lúc chạng vạng, cửa kính sáng đèn vàng ấm, cây xanh, không biển hiệu, không chữ); món đặc trưng (suy từ tên quán) ở góc khác; cả bàn đầy món nhìn từ trên xuống; bếp đang nấu món đặc trưng (chỉ thấy nồi). Nếu có ảnh bên ngoài quán thì để nó ở CUỐI.`,
+            ]
+          : [
+              `Viết đúng ${count} ý tưởng ảnh theo định dạng JSON của skill image-prompter, dùng làm ${count} khung hình cho một video TRÌNH CHIẾU ảnh quảng bá quán (ảnh nối nhau, có nhạc nền, không chữ).`,
+              `MÓN ĐẶC TRƯNG: suy ra từ tên quán và mô tả (quán "Phở …" → phở bò; quán BBQ → brisket). Video xoay quanh món này: ít nhất ${count - 2} ảnh có món đặc trưng, mỗi ảnh một góc khác nhau (tô món nhìn chéo 45 độ có khói bốc lên, cận cảnh gắp sợi/miếng thịt, rót nước dùng hoặc nước sốt, nhìn từ trên xuống cùng rau và món ăn kèm${count >= 6 ? ", đầu bếp đang nấu món này trong bếp (chỉ thấy nồi, không thấy người)" : ""}).`,
+              `BẮT BUỘC có 2 ảnh về quán: ảnh ${count - 1} là bên trong quán (phòng ăn ấm cúng, bàn ghế, đèn, không có khách), ảnh ${count} là bên ngoài quán (mặt tiền lúc chạng vạng, cửa kính sáng đèn vàng ấm, cây xanh, vỉa hè, không có biển hiệu, không có chữ). Ảnh 1 là món đặc trưng đẹp nhất (thông tin quán sẽ đè lên ảnh này).`,
+            ];
+        return {
+          agent: "writer",
+          direct: "image-prompter",
+          title: `Video trình chiếu ${seconds}s · ${topic.slice(0, 60)}`,
+          input: { mode, ratio, style, brief, seconds, count, topic, audio: "music", ...card, photoIds, ai },
+          prompt: [
+            ...plan,
+            "Mỗi \"prompt\" (tiếng Anh, dưới 60 từ) tả một bức ảnh chụp thật như của nhiếp ảnh gia: món ăn thật, chi tiết bề mặt, ánh sáng tự nhiên ấm, độ sâu trường ảnh nông, đúng kiểu quán và vùng miền (quán Việt ở Mỹ thì bát đĩa, bàn gỗ kiểu quán Việt). TUYỆT ĐỐI không có người, mặt, tay, chữ, logo, biển hiệu. KHÔNG ghi tên quán hay bất kỳ chữ nào trong prompt (model vẽ ảnh sẽ cố viết chữ đó lên ảnh và bị méo).",
+            '"headline", "sub", "cta", "caption" để chuỗi rỗng "".',
+            card.name ? `Tên quán (chỉ để biết món đặc trưng, KHÔNG đưa vào prompt): ${card.name}` : "",
+            card.city ? `Khu vực: ${card.city}` : "",
+            `Quán / món: ${topic}`,
+            brief ? `Thông tin thêm:\n${brief}` : "",
+          ].filter(Boolean).join("\n\n"),
+        };
+      }
 
       if (mode === "storyboard") {
         const topic = str(raw.topic, "nội dung câu chuyện", { required: true, max: 300 });
@@ -279,9 +362,9 @@ export function buildJob(type, raw, refs = {}) {
       return {
         agent: "scout",
         title: `Phân tích fanpage @${name}`,
-        input: { url, focus },
+        input: { url, focus, tz: timeZone(raw.tz) },
         prompt:
-          `Phân tích fanpage Facebook ${url} theo skill fanpage-analyzer: đọc 100 reel gần nhất kèm tương tác (list_reels.py --count 100 --stats --limit 200, không cần đăng nhập) rồi chạy analyze_reels.py để có số liệu.` +
+          `Phân tích fanpage Facebook ${url} theo skill fanpage-analyzer: đọc 100 reel gần nhất kèm tương tác (list_reels.py --count 100 --stats --limit 200, không cần đăng nhập) rồi chạy analyze_reels.py --tz ${timeZone(raw.tz)} để có số liệu (giờ đăng tính theo ${TIME_ZONES[timeZone(raw.tz)]}).` +
           (focus ? ` Chú ý thêm: ${focus}.` : "") +
           " Chạy lại script từ đầu, không dùng kết quả cũ. Trả lời bằng tiếng Việt.",
       };
@@ -401,6 +484,32 @@ export function buildJob(type, raw, refs = {}) {
       };
     }
 
+    case "yelp": {
+      const url = yelpUrl(raw.url);
+      if (!url) throw new InputError("Dán link trang quán trên Yelp, dạng yelp.com/biz/ten-quan");
+      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
+      return {
+        agent: "scout",
+        direct: "review-analyzer",
+        title: `Review Yelp · ${url.split("/biz/")[1].replace(/-/g, " ").slice(0, 60)}`,
+        input: { url, focus },
+        prompt: "", // filled by prepare.mjs once the reviews are collected
+      };
+    }
+
+    case "instagram": {
+      const user = instagramUser(raw.url ?? raw.user);
+      if (!user) throw new InputError("Nhập tên tài khoản Instagram (ví dụ @franklinbbq) hoặc link trang cá nhân");
+      const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
+      return {
+        agent: "scout",
+        direct: "fanpage-analyzer",
+        title: `Phân tích Instagram @${user}`,
+        input: { user, url: `https://www.instagram.com/${user}/`, focus, tz: timeZone(raw.tz) },
+        prompt: "", // filled by prepare.mjs once the posts are read
+      };
+    }
+
     case "menu": {
       const dishes = str(raw.dishes, "danh sách món", { required: true, max: 3000 });
       const lines = dishes.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -449,7 +558,8 @@ export function buildJob(type, raw, refs = {}) {
       const audience = str(raw.audience, "khách hàng", { max: 200 });
       const platforms = list(raw.platforms, "nền tảng", 4);
       const sections = ["Gợi ý bộ hashtag và khung giờ đăng theo skill hashtag-planner, bằng tiếng Việt.", `Kinh doanh: ${business}`];
-      sections.push(`Tag chắc chắn đúng, dùng làm gốc (có thể thêm tag khác nhưng phải đúng món, đúng khu vực): ${baseHashtags(business, area).join(" ")}`);
+      const en = isEnglish(userText(raw));
+      sections.push(`Tag chắc chắn đúng, dùng làm gốc (có thể thêm tag khác nhưng phải đúng món, đúng khu vực): ${(en ? usHashtags(business, area) : baseHashtags(business, area)).join(" ")}`);
       if (area) sections.push(`Khu vực: ${area}`);
       sections.push(`Nền tảng: ${(platforms.length ? platforms : ["Facebook", "TikTok", "Instagram"]).join(", ")}`);
       if (audience) sections.push(`Khách hàng: ${audience}`);
@@ -506,7 +616,7 @@ export function buildJob(type, raw, refs = {}) {
         agent: "scout",
         direct: "competitor-compare",
         title: `So sánh ${names.map((n) => `@${n}`).join(" · ")}`.slice(0, 120),
-        input: { urls, focus },
+        input: { urls, focus, tz: timeZone(raw.tz) },
         prompt: "", // filled by prepare.mjs once every page is read
       };
     }
@@ -532,6 +642,14 @@ const CITIES = { saigon: /sai\s*g|hcm|hồ chí minh|ho chi minh|quận|quan \d/
 // Districts people tag by name: a tag for a district the user did not give is wrong.
 const DISTRICTS = ["phunhuan", "binhthanh", "govap", "tanbinh", "tanphu", "thuduc", "binhtan", "nhabe", "cuchi", "hoankiem", "caugiay", "dongda", "badinh", "haibatrung", "tayho"];
 
+/** Base tags for a US business: brand ("Smokey Joe's BBQ, a family…" → #smokeyjoesbbq) and city ("Austin, TX" → #austin #austinfood #austineats). */
+export function usHashtags(business, area) {
+  const brand = business.split(/[,(]| - /)[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+  const city = area.split(",")[0].toLowerCase().replace(/[^a-z]/g, "");
+  const tags = [brand, ...(city ? [city, `${city}food`, `${city}eats`] : []), "foodie"];
+  return [...new Set(tags.filter((t) => t.length > 2 && t.length < 30))].map((t) => `#${t}`);
+}
+
 export function baseHashtags(business, area) {
   const words = business.split(/[\s,.;:()]+/).map(slug).filter((w) => w && !STOP.test(w));
   const dish = words.slice(0, 2).join(""); // "Quán lẩu bò bình dân" → "laubo"
@@ -544,12 +662,14 @@ export function baseHashtags(business, area) {
 }
 
 /** Remove tags that contradict the business or area, plus spam tags; drop empty lines it leaves. */
-export function cleanHashtags(md, { business = "", area = "" } = {}) {
+export function cleanHashtags(md, { business = "", area = "", lang = "" } = {}) {
   const facts = `${business} ${area}`;
+  const viOnly = /^(amthuc|anngon|reviewanngon|monngon|quanngon|ancungtiktok|xuhuong)/;
   const vegetarian = /chay/i.test(slug(business));
   const bad = (tag) => {
     const t = slug(tag);
     if (/follow|like4like|f4f|instagood|viral$|xuhuong$|^spam|^tag$|^hashtag$/.test(t)) return true;
+    if (lang === "en" && viOnly.test(t)) return true; // a US audience does not search Vietnamese tags
     if (!vegetarian && /chay/.test(t)) return true;
     if (/quang\d/.test(t)) return true; // "quang3": misspelt "quận 3"
     if (DISTRICTS.some((d) => t.includes(d) && !slug(facts).includes(d))) return true;

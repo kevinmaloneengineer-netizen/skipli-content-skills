@@ -9,6 +9,7 @@ const num = (name, fallback) => {
 const LIMITS = {
   jobsPerDay: num("DAILY_JOB_LIMIT", 80), // whole app, Vietnam calendar day
   jobsPerIpHour: num("JOB_LIMIT_PER_IP_HOUR", 20),
+  jobsPerUserDay: num("USER_DAILY_JOB_LIMIT", 30), // ACCOUNTS=1: per customer, the admin can change it per account
   chatPerIpMinute: num("CHAT_LIMIT_PER_IP_MINUTE", 8),
   chatPerIpDay: num("CHAT_LIMIT_PER_IP_DAY", 200),
 };
@@ -42,6 +43,13 @@ export function createLimits({ store }) {
         const today = vnDay(new Date().toISOString());
         const count = store.listJobs().filter((j) => j.type !== "watch" && vnDay(j.createdAt) === today).length;
         if (count >= LIMITS.jobsPerDay) return tooMany(res, `Hôm nay web đã chạy đủ ${LIMITS.jobsPerDay} lượt (giới hạn để không hết hạn mức AI miễn phí). Mai thử lại nhé.`);
+      }
+      // Customer accounts: each customer's own daily allowance (the admin has none).
+      if (req.user && req.user.role !== "admin") {
+        const max = req.user.dailyLimit ?? LIMITS.jobsPerUserDay;
+        const today = vnDay(new Date().toISOString());
+        const mine = store.listJobs().filter((j) => j.userId === req.user.id && j.type !== "watch" && vnDay(j.createdAt) === today).length;
+        if (max && mine >= max) return tooMany(res, `Tài khoản của bạn đã chạy đủ ${max} lượt hôm nay. Mai thử lại hoặc liên hệ để nâng gói nhé.`);
       }
       if (!take(`job|${ipOf(req)}`, LIMITS.jobsPerIpHour, 3600_000)) return tooMany(res, `Bạn đã chạy ${LIMITS.jobsPerIpHour} lượt trong 1 giờ qua. Nghỉ một chút rồi thử lại nhé.`);
       next();

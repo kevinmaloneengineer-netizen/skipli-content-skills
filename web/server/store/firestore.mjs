@@ -27,6 +27,7 @@ export function connectFirestore({ projectId, serviceAccount, databaseId }) {
  *   <prefix>library/{id}   template or saved post
  *   <prefix>meta/app       { seeded: true }
  *   <prefix>watch/{id}     competitor channels checked on a schedule
+ *   <prefix>users/{id}     customer accounts (ACCOUNTS=1)
  * Only single-field queries are used, so no composite index is needed.
  * Clients never touch Firestore directly - see deploy/firebase/firestore.rules.
  */
@@ -37,9 +38,16 @@ export function firestoreAdapter(db, prefix = "") {
   const feedback = db.collection(`${prefix}feedback`);
   const schedule = db.collection(`${prefix}schedule`);
   const watch = db.collection(`${prefix}watch`);
+  const users = db.collection(`${prefix}users`);
   const data = (snap) => snap.docs.map((d) => d.data());
 
   return {
+    async loadUsers() {
+      return data(await users.get());
+    },
+    async saveUser(u) {
+      await users.doc(u.id).set(u);
+    },
     async loadWatch() {
       return data(await watch.get());
     },

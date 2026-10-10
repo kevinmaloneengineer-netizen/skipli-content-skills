@@ -7,6 +7,7 @@ import { useParallax } from "../lib/motion.js";
 import { FLOWS } from "../lib/workflows.js";
 import Backdrop from "./Backdrop.jsx";
 import ChatWidget from "./ChatWidget.jsx";
+import UserMenu from "./UserMenu.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
 import Footer from "./Footer.jsx";
 import HealthStatus from "./HealthStatus.jsx";
@@ -116,6 +117,36 @@ function ToolMenu({ onPick }) {
   );
 }
 
+/**
+ * After a deploy the open tab keeps running the old bundle (the app never reloads itself). Check the
+ * served index every 2 minutes; when its script changed, the next page change reloads the app.
+ */
+function useFreshBundle(pathname) {
+  const stale = useRef(false);
+  useEffect(() => {
+    const mine = document.querySelector('script[type="module"][src*="/assets/"]')?.getAttribute("src");
+    if (!mine) return; // dev server
+    const check = () =>
+      fetch("/", { cache: "no-store" })
+        .then((r) => r.text())
+        .then((html) => {
+          const served = html.match(/<script[^>]+type="module"[^>]+src="([^"]+)"/)?.[1];
+          if (served && served !== mine) stale.current = true;
+        })
+        .catch(() => {});
+    const t = setInterval(check, 120_000);
+    const onFocus = () => check();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+  useEffect(() => {
+    if (stale.current) window.location.reload();
+  }, [pathname]);
+}
+
 export default function Layout() {
   const { jobs } = useJobs();
   const running = jobs.filter((j) => ACTIVE.has(j.status)).length;
@@ -156,6 +187,8 @@ export default function Layout() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [palette]);
+
+  useFreshBundle(pathname);
 
   useEffect(() => {
     if (!menu) return;
@@ -201,6 +234,7 @@ export default function Layout() {
             <ThemeButton dark={dark} onToggle={toggle} />
           </div>
           <HealthStatus />
+          <UserMenu />
           <span className="nav-sep" aria-hidden="true" />
           <Link className="btn primary nav-cta" to="/write"><Icon d={I.plus} />Tạo content</Link>
           <button type="button" className="nav-burger" aria-label={menu ? "Đóng menu" : "Mở menu"} aria-expanded={menu} aria-controls="tool-menu" onClick={() => setMenu((v) => !v)}>

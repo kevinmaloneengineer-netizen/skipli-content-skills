@@ -14,7 +14,7 @@ const ACTIVE = new Set(["queued", "running"]);
  * @param {object} adapter  see ./memory.mjs for the contract
  * @param {{ templates?: object[], cacheSize?: number }} opts
  */
-export async function openStore(adapter, { templates = [], cacheSize = 300 } = {}) {
+export async function openStore(adapter, { templates = [], cacheSize = 1000 } = {}) {
   const now = () => new Date().toISOString();
 
   const jobs = await adapter.loadRecentJobs(cacheSize); // newest first
@@ -29,6 +29,7 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   const library = await adapter.loadLibrary(); // newest first
   const schedule = await adapter.loadSchedule(); // small: one row per planned post
   const watch = (await adapter.loadWatch?.()) ?? []; // competitor channels to re-check
+  const users = (await adapter.loadUsers?.()) ?? []; // customer accounts (ACCOUNTS=1)
 
   function trim() {
     // Evict the oldest finished jobs; they stay readable through adapter.loadJob.
@@ -40,6 +41,24 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
   }
 
   return {
+    // ---- accounts ----
+    listUsers: () => [...users].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    getUser: (id) => users.find((u) => u.id === id),
+    userByEmail: (email) => users.find((u) => u.email === String(email ?? "").trim().toLowerCase()),
+    async addUser(u) {
+      const user = { id: randomUUID(), createdAt: now(), disabled: false, ...u, email: u.email.trim().toLowerCase() };
+      await adapter.saveUser(user);
+      users.push(user);
+      return user;
+    },
+    async updateUser(id, patch) {
+      const user = users.find((u) => u.id === id);
+      if (!user) return undefined;
+      Object.assign(user, patch, { updatedAt: now() });
+      await adapter.saveUser(user);
+      return user;
+    },
+
     // ---- watched competitor channels ----
     listWatch: () => [...watch].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     getWatch: (id) => watch.find((w) => w.id === id),
@@ -97,15 +116,15 @@ export async function openStore(adapter, { templates = [], cacheSize = 300 } = {
     },
 
     /** Usage numbers for the footer, over the cached recent jobs + the whole library. */
-    stats() {
-      const done = jobs.filter((j) => j.status === "done");
+    stats(mine = () => true) {
+      const done = jobs.filter((j) => j.status === "done" && mine(j));
       const scanned = { "fb-reels": (j) => (j.input?.mode === "channel" ? j.input.depth ?? 10 : 1), fanpage: () => 100, clone: (j) => (j.input?.url ? 30 : 0) };
       return {
         runs: done.length,
-        saved: library.filter((x) => x.kind === "saved").length,
+        saved: library.filter((x) => x.kind === "saved" && mine(x)).length,
         templates: library.filter((x) => x.kind === "template").length,
         reels: done.reduce((n, j) => n + (scanned[j.type]?.(j) ?? 0), 0),
-        byType: Object.fromEntries([...new Set(jobs.map((j) => j.type))].map((t) => [t, jobs.filter((j) => j.type === t).length])),
+        byType: Object.fromEntries([...new Set(jobs.filter(mine).map((j) => j.type))].map((t) => [t, jobs.filter((j) => j.type === t && mine(j)).length])),
       };
     },
 

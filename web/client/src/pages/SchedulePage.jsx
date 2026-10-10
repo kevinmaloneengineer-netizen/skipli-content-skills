@@ -83,7 +83,7 @@ export default function SchedulePage() {
         <Notes
           items={[
             "Lịch lưu trên máy chủ, mở ở máy nào cũng thấy.",
-            "Chưa tự động đăng lên Facebook: tới giờ, mở bài trong lịch, sao chép rồi đăng và bấm Đã đăng.",
+            "Đã kết nối Facebook Page thì mở bài trong lịch và bấm Đăng lên Facebook (đăng ngay hoặc để Facebook tự đăng đúng giờ). Chưa kết nối thì sao chép bài, tự đăng rồi bấm Đã đăng.",
             "Giờ gợi ý dựa trên khung giờ khách Việt hay online; chạy Phân tích fanpage để biết giờ hợp với kênh của bạn.",
           ]}
         />

@@ -4,6 +4,9 @@ import { GUIDE } from "../lib/skillGuide.js";
 import { JobHistory } from "./JobBits.jsx";
 import SkillArt from "./SkillArt.jsx";
 
+// Skills with a canned result (server/mock.mjs); image and video results are media files.
+const SAMPLE_TYPES = new Set(["fb-reels", "threads", "write", "clone", "tiktok", "compare", "maps", "fanpage", "plan", "livestream", "campaign", "menu", "review", "inbox", "hashtag", "yelp", "instagram"]);
+
 export function BackLink({ to = "/", children = "Tất cả công cụ" }) {
   return (
     <Link className="back" to={to}>
@@ -48,7 +51,12 @@ export default function SkillShell({ id, actions, children, wide = false }) {
               ))}
             </ul>
           )}
-          {actions && <div className="skill-head-actions">{actions}</div>}
+          {(actions || (guide && SAMPLE_TYPES.has(skill.type))) && (
+            <div className="skill-head-actions">
+              {actions}
+              {guide && SAMPLE_TYPES.has(skill.type) && <Link className="sample-link" to={`/samples/${skill.type}`}>Xem kết quả mẫu →</Link>}
+            </div>
+          )}
         </div>
         <div className="skill-hero-art" aria-hidden="true">
           <span className="hero-ring a" />

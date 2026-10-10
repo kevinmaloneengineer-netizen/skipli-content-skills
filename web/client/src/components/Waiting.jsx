@@ -66,7 +66,23 @@ export default function Waiting({ job }) {
         </div>
       </section>
 
-      {steps.length > 0 && (
+      {running && job.phases?.length > 0 ? (
+        <ol className="wait-steps wait-live" aria-live="polite">
+          {job.phases.map((p, i) => {
+            const last = i === job.phases.length - 1;
+            const at = Math.max(0, Math.round((Date.parse(p.at) - Date.parse(job.startedAt)) / 1000));
+            return (
+              <li key={`${i}-${p.at}`} data-state={last ? "active" : "done"}>
+                <span className="wait-step-dot" aria-hidden="true">{last ? <i className="wait-spin" /> : "✓"}</span>
+                <div>
+                  <strong>{p.text.replace(/…$/, "")}</strong>
+                  <span>{last ? `Đang làm · bắt đầu ở ${clock(at)}` : `Xong · ${clock(at)}`}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : steps.length > 0 && (
         <ol className="wait-steps">
           {steps.map(([title, text], i) => (
             <li key={title} data-state={i < done ? "done" : i === done && running ? "active" : "todo"}>

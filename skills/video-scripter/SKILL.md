@@ -36,6 +36,7 @@ Turn the request into a shot list that a video pipeline renders automatically: p
 ## By request type
 
 - **Topic**: write the story yourself: hook in shot 1 (a question, a surprise, or a strong claim), clear middle, a closing line or call to action in the last shot.
+- **Showcase (food and place)**: a restaurant or product showcase, like a food commercial. **No recurring character and no `"narrator"` shots**: every shot is `"scene"`. The dish or the place is the subject and fills the frame: close ups of the food (texture, steam, sauce, slicing, pouring), the kitchen at work, the dining room and the exterior. People appear only as anonymous hands or blurred guests in the background, never a face as the subject. Do not repeat a person description across shots. Vary the framing (macro close up, overhead table, wide room) and keep motion slow and simple (slow push in, slow pan, steam rising, sauce dripping). Open on the most appetizing dish, end on the restaurant (exterior or sign area without readable text) with the invitation.
 - **Storyboard with N panels**: exactly N shots in order; panels are already drawn, so `visual` is a short summary and `motion` matters most.
 - **Narration given**: keep the user's words **verbatim** and in order, only split them at natural pauses; mark about the requested share of shots as `"narrator"`, spread out (always include the first shot if the share is above 0), and illustrate the other shots with what that line talks about.
 

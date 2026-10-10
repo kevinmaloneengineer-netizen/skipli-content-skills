@@ -351,7 +351,47 @@ function Campaign() {
   );
 }
 
-const ART = { reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+function Yelp() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(48 18)">
+        <rect width="150" height="114" rx="14" className="art-card" />
+        {[0, 1, 2].map((i) => (
+          <g key={i} transform={`translate(14 ${16 + i * 32})`}>
+            {[0, 1, 2, 3, 4].map((k) => <rect key={k} x={k * 15} width="12" height="12" rx="3" className={k < 5 - i * 2 ? "art-hi" : "art-mid"} />)}
+            <rect x="84" y="2" width="44" height="8" rx="4" className="art-mid" />
+          </g>
+        ))}
+      </g>
+      <g transform="translate(214 30)">
+        <circle cx="34" cy="34" r="34" className="art-fg" />
+        <text x="34" y="44" textAnchor="middle" className="art-label" style={{ fontSize: 28 }}>★</text>
+      </g>
+    </svg>
+  );
+}
+
+function Instagram() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(70 14)">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <rect key={i} x={(i % 3) * 42} y={Math.floor(i / 3) * 42} width="38" height="38" rx="8" className={i === 1 || i === 5 ? "art-hi" : "art-card"} />
+        ))}
+        <rect x="0" y="88" width="122" height="34" rx="10" className="art-card" />
+        <circle cx="18" cy="105" r="8" className="art-mid" />
+        <rect x="34" y="99" width="70" height="7" rx="3.5" className="art-mid" />
+      </g>
+      <g transform="translate(212 34)">
+        <rect width="62" height="62" rx="18" className="art-fg" />
+        <circle cx="31" cy="31" r="13" fill="none" stroke="var(--art-card)" strokeWidth="5" />
+        <circle cx="47" cy="15" r="4" className="art-card" />
+      </g>
+    </svg>
+  );
+}
+
+const ART = { yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

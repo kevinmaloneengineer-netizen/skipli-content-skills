@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Markdown from "./Markdown.jsx";
-import ReelsResult, { REEL_URL, ReelPlayer } from "./ReelsResult.jsx";
+import ReelsResult, { IgPostsContext, REEL_URL, ReelPlayer } from "./ReelsResult.jsx";
 
 const REEL_URL_G = new RegExp(REEL_URL.source, "g");
 
@@ -93,11 +93,12 @@ function ReelCards({ items }) {
 function Overview({ body }) {
   const plain = body.replace(/\*\*/g, "");
   const pick = (re) => plain.match(re)?.[1];
+  const unit = (re) => (plain.match(re)?.[1] ?? "reel").toLowerCase(); // Instagram reports say "bài"
   const tiles = [
-    [pick(/phân tích\s+([\d.,]+)\s+reel/i), "reel đã phân tích"],
-    [pick(/([\d.,]+)\s+reel mỗi tuần/i), "reel mỗi tuần"],
+    [pick(/phân tích\s+([\d.,]+)\s+(reel|bài)/i), `${unit(/phân tích\s+[\d.,]+\s+(reel|bài)/i)} đã phân tích`],
+    [pick(/([\d.,]+)\s+(?:reel|bài) mỗi tuần/i), `${unit(/[\d.,]+\s+(reel|bài) mỗi tuần/i)} mỗi tuần`],
     [pick(/trung vị(?:\s+là)?\s+([\d.,]+)/i), "tương tác trung vị"],
-    [pick(/([\d.,]+)\s+reel\s+(?:đạt|vượt)/i), "reel viral (gấp 3 trung vị)"],
+    [pick(/([\d.,]+)\s+(?:reel|bài)\s+(?:đạt|vượt)/i), `${unit(/[\d.,]+\s+(reel|bài)\s+(?:đạt|vượt)/i)} viral (gấp 3 trung vị)`],
     [pick(/chia sẻ(?:\s+là)?\s+([\d.,]+)/i), "tổng lượt chia sẻ"],
   ].filter(([v]) => v);
   const period = plain.match(/từ\s+(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})\s+đến\s+(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/);
@@ -167,9 +168,11 @@ function Body({ body }) {
 }
 
 /** Fanpage analysis as a dashboard: one card per "## " section. */
-export default function FanpageResult({ markdown }) {
+export default function FanpageResult({ markdown, posts }) {
   const sections = String(markdown ?? "").replace(/\r\n?/g, "\n").split(/^(?=## )/m).filter((s) => s.trim());
+  const byCode = posts?.length ? Object.fromEntries(posts.map((p) => [p.code, p])) : null; // Instagram cards
   return (
+    <IgPostsContext.Provider value={byCode}>
     <div className="fp-dash">
       {sections.map((sec, i) => {
         const [first, ...lines] = sec.split("\n");
@@ -183,5 +186,6 @@ export default function FanpageResult({ markdown }) {
         );
       })}
     </div>
+    </IgPostsContext.Provider>
   );
 }

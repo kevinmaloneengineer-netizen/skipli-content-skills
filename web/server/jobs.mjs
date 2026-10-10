@@ -41,7 +41,15 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
     await store.updateJob(job.id, { status: "running", startedAt: new Date().toISOString(), phase: null });
     try {
       // Server-side groundwork (e.g. fetching the 100-reel list) before the agent run.
-      const setPhase = (phase) => store.updateJob(job.id, { phase });
+      // phases: what the job has done so far, for the live step list. "AI đã xem 2/3" replaces "1/3".
+      const phases = [];
+      const setPhase = (phase) => {
+        const shape = (t) => String(t).replace(/\d+/g, "#");
+        const step = { text: phase, at: new Date().toISOString() };
+        if (phases.length && shape(phases.at(-1).text) === shape(phase)) phases[phases.length - 1] = { ...step, at: phases.at(-1).at };
+        else phases.push(step);
+        return store.updateJob(job.id, { phase, phases: phases.slice(-20) });
+      };
       const { prompt, notice, fields, direct } = await prepare(job, { setPhase, signal: ctrl.signal });
       if (ctrl.signal.aborted) throw new Error("canceled");
       await store.updateJob(job.id, { prompt, notice: notice ?? null, ...fields }); // fields: data the result page draws (e.g. the Maps scorecard)
@@ -74,9 +82,10 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
   return {
     recover,
 
-    async submit({ type, agent, direct = null, title, input, prompt }) {
+    async submit({ type, agent, direct = null, title, input, prompt, userId }) {
       const job = {
         id: randomUUID(),
+        ...(userId ? { userId } : {}), // owner, with customer accounts on
         type,
         agent,
         direct,

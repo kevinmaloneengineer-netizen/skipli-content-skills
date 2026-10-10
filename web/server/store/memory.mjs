@@ -10,9 +10,16 @@ export function memoryAdapter() {
   const feedback = [];
   const schedule = new Map();
   const watch = new Map();
+  const users = new Map();
   let seeded = false;
 
   return {
+    async loadUsers() {
+      return [...users.values()].map(clone);
+    },
+    async saveUser(u) {
+      users.set(u.id, clone(u));
+    },
     async loadWatch() {
       return [...watch.values()].map(clone);
     },

@@ -1,5 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout.jsx";
+import AuthGate from "./components/AuthGate.jsx";
+import SamplePage from "./pages/SamplePage.jsx";
+import AdminPage from "./pages/AdminPage.jsx";
+import AccountPage from "./pages/AccountPage.jsx";
 import { JobsProvider } from "./context/JobsContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import ClonePage from "./pages/ClonePage.jsx";
@@ -19,6 +23,8 @@ import WritePage from "./pages/WritePage.jsx";
 import HashtagPage from "./pages/HashtagPage.jsx";
 import InboxPage from "./pages/InboxPage.jsx";
 import MapsPage from "./pages/MapsPage.jsx";
+import YelpPage from "./pages/YelpPage.jsx";
+import InstagramPage from "./pages/InstagramPage.jsx";
 import MenuPage from "./pages/MenuPage.jsx";
 import ReviewPage from "./pages/ReviewPage.jsx";
 import TiktokPage from "./pages/TiktokPage.jsx";
@@ -34,6 +40,7 @@ function WriteRoute() {
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthGate>
       <ToastProvider>
         <JobsProvider>
           <Routes>
@@ -52,6 +59,8 @@ export default function App() {
               <Route path="compare" element={<ComparePage />} />
               <Route path="campaign" element={<CampaignPage />} />
               <Route path="maps" element={<MapsPage />} />
+              <Route path="yelp" element={<YelpPage />} />
+              <Route path="instagram" element={<InstagramPage />} />
               <Route path="menu" element={<MenuPage />} />
               <Route path="review" element={<ReviewPage />} />
               <Route path="inbox" element={<InboxPage />} />
@@ -60,12 +69,16 @@ export default function App() {
               <Route path="library" element={<LibraryPage />} />
               <Route path="history" element={<HistoryPage />} />
               <Route path="jobs/:id" element={<JobPage />} />
+              <Route path="samples/:type" element={<SamplePage />} />
+              <Route path="admin" element={<AdminPage />} />
+              <Route path="account" element={<AccountPage />} />
               <Route path="skills/:id" element={<ComingSoonPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
         </JobsProvider>
       </ToastProvider>
+      </AuthGate>
     </BrowserRouter>
   );
 }

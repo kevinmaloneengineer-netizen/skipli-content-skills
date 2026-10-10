@@ -6,8 +6,9 @@ Numbers are computed here so the report never relies on the model doing arithmet
 Usage:
   python3 list_reels.py <page_url> --count 100 --stats --limit 200 > reels.json
   python3 analyze_reels.py reels.json          # or pipe the JSON on stdin
+  python3 analyze_reels.py --tz America/Chicago < reels.json   # a US page: its local time
 
-Times are shown in Vietnam time (UTC+7). Engagement = reactions + 2*comments + 3*shares.
+Times are shown in the page's local time (--tz, an IANA zone; default Vietnam time, UTC+7). Engagement = reactions + 2*comments + 3*shares.
 Output: one JSON object (see keys in main()).
 """
 
@@ -19,6 +20,16 @@ import statistics
 import sys
 
 VN = datetime.timezone(datetime.timedelta(hours=7))
+# Standard-time offsets, used only when the system has no time zone database (zoneinfo/tzdata missing).
+FALLBACK = {"Asia/Ho_Chi_Minh": 7, "America/New_York": -5, "America/Chicago": -6, "America/Denver": -7, "America/Phoenix": -7, "America/Los_Angeles": -8}
+
+
+def zone(name):
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception:
+        return datetime.timezone(datetime.timedelta(hours=FALLBACK.get(name, 7)))
 WEEKDAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
 DURATIONS = [(0, 15, "dưới 15 giây"), (15, 30, "15 đến 30 giây"), (30, 60, "30 đến 60 giây"), (60, 10**9, "trên 60 giây")]
 CAPTIONS = [(0, 1, "không có caption"), (1, 80, "ngắn (dưới 80 ký tự)"), (80, 250, "vừa (80 đến 250 ký tự)"), (250, 10**9, "dài (trên 250 ký tự)")]
@@ -52,7 +63,7 @@ def in_range(value, table):
 
 def local(r):
     ts = r.get("created_ts")
-    return datetime.datetime.fromtimestamp(ts, VN) if ts else None
+    return datetime.datetime.fromtimestamp(ts, TZ) if ts else None
 
 
 def hour_bucket(r):
@@ -62,8 +73,17 @@ def hour_bucket(r):
     return in_range(t.hour, HOURS) or "đêm (23h đến 5h)"
 
 
+TZ = VN
+
+
 def main():
-    data = json.load(open(sys.argv[1]) if len(sys.argv) > 1 else sys.stdin)
+    global TZ
+    args = sys.argv[1:]
+    if "--tz" in args:
+        i = args.index("--tz")
+        TZ = zone(args[i + 1])
+        del args[i:i + 2]
+    data = json.load(open(args[0]) if args else sys.stdin)
     if not data.get("ok"):
         print(json.dumps({"ok": False, "error": data.get("error", "no data")}, ensure_ascii=False))
         return

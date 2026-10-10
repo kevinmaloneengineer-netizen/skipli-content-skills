@@ -20,7 +20,11 @@ export function createWatcher({ store, log = console }) {
     const sorted = [...reels].map((r) => r.engagement ?? 0).sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
     const viral = fresh.filter((r) => median && (r.engagement ?? 0) >= 3 * median);
-    await store.updateWatch(item.id, { lastCheckedAt: new Date().toISOString(), knownIds: reels.map((r) => r.id).slice(0, 200), median, lastNew: fresh.length, lastError: null });
+    // history: one point per good read, drawn as the trend chart on the Lịch sử page.
+    const top = sorted.at(-1) ?? 0;
+    const point = { at: new Date().toISOString(), median, top, count: reels.length, fresh: fresh.length, viral: viral.length };
+    const history = [...(item.history ?? []), point].slice(-52);
+    await store.updateWatch(item.id, { lastCheckedAt: point.at, knownIds: reels.map((r) => r.id).slice(0, 200), median, lastNew: fresh.length, lastError: null, history });
     if (!fresh.length) return { fresh: 0, viral: 0 };
 
     const ranked = [...viral, ...fresh.filter((r) => !viral.includes(r))].slice(0, 8);
@@ -34,7 +38,7 @@ export function createWatcher({ store, log = console }) {
     ].join("\n\n");
     const now = new Date().toISOString();
     await store.addJob({
-      id: randomUUID(), type: "watch", agent: null, direct: null,
+      id: randomUUID(), ...(item.userId ? { userId: item.userId } : {}), type: "watch", agent: null, direct: null,
       title: `Theo dõi @${item.name} · ${fresh.length} reel mới${viral.length ? ` · ${viral.length} viral` : ""}`,
       input: { url: item.url, watchId: item.id }, prompt: null, status: "done", result, error: null, usage: null,
       createdAt: now, startedAt: now, finishedAt: now,

@@ -1,13 +1,60 @@
-import { useState } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import Markdown from "./Markdown.jsx";
 import { api } from "../lib/api.js";
 
 const THREADS_URL = /https:\/\/(?:www\.)?threads\.(?:com|net)\/@[\w.]+\/post\/[\w-]+/;
-export const REEL_URL = /https:\/\/(?:www\.|m\.)?facebook\.com\/(?:reel\/\d{6,25}|[^\s/)]+\/videos\/\d{6,25}|watch\/?\?v=\d{6,25})[^\s)]*/;
+export const REEL_URL = /https:\/\/(?:www\.|m\.)?(?:facebook\.com\/(?:reel\/\d{6,25}|[^\s/)]+\/videos\/\d{6,25}|watch\/?\?v=\d{6,25})|instagram\.com\/(?:[\w.]+\/)?(?:p|reel)\/[\w-]+)[^\s)]*/;
 
 /** Facebook's own video embed, shown right away (the browser only loads it when scrolled near: loading="lazy"). */
+const INSTAGRAM_POST = /instagram\.com\/(?:[\w.]+\/)?(?:p|reel)\/([\w-]+)/;
+
+/** Instagram posts of the current report, by short code (set by FanpageResult from job.igPosts). */
+export const IgPostsContext = createContext(null);
+const short = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n ?? 0));
+
+/** Our own Instagram card (Instagram's embed is cramped and off-brand): picture, type, likes, comments. */
+function InstagramCard({ url, post, compact }) {
+  const [broken, setBroken] = useState(false);
+  const isVideo = /video|reel/i.test(post?.kind ?? "") || /\/reel\//.test(url);
+  return (
+    <a className={compact ? "ig-card compact" : "ig-card"} href={url} target="_blank" rel="noopener noreferrer" title="Mở trên Instagram">
+      <span className="ig-media">
+        {post?.image && !broken ? <img src={`/media/thumbs/${post.image}`} alt={post.caption || "Bài Instagram"} loading="lazy" onError={() => setBroken(true)} /> : <span className="ig-noimg" aria-hidden="true" />}
+        <span className="ig-kind">{isVideo ? "▶ Reel" : post?.kind === "album nhiều ảnh" ? "❐ Album" : "Ảnh"}</span>
+        {isVideo && <span className="ig-play" aria-hidden="true" />}
+      </span>
+      <span className="ig-meta">
+        {post ? (
+          <>
+            <span className="ig-stats"><span>♥ {short(post.likes)}</span><span>💬 {short(post.comments)}</span></span>
+            <small>{post.date?.split("-").reverse().join("/")}</small>
+          </>
+        ) : (
+          <span className="ig-stats"><span>Bài Instagram</span></span>
+        )}
+      </span>
+      <span className="ig-open">Mở trên Instagram ↗</span>
+    </a>
+  );
+}
+
 export function ReelPlayer({ url, compact = false }) {
-  const src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&width=320`;
+  const posts = useContext(IgPostsContext);
+  const ig = url.match(INSTAGRAM_POST)?.[1];
+  if (ig) return <InstagramCard url={url} post={posts?.[ig]} compact={compact} />;
+  return <FacebookPlayer url={url} compact={compact} />;
+}
+
+function FacebookPlayer({ url, compact }) {
+  // Facebook draws its player at the width/height in the URL (without a height it draws a square and
+  // the 9:16 frame shows black below): measure the frame and ask for exactly that size.
+  const box = useRef(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const w = box.current?.clientWidth ?? 0;
+    setWidth(Math.max(180, Math.min(560, Math.round(w / 10) * 10 || 320)));
+  }, []);
+  const src = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&width=${width}&height=${Math.round((width * 16) / 9)}`;
   // Some owners turn embedding off ("Không khả dụng") and the page cannot see inside the iframe:
   // the user can ask for a copy downloaded by the server instead.
   const [clip, setClip] = useState(null);
@@ -22,8 +69,8 @@ export function ReelPlayer({ url, compact = false }) {
     }
   }
   return (
-    <div className={compact ? "reel-player compact" : "reel-player"}>
-      {clip ? <video className="tt-video" src={`/media/clips/${clip}.mp4`} controls autoPlay playsInline /> : <iframe src={src} title="Reel Facebook" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />}
+    <div ref={box} className={compact ? "reel-player compact" : "reel-player"}>
+      {clip ? <video className="tt-video" src={`/media/clips/${clip}.mp4`} controls autoPlay playsInline /> : !width ? <div className="reel-poster" /> : <iframe src={src} title="Reel Facebook" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />}
       <span className="reel-links">
         <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên Facebook ↗</a>
         {!clip && (

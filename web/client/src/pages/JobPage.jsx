@@ -19,6 +19,7 @@ import { api } from "../lib/api.js";
 import { ACTIVE, CLONE_PLATFORMS, PLATFORMS, skillByType } from "../lib/constants.js";
 import { ago, duration } from "../lib/format.js";
 import { PILLARS, splitLivestream, splitVariants, toPlainText } from "../lib/text.js";
+import { blanksOf, fillBlanks, useJobEdits } from "../lib/edits.js";
 
 function inputRows(job) {
   const i = job.input ?? {};
@@ -47,6 +48,8 @@ function inputRows(job) {
     fanpage: [["Fanpage", i.url], ["Tìm hiểu thêm", i.focus]],
     tiktok: [["Từ khoá", i.keywords?.join(", ")], ["Tài khoản", i.profiles?.join(", ")], ["Số video", i.top], ["Kinh doanh của bạn", i.business]],
     maps: [["Quán", i.place], ["Chú ý thêm", i.focus]],
+    yelp: [["Trang Yelp", i.url], ["Chú ý thêm", i.focus]],
+    instagram: [["Instagram", i.user && `@${i.user}`], ["Tìm hiểu thêm", i.focus]],
     compare: [["Fanpage", i.urls?.join("\n")], ["Chú ý thêm", i.focus]],
     watch: [["Kênh theo dõi", i.url]],
     campaign: [["Đối thủ", i.url], ["Kênh của bạn", i.topic], ["Thông tin thêm", i.brief], ["Bắt đầu", i.start], ["Thời gian", i.days && `${i.days} ngày, ${i.perDay} bài/ngày`], ["Nền tảng", CLONE_PLATFORMS[i.platform]]],
@@ -79,32 +82,94 @@ function inputRows(job) {
   return rows.filter(([, v]) => v !== undefined && v !== null && v !== "");
 }
 
-function Variants({ job, onSave, prefix }) {
+const REWRITES = [["shorter", "Ngắn hơn"], ["fun", "Vui hơn"], ["emoji", "Thêm emoji"], ["formal", "Trang trọng"]];
+
+/** "Ngắn hơn", "Vui hơn"…: rewrites one post in place; the original is one click away. */
+function RewriteBar({ body, rewritten, onChange }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState("");
+  async function rewrite(style) {
+    setBusy(style);
+    try {
+      const { text } = await api("/rewrite", { method: "POST", body: { text: toPlainText(body), style } });
+      onChange(text);
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+    } finally {
+      setBusy("");
+    }
+  }
+  return (
+    <div className="rewrite-bar" aria-label="Sửa nhanh bài này">
+      <span>Sửa nhanh:</span>
+      {REWRITES.map(([id, label]) => (
+        <button key={id} type="button" className={busy === id ? "is-busy" : undefined} disabled={!!busy} onClick={() => rewrite(id)}>{busy === id ? "Đang viết…" : label}</button>
+      ))}
+      {rewritten && <button type="button" className="undo" disabled={!!busy} onClick={() => onChange(null)}>↺ Bản gốc</button>}
+    </div>
+  );
+}
+
+function Variants({ job, onSave, prefix, edits, setEdits }) {
   const copy = useCopy();
   const { variants, intro, rest } = splitVariants(job.result, prefix);
   if (!variants.length) return <Markdown className="card md">{job.result}</Markdown>;
   const name = job.input?.topic ?? job.input?.business ?? job.title;
+  const rewritten = edits?.variants ?? {};
+  const setVariant = (i, text) => setEdits?.((e) => {
+    const next = { ...(e.variants ?? {}) };
+    if (text === null) delete next[i];
+    else next[i] = text;
+    return { ...e, variants: next };
+  });
   return (
     <>
       {intro && <Markdown className="card md notes lead">{intro}</Markdown>}
       <div className="variants">
-        {variants.map((v, i) => (
-          <section key={i} className="card variant">
-            <div className="variant-head">
-              <h2>{v.title}</h2>
-              <div className="actions">
-                <button className="btn small" onClick={() => copy(toPlainText(v.body))}><CopyIcon />Sao chép</button>
-                <button className="btn small" onClick={() => onSave(`${name} · ${v.title}`, toPlainText(v.body))}><SaveIcon />Lưu</button>
+        {variants.map((v, i) => {
+          const body = rewritten[i] != null ? fillBlanks(rewritten[i], edits?.fills) : v.body;
+          return (
+            <section key={i} className={rewritten[i] != null ? "card variant is-rewritten" : "card variant"}>
+              <div className="variant-head">
+                <h2>{v.title}</h2>
+                <div className="actions">
+                  <button className="btn small" onClick={() => copy(toPlainText(body))}><CopyIcon />Sao chép</button>
+                  <button className="btn small" onClick={() => onSave(`${name} · ${v.title}`, toPlainText(body))}><SaveIcon />Lưu</button>
+                </div>
               </div>
-            </div>
-            <Markdown>{v.body}</Markdown>
-          </section>
-        ))}
+              <Markdown key={body}>{body}</Markdown>
+              {setEdits && !job.sample && <RewriteBar body={body} rewritten={rewritten[i] != null} onChange={(t) => setVariant(i, t)} />}
+            </section>
+          );
+        })}
       </div>
       {rest && <Markdown className="card md notes">{rest}</Markdown>}
     </>
   );
 }
+
+/** Inputs for the [GIÁ], [LINK]… the AI left open: filled values replace them everywhere on the page and in copies. */
+function FillBlanks({ blanks, fills, onChange }) {
+  if (!blanks.length) return null;
+  const left = blanks.filter((b) => !fills[b.name]?.trim()).length;
+  return (
+    <section className="fill-blanks" aria-label="Điền chỗ trống">
+      <header>
+        <b>Điền chỗ trống</b>
+        <span>{left ? `Còn ${left} chỗ AI chưa biết. Điền một lần, tự thay ở mọi bài và khi sao chép.` : "Đã điền đủ, bài sẵn sàng để đăng."}</span>
+      </header>
+      <div className="fill-grid">
+        {blanks.map((b) => (
+          <label key={b.name} className={fills[b.name]?.trim() ? "is-filled" : undefined}>
+            <span>[{b.name}]{b.count > 1 && <small> ×{b.count}</small>}</span>
+            <input value={fills[b.name] ?? ""} onChange={(e) => onChange({ ...fills, [b.name]: e.target.value })} placeholder={HINTS[b.name] ?? "Nhập thông tin thật"} />
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+const HINTS = { "GIÁ": "VD: 89.000đ", "ƯU ĐÃI": "VD: giảm 10% hoá đơn", "GIỜ": "VD: 9h", "LINK": "Link đặt hàng", "SĐT": "Số điện thoại", "ĐỊA CHỈ": "Địa chỉ quán", "TÊN QUÁN": "Tên quán" };
 
 function LivestreamResult({ job }) {
   const copy = useCopy();
@@ -142,10 +207,18 @@ function VideoResult({ job }) {
         <video src={src} controls playsInline preload="metadata" />
         <div className="video-side">
           {job.video.title && <h2>{job.video.title}</h2>}
-          <p className="hint">{job.video.shots.length} cảnh{job.video.duration ? ` · ${Math.round(job.video.duration)} giây` : ""}</p>
+          <p className="hint">{job.video.shots.length} {job.video.slideshow ? "ảnh · nhạc nền không lời" : "cảnh"}{job.video.duration ? ` · ${Math.round(job.video.duration)} giây` : ""}</p>
           <a className="btn primary" href={src} download={`${(job.video.title || "video").slice(0, 60)}.mp4`}>Tải MP4</a>
         </div>
       </section>
+      {job.video.slideshow ? (
+        <section className="card">
+          <h2>{job.video.shots.length} ảnh trong video</h2>
+          <div className="slide-thumbs">
+            {job.video.shots.map((s, i) => <img key={i} src={`/media/images/${s.image}`} alt={s.visual} title={s.visual} loading="lazy" />)}
+          </div>
+        </section>
+      ) : (
       <section className="card">
         <h2>Kịch bản</h2>
         <ol className="shot-list">
@@ -157,6 +230,7 @@ function VideoResult({ job }) {
           ))}
         </ol>
       </section>
+      )}
     </>
   );
 }
@@ -208,7 +282,7 @@ function FactCheck({ check }) {
   );
 }
 
-function Result({ job, onSave }) {
+export function Result({ job, onSave, edits, setEdits }) {
   if (ACTIVE.has(job.status)) return <Waiting job={job} />;
   if (job.status === "failed") {
     return (
@@ -219,11 +293,11 @@ function Result({ job, onSave }) {
     );
   }
   if (job.status === "canceled") return <section className="card empty">Tác vụ đã bị huỷ.</section>;
-  if (job.type === "write" || job.type === "review") return <Variants job={job} onSave={onSave} />;
-  if (job.type === "menu") return <Variants job={job} onSave={onSave} prefix="Món" />;
-  if (job.type === "inbox") return <Variants job={job} onSave={onSave} prefix="Tình huống" />;
-  if (job.type === "hashtag") return <Variants job={job} onSave={onSave} prefix="Bộ" />;
-  if (job.type === "maps") return <MapsResult job={job} />;
+  if (job.type === "write" || job.type === "review") return <Variants job={job} onSave={onSave} edits={edits} setEdits={setEdits} />;
+  if (job.type === "menu") return <Variants job={job} onSave={onSave} prefix="Món" edits={edits} setEdits={setEdits} />;
+  if (job.type === "inbox") return <Variants job={job} onSave={onSave} prefix="Tình huống" edits={edits} setEdits={setEdits} />;
+  if (job.type === "hashtag") return <Variants job={job} onSave={onSave} prefix="Bộ" edits={edits} setEdits={setEdits} />;
+  if (job.type === "maps" || job.type === "yelp") return <MapsResult job={job} />;
   if (job.type === "compare") return <CompareResult job={job} />;
   if (job.type === "clone") return <CloneBoard job={job} />;
   if (job.type === "livestream") return <LivestreamResult job={job} />;
@@ -249,7 +323,7 @@ function Result({ job, onSave }) {
       </>
     );
   }
-  if (job.type === "fanpage") return <FanpageResult markdown={job.result} />;
+  if (job.type === "fanpage" || job.type === "instagram") return <FanpageResult markdown={job.result} posts={job.igPosts} />;
   if (["fb-reels", "threads", "tiktok", "watch"].includes(job.type)) {
     const clips = Object.fromEntries((job.watch ?? []).filter((w) => w.clip).map((w) => [w.url.match(/(\d{15,20})/)?.[1], w.clip]));
     return <ReelsResult markdown={job.result} clips={clips} />;
@@ -266,10 +340,11 @@ export default function JobPage() {
   const { jobs, refresh, track } = useJobs();
   const [job, setJob] = useState(null);
   const [error, setError] = useState("");
+  const [edits, setEdits] = useJobEdits(id);
 
   // Summary from the polled list; refetch the full job whenever its state changes.
   const live = jobs.find((j) => j.id === id);
-  const version = live ? `${live.status}:${live.queuePosition}` : "";
+  const version = live ? `${live.status}:${live.queuePosition}:${live.phase ?? ""}` : "";
   useEffect(() => {
     let alive = true;
     api(`/jobs/${encodeURIComponent(id)}`).then(
@@ -328,14 +403,18 @@ export default function JobPage() {
 
   const rows = inputRows(job);
   const done = job.status === "done";
+  const blanks = done ? blanksOf(job.result) : [];
+  const fills = edits.fills ?? {};
+  const shown = blanks.length ? { ...job, result: fillBlanks(job.result, fills) } : job; // what the page shows and copies
   const url = job.input?.url ? encodeURIComponent(job.input.url) : "";
   const channel = (job.type === "fb-reels" && job.input?.mode === "channel") || job.type === "fanpage";
   const next = done
     ? [
-        ["fb-reels", "threads", "fanpage", "tiktok", "maps", "compare", "watch"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
+        ["fb-reels", "threads", "fanpage", "tiktok", "maps", "yelp", "instagram", "compare", "watch"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
         channel && { to: `/clone?url=${url}`, label: "Nhân bản kênh này", hint: "Viết hàng loạt bài mới học từ kênh này" },
         job.type === "fb-reels" && job.input?.mode === "channel" && { to: `/fanpage?url=${url}`, label: "Phân tích fanpage này", hint: "Ngày giờ đăng, độ dài video, chủ đề ăn khách" },
-        job.type === "maps" && { to: "/review", label: "Trả lời review của quán bạn", hint: "Xử lý khéo những điểm khách hay chê" },
+        (job.type === "maps" || job.type === "yelp") && { to: "/review", label: "Trả lời review của quán bạn", hint: "Xử lý khéo những điểm khách hay chê" },
+        job.type === "instagram" && { to: "/hashtag", label: "Gợi ý hashtag cho kênh của bạn", hint: "Bộ hashtag theo khu vực và giờ đăng" },
         job.type === "menu" && { to: "/hashtag", label: "Gợi ý hashtag cho các món", hint: "Bộ hashtag theo khu vực và giờ đăng" },
         job.type === "inbox" && { to: "/review", label: "Trả lời review khách", hint: "Giữ chân khách sau khi mua" },
         !["video", "review", "inbox", "hashtag"].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
@@ -367,14 +446,16 @@ export default function JobPage() {
 
       <div className="job-layout">
         <div className="job-main">
-          <Result job={job} onSave={saveToLibrary} />
+          <FillBlanks blanks={blanks} fills={fills} onChange={(f) => setEdits((e) => ({ ...e, fills: f }))} />
+          <Result job={shown} onSave={saveToLibrary} edits={edits} setEdits={setEdits} />
         </div>
         <aside className="job-aside">
           <section className="aside-card">
             <h2>Thao tác</h2>
             <div className="job-actions actions">
-              {canCopy && <button className="btn" onClick={() => copy(toPlainText(job.result))}><CopyIcon />Sao chép</button>}
-              {canCopy && <button className="btn" onClick={() => saveToLibrary(job.title, job.result)} title="Lưu vào thư viện"><SaveIcon />Lưu</button>}
+              {canCopy && <button className="btn" onClick={() => copy(toPlainText(shown.result))}><CopyIcon />Sao chép</button>}
+              {canCopy && <button className="btn" onClick={() => saveToLibrary(job.title, shown.result)} title="Lưu vào thư viện"><SaveIcon />Lưu</button>}
+              {done && <button className="btn" onClick={() => window.print()} title="Lưu báo cáo thành PDF hoặc in ra">⤓ Tải PDF</button>}
               {ACTIVE.has(job.status) ? (
                 <button className="btn danger" onClick={cancel}>Huỷ</button>
               ) : (

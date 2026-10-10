@@ -5,12 +5,15 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const run = promisify(execFile);
+const MUSIC_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "music", "make_music.py");
+const TITLE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "overlay", "make_title.py");
 export const RATIOS = { "9:16": [480, 832], "16:9": [832, 480], "1:1": [640, 640] };
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 export const UPLOAD_ID = /^[0-9a-f-]{36}\.(png|jpg|webp)$/;
@@ -19,7 +22,7 @@ const MAX_UPLOAD = 6 * 1024 * 1024;
 export class VideoError extends Error {}
 
 export const IMAGE_SIZES = { "1:1": [1024, 1024], "4:5": [896, 1120], "9:16": [768, 1344], "16:9": [1344, 768] };
-const IMAGE_FILE = /^[0-9a-f-]{36}-\d{1,2}\.png$/;
+const IMAGE_FILE = /^[0-9a-f-]{36}-r?\d{1,2}\.(png|jpg|webp)$/; // "-r3": a slideshow's real photo
 const LAYOUTS = new Set(["top", "center", "bottom"]);
 
 /** Pull the image plan out of the agent's answer: { images: [{ prompt, headline, sub, cta, caption, layout }] }. */
@@ -73,6 +76,39 @@ export function scriptMarkdown({ title, shots }) {
   const lines = [title ? `**${title}**` : "", `Kịch bản ${shots.length} cảnh:`, ""];
   shots.forEach((s, i) => lines.push(`${i + 1}. ${s.narration}`, `   _${s.role === "narrator" ? "Người kể nói trước camera" : `Hình: ${s.visual}`}${s.motion ? `. ${s.motion}` : ""}_`));
   return lines.filter((l, i) => l || i > 0).join("\n").trim();
+}
+
+const SLIDE_SIZES = { "9:16": [720, 1280], "16:9": [1280, 720], "1:1": [1080, 1080] };
+
+/**
+ * Stills → MP4: each picture gets a slow zoom (in and out alternately, with a slight drift) and the
+ * pictures crossfade into each other, so the whole clip lasts `seconds`.
+ */
+export async function slideshow(files, out, { ratio = "9:16", seconds = 15, fps = 30, fade = 0.7, title = null } = {}) {
+  const [w, h] = SLIDE_SIZES[ratio] ?? SLIDE_SIZES["9:16"];
+  const n = files.length;
+  const each = (seconds + (n - 1) * fade) / n; // crossfades overlap
+  const frames = Math.round(each * fps);
+  const parts = files.map((_, i) => {
+    const zoom = i % 2 === 0 ? `1+0.10*on/${frames}` : `1.10-0.10*on/${frames}`;
+    const drift = i % 3 === 0 ? 1 : i % 3 === 1 ? -1 : 0; // left, right or none
+    // zoompan on a 2x picture keeps the motion smooth (it moves in whole pixels).
+    return `[${i}:v]scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase,crop=${w * 2}:${h * 2},` +
+      `zoompan=z='${zoom}':x='iw/2-(iw/zoom/2)+${drift}*(on/${frames}-0.5)*iw*0.03':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps},setsar=1,format=yuv420p[v${i}]`;
+  });
+  let last = "v0";
+  if (title) {
+    // The card fades in over the first photo and leaves with it (the crossfade carries it out).
+    parts.push(`[${n}:v]format=rgba,fade=in:st=0.3:d=0.8:alpha=1[card]`, `[v0][card]overlay=0:0:shortest=1,format=yuv420p[t0]`);
+    last = "t0";
+  }
+  for (let i = 1; i < n; i++) {
+    parts.push(`[${last}][v${i}]xfade=transition=fade:duration=${fade}:offset=${(i * (each - fade)).toFixed(3)}[x${i}]`);
+    last = `x${i}`;
+  }
+  const cardInput = title ? ["-loop", "1", "-t", each.toFixed(3), "-framerate", String(fps), "-i", title] : [];
+  await run("ffmpeg", ["-y", "-loglevel", "error", ...files.flatMap((f) => ["-i", f]), ...cardInput, "-filter_complex", parts.join(";"), "-map", `[${last}]`,
+    "-t", String(seconds), "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", out], { maxBuffer: 1 << 24 });
 }
 
 export function createVideoService({ dataDir, timeoutMs, mock, log = console }) {
@@ -182,7 +218,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       }
     } else {
       if (!worker.url) throw new VideoError("Chưa kết nối GPU. Mở trang Tạo ảnh AI để kết nối rồi chạy lại.");
-      const body = { prompts: plan.images.map((x) => x.prompt), size: job.input.size, style: job.input.style };
+      const body = { prompts: plan.images.map((x) => x.prompt), size: job.input.size, style: job.input.style, ...(job.input.negative ? { negative: job.input.negative } : {}) };
       if (job.input.referenceImageId && hasUpload(job.input.referenceImageId)) body.reference_image = (await readFile(path.join(dirs.uploads, job.input.referenceImageId))).toString("base64");
       await setPhase(`Đang vẽ ${files.length} ảnh trên GPU…`);
       const { id } = await call("/image", { method: "POST", body, signal });
@@ -209,10 +245,69 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     };
   }
 
+  /**
+   * Photo slideshow: the GPU draws the stills (same path as "Ảnh AI"), then ffmpeg here gives each a slow
+   * zoom/pan, joins them with crossfades and lays soft music under it. No voice, no text.
+   */
+  async function finishSlideshow(job, content, ctx) {
+    const { setPhase } = ctx;
+    // The name never goes to the image model (it would paint it, misspelt), and nobody should appear.
+    const name = String(job.input.name ?? "").trim();
+    const clean = name ? String(content).replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "the restaurant") : content;
+    const real = (job.input.photoIds ?? []).filter(hasUpload).map((id) => ({ file: path.join(dirs.uploads, id), prompt: "Ảnh thật của quán", upload: id }));
+    let drawnImages = { items: [] };
+    if (job.input.ai !== 0) {
+      const drawn = await finishImages({ ...job, input: { ...job.input, size: job.input.ratio, negative: "people, person, face, hands, fingers, crowd, text, signage, menu board" } }, clean, ctx);
+      drawnImages = drawn.fields.images;
+      drawnImages.items = drawnImages.items.slice(0, Math.max(0, (job.input.count ?? 5) - real.length));
+    }
+    const slides = [...real, ...drawnImages.items.map((x) => ({ ...x, file: path.join(dirs.images, x.file), image: x.file }))];
+    if (slides.length < 2) throw new VideoError("Cần ít nhất 2 ảnh để làm video trình chiếu.");
+    const files = slides.map((x) => x.file);
+    await setPhase("Đang ghép ảnh thành video…");
+    const out = videoPath(job.id);
+    const title = job.input.name ? await titleCard(job) : null;
+    try {
+      await slideshow(files, out, { ratio: job.input.ratio, seconds: job.input.seconds ?? 15, title });
+    } finally {
+      if (title) await rm(title, { force: true });
+    }
+    await setPhase("Đang thêm nhạc nền…");
+    const seconds = await addMusic(out, job.id, "soft");
+    // Thumbnails: drawn stills live in /media/images, real photos are copied there too.
+    for (const [i, x] of slides.entries()) {
+      if (!x.upload) continue;
+      x.image = `${job.id}-r${i + 1}.${path.extname(x.upload).slice(1)}`;
+      await copyFile(x.file, path.join(dirs.images, x.image));
+    }
+    const shots = slides.map((x) => ({ narration: "", visual: x.prompt, motion: "", role: "scene", image: x.image }));
+    return {
+      result: `Video trình chiếu ${files.length} ảnh (${real.length} ảnh thật, ${files.length - real.length} ảnh AI vẽ), nhạc nền không lời.\n\n${shots.map((x, i) => `${i + 1}. ${x.visual}`).join("\n")}`,
+      fields: { images: drawnImages, video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: job.title, shots, slideshow: true } },
+    };
+  }
+
+  /** Name, city, address and logo as a transparent PNG for the first slide (server/overlay/make_title.py). */
+  async function titleCard(job) {
+    const [width, height] = SLIDE_SIZES[job.input.ratio] ?? SLIDE_SIZES["9:16"];
+    const base = path.join(dirs.videos, `${job.id}.title`);
+    const spec = { width, height, name: job.input.name, city: job.input.city, address: job.input.address, phone: job.input.phone, logo: job.input.logoId && hasUpload(job.input.logoId) ? path.join(dirs.uploads, job.input.logoId) : null };
+    await writeFile(`${base}.json`, JSON.stringify(spec));
+    try {
+      await run("python3", [TITLE_SCRIPT, `${base}.png`, `${base}.json`]);
+    } catch (e) {
+      throw new VideoError(`Không vẽ được khung thông tin quán (${e.stderr?.trim().split("\n").at(-1) ?? e.message}). Máy chủ cần python3 có Pillow.`);
+    } finally {
+      await rm(`${base}.json`, { force: true });
+    }
+    return `${base}.png`;
+  }
+
   /** Runner hook: shot list -> worker render -> MP4 in DATA_DIR. */
   async function finish(job, content, ctx) {
     if (job.type === "image") return finishImages(job, content, ctx);
     if (job.type !== "video") return null;
+    if (job.input.mode === "slideshow") return finishSlideshow(job, content, ctx);
     const { setPhase, signal } = ctx;
     const script = parseScript(content);
     const result = scriptMarkdown(script);
@@ -225,7 +320,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       seconds = await mockRender(job, script, out);
     } else {
       if (!worker.url) throw new VideoError("Chưa kết nối GPU. Mở trang Tạo video AI để kết nối rồi chạy lại.");
-      const body = { shots: script.shots, ratio: job.input.ratio, voice: job.input.voice, style: job.input.style, engine: job.input.engine ?? "ltx" };
+      const body = { shots: script.shots, ratio: job.input.ratio, voice: job.input.lang === "en" ? `en-${job.input.voice}` : job.input.voice, audio: job.input.audio ?? "voice", style: job.input.style, engine: job.input.engine ?? "ltx" };
       if (body.engine === "wan" && process.env.HF_TOKEN) body.hf_token = process.env.HF_TOKEN; // more free Hugging Face quota than anonymous
       const b64 = async (id) => (hasUpload(id) ? (await readFile(path.join(dirs.uploads, id))).toString("base64") : null);
       if (job.input.referenceImageId) body.reference_image = await b64(job.input.referenceImageId);
@@ -235,6 +330,8 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       }
       await setPhase("Đang gửi kịch bản cho GPU…");
       const { id } = await call("/render", { method: "POST", body, signal });
+      // Canceled here → stop the GPU too (an old worker without DELETE just finishes the render).
+      signal.addEventListener("abort", () => request(`/render/${id}`, { method: "DELETE" }).catch(() => {}), { once: true });
       const deadline = Date.now() + timeoutMs;
       let last = "";
       for (;;) {
@@ -260,13 +357,36 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       const res = await call(`/render/${id}/video`, { signal, raw: true });
       await writeFile(out, Buffer.from(await res.arrayBuffer()));
     }
+    if (job.input.audio === "music") {
+      await setPhase("Đang thêm nhạc nền…");
+      seconds = await addMusic(out, job.id);
+    }
     const shots = job.input.panelIds?.length ? script.shots.slice(0, job.input.panelIds.length) : script.shots;
     return { result, fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: script.title, shots, engine: job.input.engine ?? "ltx" }, ...(workerNotice ? { notice: workerNotice } : {}) } };
+  }
+
+  /** Music mode: an upbeat instrumental made for this video (server/music/make_music.py) replaces the silent track. */
+  async function addMusic(file, jobId, mood = "upbeat") {
+    const dur = Number((await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file])).stdout) || 30;
+    const tmp = path.join(dirs.videos, `${jobId}.music`);
+    const seed = parseInt(jobId.replace(/-/g, "").slice(0, 7), 16); // a different tune per video
+    try {
+      await run("python3", [MUSIC_SCRIPT, `${tmp}.wav`, "--seconds", dur.toFixed(2), "--seed", String(seed), "--mood", mood]);
+      await run("ffmpeg", ["-y", "-loglevel", "error", "-i", file, "-i", `${tmp}.wav`, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", `${tmp}.mp4`]);
+      await rename(`${tmp}.mp4`, file);
+    } catch (e) {
+      throw new VideoError(`Không thêm được nhạc nền (${e.code ?? e.message}). Máy chủ cần python3 có numpy và ffmpeg.`);
+    } finally {
+      await rm(`${tmp}.wav`, { force: true });
+      await rm(`${tmp}.mp4`, { force: true });
+    }
+    return Math.round(dur * 10) / 10;
   }
 
   async function remove(job) {
     if (job.type === "video") await rm(videoPath(job.id), { force: true });
     for (const x of job.images?.items ?? []) if (imagePath(x.file)) await rm(imagePath(x.file), { force: true });
+    for (const x of job.video?.shots ?? []) if (x.image && imagePath(x.image)) await rm(imagePath(x.image), { force: true });
   }
 
   return { init, status, setWorker, saveUpload, hasUpload, videoPath, imagePath, finish, remove };

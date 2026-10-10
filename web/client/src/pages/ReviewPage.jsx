@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 
@@ -6,7 +7,8 @@ const STARS = { 0: "Không rõ", 1: "1★", 2: "2★", 3: "3★", 4: "4★", 5: 
 const STYLES = ["Chân thành, xin lỗi", "Chuyên nghiệp", "Gần gũi, vui vẻ", "Ngắn gọn"];
 
 export default function ReviewPage() {
-  const [form, setForm] = useState({ review: "", stars: "0", business: "", style: "", facts: "" });
+  const [params] = useSearchParams(); // ?review=&stars=&business= from the Google Maps report
+  const [form, setForm] = useState(() => ({ review: params.get("review") ?? "", stars: /^[1-5]$/.test(params.get("stars") ?? "") ? params.get("stars") : "0", business: params.get("business") ?? "", style: "", facts: "" }));
   const [submit, busy, error] = useSubmitJob("review");
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e?.target ? e.target.value : e }));
 

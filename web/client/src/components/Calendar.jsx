@@ -28,10 +28,34 @@ function SlotDialog({ slot, day, onClose, onSaved, onDeleted }) {
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
 
+  const [fbReady, setFbReady] = useState(false); // FB_PAGE_ID + FB_PAGE_TOKEN set on the server
+  const [publishing, setPublishing] = useState(false);
   useEffect(() => {
     ref.current?.showModal();
     api("/library?kind=saved").then(({ items }) => setSaved(items), () => setSaved([]));
+    api("/facebook").then(({ configured }) => setFbReady(configured), () => {});
   }, []);
+
+  /** Send this slot to the Facebook Page: now, or handed to Facebook's scheduler when it is 11+ minutes ahead. */
+  async function publish() {
+    const ahead = new Date(at(fromYmd(form.date), form.time)).getTime() - Date.now();
+    const when = ahead > 11 * 60_000 ? `lên lịch đăng lúc ${form.time} ngày ${form.date.split("-").reverse().join("/")}` : "đăng ngay bây giờ";
+    if (!window.confirm(`Gửi bài này lên Facebook Page và ${when}?`)) return;
+    setPublishing(true);
+    setError("");
+    try {
+      // Save the form first so Facebook gets the text and time shown here.
+      await api(`/schedule/${slot.id}`, { method: "PUT", body: { title: form.title, body: form.body, at: at(fromYmd(form.date), form.time) } });
+      const res = await api(`/schedule/${slot.id}/publish`, { method: "POST" });
+      onSaved(res.slot);
+      toast(res.scheduled ? "Đã lên lịch trên Facebook. Tới giờ Facebook tự đăng." : "Đã đăng lên Facebook Page");
+      ref.current.close();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -114,16 +138,25 @@ function SlotDialog({ slot, day, onClose, onSaved, onDeleted }) {
               </select>
             </label>
           </div>
-          <label className="check-row">
-            <input type="checkbox" checked={form.status === "posted"} onChange={(e) => set("status")(e.target.checked ? "posted" : "planned")} />
-            <span>Đã đăng</span>
-          </label>
+          {slot?.fbPostId ? (
+            <p className="cal-fb-done">{slot.status === "scheduled" ? "✓ Đã gửi lên Facebook, Facebook sẽ tự đăng đúng giờ. Sửa ở đây không đổi bài trên Facebook." : "✓ Đã đăng lên Facebook Page."}</p>
+          ) : (
+            <label className="check-row">
+              <input type="checkbox" checked={form.status === "posted"} onChange={(e) => set("status")(e.target.checked ? "posted" : "planned")} />
+              <span>Đã đăng</span>
+            </label>
+          )}
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
         <footer>
           <div className="actions">
             {slot && <button type="button" className="btn danger small" onClick={remove}>Xoá</button>}
             {form.body && <button type="button" className="btn small" onClick={() => copy(form.body)}><CopyIcon />Sao chép bài</button>}
+            {slot && fbReady && !slot.fbPostId && form.platform === "facebook" && (
+              <button type="button" className="btn small fb-publish" disabled={publishing || !form.body.trim()} onClick={publish} title={form.body.trim() ? "Đăng lên Facebook Page đã kết nối" : "Thêm nội dung bài trước"}>
+                {publishing ? "Đang gửi…" : "Đăng lên Facebook"}
+              </button>
+            )}
           </div>
           <button className="btn primary" disabled={busy}>{busy ? "Đang lưu…" : slot ? "Lưu thay đổi" : "Thêm vào lịch"}</button>
         </footer>
@@ -140,6 +173,7 @@ function SlotChip({ s, onOpen, compact }) {
       <span className="cal-slot-title">{s.title}</span>
       {!compact && <span className="cal-slot-meta">{PLATFORMS[s.platform] ?? s.platform}{s.pillar ? ` · ${PILLAR_NAME[s.pillar]}` : ""}</span>}
       {s.status === "posted" && <i className="cal-done" aria-label="Đã đăng">✓</i>}
+      {s.status === "scheduled" && <i className="cal-done is-fb" aria-label="Đã lên lịch trên Facebook">f</i>}
     </button>
   );
 }

@@ -1,8 +1,8 @@
 """Skipli video worker: turns a shot list into a short MP4 on a free GPU (Kaggle / Colab).
 
-Per shot: keyframe (SDXL-Turbo; from the reference image when given, or the last
+Per shot: keyframe (IMAGE_MODEL, RealVisXL Lightning by default; from the reference image when given, or the last
 frame of the previous clip for "continue" shots) -> clip (LTX-Video image-to-video)
--> Vietnamese voice (Edge TTS) -> clip stretched to the voice, subtitles burned in.
+-> voice (Edge TTS, Vietnamese or US English) -> clip stretched to the voice, subtitles burned in.
 Then all shots are concatenated. One render at a time; the web app polls progress.
 
   POST /render            {"shots": [...], "ratio": "9:16", "voice": "female", "reference_image": "<base64>"}
@@ -20,6 +20,7 @@ import base64
 import hmac
 import io
 import json
+import math
 import os
 import queue
 import re
@@ -48,7 +49,8 @@ WAN5B_MAX_S = float(os.environ.get("WAN5B_MAX_S", "2.5"))
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")  # before torch is imported
 FPS = 24
 SIZES = {"9:16": (480, 832), "16:9": (832, 480), "1:1": (640, 640)}
-VOICES = {"female": "vi-VN-HoaiMyNeural", "male": "vi-VN-NamMinhNeural"}
+VOICES = {"female": "vi-VN-HoaiMyNeural", "male": "vi-VN-NamMinhNeural",
+          "en-female": "en-US-AriaNeural", "en-male": "en-US-GuyNeural"}  # en-*: US restaurants, English narration
 STYLES = {
     "real": "photorealistic, natural light, sharp focus",
     "cinematic": "cinematic film still, dramatic lighting, shallow depth of field",
@@ -75,7 +77,7 @@ class Shot(BaseModel):
     image: Optional[str] = None  # base64 keyframe for this shot (a storyboard panel); skips generation
 
 
-# Final sizes. SDXL-Turbo is sharp near 512 px, so each image is drawn at half size, upscaled 2x
+# Final sizes. With SDXL-Turbo (sharp near 512 px) each image is drawn at half size, upscaled 2x
 # and refined with a light img2img pass (adds real detail instead of a soft, stretched picture).
 IMAGE_SIZES = {"1:1": (1024, 1024), "4:5": (896, 1120), "9:16": (768, 1344), "16:9": (1344, 768)}
 AD_NEGATIVE = "text, letters, words, watermark, logo, blurry, low quality, deformed, extra fingers"
@@ -87,10 +89,14 @@ class ImageRequest(BaseModel):
     style: str = "real"
     reference_image: Optional[str] = None
     seed: Optional[int] = None
+    negative: Optional[str] = None  # extra things to keep out (a slideshow: "people, hands, faces")
 
 
 # Free Wan 2.2 image-to-video on Hugging Face ZeroGPU Spaces (tried in order; daily quota per user/IP).
 WAN_SPACES = [s.strip() for s in os.environ.get("WAN_SPACES", "zerogpu-aoti-wan2-2-fp8da-aoti-faster,r3gm-wan2-2-fp8da-aoti-preview").split(",") if s.strip()]
+
+
+MUSIC_SHOT_S = 3.2  # shot length in music mode (no voice to time it)
 
 
 class RenderRequest(BaseModel):
@@ -102,6 +108,7 @@ class RenderRequest(BaseModel):
     seed: Optional[int] = None
     engine: str = "ltx"  # "ltx" | "wan5b" (both on this GPU) | "wan" (Hugging Face Space, falls back to wan5b)
     hf_token: Optional[str] = None
+    audio: str = "voice"  # "music": no voice, ~3 s per shot, narration shown as a short on-screen caption (the app adds the music)
 
 
 # ---------------------------------------------------------------- models
@@ -112,6 +119,23 @@ _sd_lock = threading.Lock()  # one SDXL call at a time: video keyframes and /ima
 _model_state = {"status": "mock" if MOCK else "idle", "error": None}
 
 
+# Still images (ads, slideshows, video keyframes). RealVisXL Lightning: SDXL tuned for real photos, ~6 steps,
+# follows negative prompts (no text, no signs). IMAGE_MODEL=stabilityai/sdxl-turbo brings back the old, faster look.
+IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "SG161222/RealVisXL_V5.0_Lightning")
+TURBO = "turbo" in IMAGE_MODEL.lower()
+SD = {"steps": 4, "guidance": 0.0} if TURBO else {"steps": 6, "guidance": 1.5}
+PHOTO_NEGATIVE = "text, letters, words, watermark, logo, signage, cartoon, illustration, 3d render, cgi, painting, oversaturated, blurry, deformed"
+
+
+def sd(m, prompt, w, h, gen, image=None, strength=0.6, negative=None):
+    """One SDXL picture with the settings of IMAGE_MODEL (text-to-image, or image-to-image from `image`)."""
+    neg = None if TURBO else ", ".join(x for x in (negative, PHOTO_NEGATIVE) if x)
+    if image is not None:
+        steps = max(SD["steps"], math.ceil(SD["steps"] / strength))  # img2img runs strength * steps
+        return m["i2i"](prompt=prompt, negative_prompt=neg, image=fit(image, w, h), strength=strength, num_inference_steps=steps, guidance_scale=SD["guidance"], generator=gen).images[0]
+    return m["t2i"](prompt=prompt, negative_prompt=neg, width=w, height=h, num_inference_steps=SD["steps"], guidance_scale=SD["guidance"], generator=gen).images[0]
+
+
 def _dtype(torch):
     cap = torch.cuda.get_device_capability(0)[0]
     # T4/P100 have no native bf16; LTX_DTYPE overrides if fp16 gives black frames.
@@ -119,7 +143,7 @@ def _dtype(torch):
 
 
 def models():
-    """SDXL-Turbo (keyframes, ads) + the current video model. Loaded once; video models swap (see video_pipe)."""
+    """IMAGE_MODEL (keyframes, ads, slideshows) + the current video model. Loaded once; video models swap (see video_pipe)."""
     with _model_lock:
         if "t2i" in _models:
             return _models
@@ -127,7 +151,13 @@ def models():
         import torch
         from diffusers import AutoPipelineForImage2Image, AutoPipelineForText2Image
 
-        t2i = AutoPipelineForText2Image.from_pretrained("stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16")
+        try:
+            t2i = AutoPipelineForText2Image.from_pretrained(IMAGE_MODEL, torch_dtype=torch.float16, variant="fp16")
+        except Exception:  # noqa: BLE001 - repos without an fp16 variant
+            t2i = AutoPipelineForText2Image.from_pretrained(IMAGE_MODEL, torch_dtype=torch.float16)
+        if not TURBO:  # Lightning models want DPM++ SDE Karras
+            from diffusers import DPMSolverMultistepScheduler
+            t2i.scheduler = DPMSolverMultistepScheduler.from_config(t2i.scheduler.config, use_karras_sigmas=True, algorithm_type="sde-dpmsolver++")
         if torch.cuda.device_count() > 1:  # Kaggle "T4 x2": keyframes on the second GPU
             t2i.to("cuda:1")
             i2i = AutoPipelineForImage2Image.from_pipe(t2i)
@@ -277,14 +307,12 @@ def keyframe(shot, prev_last, reference, w, h, seed, style="real"):
     m = models()
     torch = m["torch"]
     gen = torch.Generator("cpu").manual_seed(seed)
-    gw, gh = (round(w * 1.07 / 64) * 64, round(h * 1.07 / 64) * 64)
+    k = 1.07 if TURBO else 1.6  # RealVisXL is sharpest near 1024 px: draw bigger, then fit down
+    gw, gh = (round(w * k / 64) * 64, round(h * k / 64) * 64)
     # SDXL reads ~75 tokens: the shot's own subject/action first, style last.
     prompt = f"{shot.visual}, {STYLES.get(style, STYLES['real'])}"
     with _sd_lock:
-        if reference is not None:
-            img = m["i2i"](prompt=prompt, image=fit(reference, gw, gh), strength=0.55, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
-        else:
-            img = m["t2i"](prompt=prompt, width=gw, height=gh, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+        img = sd(m, prompt, gw, gh, gen, image=reference, strength=0.55)
     return fit(img, w, h)
 
 
@@ -405,10 +433,16 @@ def render(job, req):
 
     parts, last = [], None
     for i, shot in enumerate(req.shots, 1):
+        if job.get("cancel"):  # the web app canceled the job: stop between shots
+            raise Canceled()
         job["phase"] = f"Đang dựng cảnh {i}/{len(req.shots)}{' bằng Wan 2.2' if wan else ''}…"
         audio = d / f"s{i}.mp3"
-        tts(shot.narration, voice, audio)
-        dur = duration(audio) + 0.3
+        if req.audio == "music":
+            dur = MUSIC_SHOT_S
+            run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", f"{dur:.2f}", "-c:a", "libmp3lame", str(audio)])
+        else:
+            tts(shot.narration, voice, audio)
+            dur = duration(audio) + 0.3
         image = keyframe(shot, last, reference, w, h, seed + i, req.style)
         clip = d / f"s{i}_raw.mp4"
         if wan:
@@ -440,15 +474,28 @@ def render(job, req):
 
 jobs = {}
 todo = queue.Queue()
+# One GPU job at a time: drawing images while a video renders runs out of GPU memory and can leave
+# CUDA in a broken state ("illegal memory access") until the notebook is restarted.
+_gpu_lock = threading.Lock()
+
+
+class Canceled(Exception):
+    pass
 
 
 def loop():
     while True:
         job, req = todo.get()
+        if job.get("cancel"):
+            job.update(status="canceled", phase=None)
+            continue
         job["status"] = "running"
         try:
-            render(job, req)
+            with _gpu_lock:
+                render(job, req)
             job.update(status="done", phase=None)
+        except Canceled:
+            job.update(status="canceled", phase=None)
         except Exception as e:  # noqa: BLE001 - reported to the web app
             traceback.print_exc()
             job.update(status="failed", phase=None, error=f"{type(e).__name__}: {e}"[:500])
@@ -498,13 +545,14 @@ def start(req: RenderRequest, authorization: str = Header(None)):
 
 
 def draw_images(req):
-    """Ad images (SDXL-Turbo: a few seconds each once loaded). Text is NOT drawn: the app overlays editable text."""
+    """Ad and slideshow images (a few seconds each once loaded). Text is NOT drawn: the app overlays it."""
     w, h = IMAGE_SIZES.get(req.size, IMAGE_SIZES["1:1"])
     reference = decode_image(req.reference_image) if req.reference_image else None
     seed = req.seed if req.seed is not None else int(time.time()) % 100000
     out = []
     for i, p in enumerate(req.prompts):
-        prompt = f"{p[:600]}, {STYLES.get(req.style, STYLES['real'])}, advertising photo, clean composition, empty space for text"
+        # Ads keep room for the text the app lays over them; slideshow photos (sent with a negative) fill the frame.
+        prompt = f"{p[:600]}, {STYLES.get(req.style, STYLES['real'])}, " + ("RAW photo, professional photography, realistic textures" if req.negative else "advertising photo, clean composition, empty space for text")
         if MOCK:
             img = Image.linear_gradient("L").resize((w, h)).convert("RGB")
             img = Image.merge("RGB", (img.getchannel(0), Image.new("L", (w, h), (seed + i * 53) % 255), img.getchannel(2)))
@@ -513,13 +561,16 @@ def draw_images(req):
             gen = m["torch"].Generator("cpu").manual_seed(seed + i)
             bw, bh = w // 2, h // 2
             with _sd_lock:
-                if reference is not None:
-                    img = m["i2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, image=fit(reference, bw, bh), strength=0.6, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+                if not TURBO:  # draws well at full size: one pass
+                    img = sd(m, prompt, w // 8 * 8, h // 8 * 8, gen, image=reference, strength=0.6, negative=req.negative)
                 else:
-                    img = m["t2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, width=bw, height=bh, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
-                # 2x: Lanczos upscale, then refine (strength * steps must be >= 1 for SDXL-Turbo)
-                big = fit(img, bw, bh).resize((w, h), Image.LANCZOS)
-                img = m["i2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, image=big, strength=0.35, num_inference_steps=6, guidance_scale=0.0, generator=gen).images[0]
+                    if reference is not None:
+                        img = m["i2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, image=fit(reference, bw, bh), strength=0.6, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+                    else:
+                        img = m["t2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, width=bw, height=bh, num_inference_steps=4, guidance_scale=0.0, generator=gen).images[0]
+                    # 2x: Lanczos upscale, then refine (strength * steps must be >= 1 for SDXL-Turbo)
+                    big = fit(img, bw, bh).resize((w, h), Image.LANCZOS)
+                    img = m["i2i"](prompt=prompt, negative_prompt=AD_NEGATIVE, image=big, strength=0.35, num_inference_steps=6, guidance_scale=0.0, generator=gen).images[0]
             img = fit(img, w, h)
         buf = io.BytesIO()
         img.save(buf, "PNG")
@@ -541,7 +592,8 @@ def image_start(req: ImageRequest, authorization: str = Header(None)):
 
     def go():
         try:
-            images[iid].update(status="done", result=draw_images(req))
+            with _gpu_lock:  # waits for a running video render
+                images[iid].update(status="done", result=draw_images(req))
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             images[iid].update(status="failed", error=f"{type(e).__name__}: {e}"[:500])
@@ -569,6 +621,16 @@ def status(rid: str, authorization: str = Header(None)):
     if not job:
         raise HTTPException(404, "unknown render (worker restarted?)")
     return {k: job.get(k) for k in ("status", "phase", "done", "total", "error", "duration", "notice")}
+
+
+@app.delete("/render/{rid}")
+def cancel(rid: str, authorization: str = Header(None)):
+    """Stop a render the web app canceled (checked between shots)."""
+    check(authorization)
+    job = jobs.get(rid)
+    if job and job["status"] in ("queued", "running"):
+        job["cancel"] = True
+    return {"ok": True}
 
 
 @app.get("/render/{rid}/video")

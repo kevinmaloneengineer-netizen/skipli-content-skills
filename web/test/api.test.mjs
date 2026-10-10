@@ -199,3 +199,82 @@ test("APP_PASSWORD enables basic auth", async () => {
   assert.equal((await fetch(url, { headers: wrong })).status, 401);
   s.close();
 });
+
+test("login page session: cookie from /api/login opens the API, logout closes it", async () => {
+  const locked = await createApp(config({ appPassword: "s3cret" }), newAdapter());
+  const s = await listen(locked.app);
+  const root = `http://127.0.0.1:${s.address().port}`;
+  const post = (p, body, headers = {}) => fetch(root + p, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  assert.deepEqual(await (await fetch(`${root}/api/session`)).json(), { mode: "password", required: true, signedIn: false });
+  assert.equal((await post("/api/login", { password: "nope" })).status, 401);
+  const ok = await post("/api/login", { password: "s3cret" });
+  assert.equal(ok.status, 200);
+  const cookie = ok.headers.get("set-cookie").split(";")[0];
+  assert.match(ok.headers.get("set-cookie"), /HttpOnly/);
+  assert.equal((await fetch(`${root}/api/health`, { headers: { cookie } })).status, 200);
+  assert.equal((await fetch(`${root}/api/health`, { headers: { cookie: "skipli_session=forged" } })).status, 401);
+  assert.equal((await fetch(`${root}/media/clips/v1234567890.mp4`)).status, 401);
+  const out = await post("/api/logout", {}, { cookie });
+  assert.match(out.headers.get("set-cookie"), /Max-Age=0/);
+  s.close();
+});
+
+test("samples, rewrite and live phases", async () => {
+  const sample = await call("GET", "/api/samples/maps");
+  assert.equal(sample.status, 200);
+  assert.equal(sample.body.job.sample, true);
+  assert.match(sample.body.job.result, /Tổng quan/);
+  assert.equal((await call("GET", "/api/samples/video")).status, 404);
+  assert.match((await call("GET", "/api/samples/plan")).body.job.input.start, /^\d{4}-\d{2}-\d{2}$/);
+
+  const rw = await call("POST", "/api/rewrite", { text: "Lẩu bò nhúng giấm ngon tuyệt, ghé quán nhé!", style: "shorter" });
+  assert.equal(rw.status, 200);
+  assert.ok(rw.body.text.length > 0);
+  assert.equal((await call("POST", "/api/rewrite", { text: "Lẩu bò nhúng giấm ngon", style: "bogus" })).status, 400);
+});
+
+test("customer accounts: setup admin, each customer sees only their own data, admin can disable", async () => {
+  const app = await createApp(config({ accounts: true, goclaw: { url: "http://127.0.0.1:1", token: "", userId: "system", mock: true, mockDelayMs: 10 } }), newAdapter());
+  const s = await listen(app.app);
+  const root = `http://127.0.0.1:${s.address().port}`;
+  const req = async (method, p, body, cookie) => {
+    const r = await fetch(root + p, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null), cookie: r.headers.get("set-cookie")?.split(";")[0] };
+  };
+  try {
+    assert.equal((await req("GET", "/api/session")).body.setup, true);
+    assert.equal((await req("GET", "/api/jobs")).status, 401);
+    const admin = await req("POST", "/api/setup", { email: "Boss@Example.com", password: "admin-pass-1", name: "Boss" });
+    assert.equal(admin.status, 201);
+    assert.equal(admin.body.user.role, "admin");
+    assert.equal((await req("POST", "/api/setup", { email: "x@y.com", password: "12345678" })).status, 409); // only once
+
+    for (const email of ["a@shop.com", "b@shop.com"]) assert.equal((await req("POST", "/api/admin/users", { email, password: "customer-1", dailyLimit: 1 }, admin.cookie)).status, 201);
+    const a = await req("POST", "/api/login", { email: "a@shop.com", password: "customer-1" });
+    const b = await req("POST", "/api/login", { email: "b@shop.com", password: "customer-1" });
+    assert.equal((await req("POST", "/api/login", { email: "a@shop.com", password: "wrong-pass" })).status, 401);
+    assert.equal((await req("GET", "/api/admin/users", null, a.cookie)).status, 403);
+    assert.equal((await req("PUT", "/api/video/worker", { url: "https://evil.example", token: "x" }, a.cookie)).status, 403); // the GPU is the admin's
+
+    const job = await req("POST", "/api/jobs", { type: "write", input: { platform: "facebook", topic: "Lẩu bò" } }, a.cookie);
+    assert.equal(job.status, 201);
+    assert.equal((await req("GET", `/api/jobs/${job.body.job.id}`, null, a.cookie)).status, 200);
+    assert.equal((await req("GET", `/api/jobs/${job.body.job.id}`, null, b.cookie)).status, 404);
+    assert.equal((await req("GET", "/api/jobs", null, b.cookie)).body.jobs.length, 0);
+    assert.equal((await req("POST", "/api/jobs", { type: "write", input: { platform: "facebook", topic: "Lẩu gà" } }, a.cookie)).status, 429); // daily limit 1
+
+    await req("POST", "/api/library", { kind: "saved", title: "Bài của A", body: "Nội dung" }, a.cookie);
+    const libB = (await req("GET", "/api/library?kind=saved", null, b.cookie)).body.items;
+    assert.equal(libB.length, 0);
+    assert.ok((await req("GET", "/api/library?kind=template", null, b.cookie)).body.items.length > 0); // starter templates are shared
+
+    const users = (await req("GET", "/api/admin/users", null, admin.cookie)).body.users;
+    const ua = users.find((u) => u.email === "a@shop.com");
+    assert.equal(ua.today, 1);
+    assert.equal(users[0].passHash, undefined); // never sent
+    await req("PUT", `/api/admin/users/${ua.id}`, { disabled: true }, admin.cookie);
+    assert.equal((await req("GET", "/api/jobs", null, a.cookie)).status, 401); // a disabled account is signed out
+  } finally {
+    s.close();
+  }
+});

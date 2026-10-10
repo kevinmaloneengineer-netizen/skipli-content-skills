@@ -1,7 +1,9 @@
-import { channelPromptWithIds } from "./prompts.mjs";
+import path from "node:path";
+import { channelPromptWithIds, TIME_ZONES } from "./prompts.mjs";
 import { fetchReviews } from "./sources/maps.mjs";
 import { apifyReviewsEnabled, fetchReviewsApify } from "./sources/mapsApify.mjs";
 import { findVideos } from "./sources/tiktok.mjs";
+import { fetchInstagramPosts, fetchYelpReviews, socialEnabled } from "./sources/socialApify.mjs";
 import { complete, directEnabled } from "./llm.mjs";
 import { watchReel } from "./watch.mjs";
 import { reelLine, runScript, threadLine } from "./scanners.mjs";
@@ -39,7 +41,7 @@ async function comparePrompt(input, { setPhase, signal }) {
     await setPhase(`Đang đọc kênh ${i + 1}/${input.urls.length}: @${name}…`);
     try {
       const list = await runScript("fanpage-analyzer", "list_reels.py", [url, "--count", "50", "--stats", "--limit", "100"], { signal });
-      const st = await runScript("fanpage-analyzer", "analyze_reels.py", [], { signal, stdin: JSON.stringify(list) });
+      const st = await runScript("fanpage-analyzer", "analyze_reels.py", ["--tz", input.tz ?? "Asia/Ho_Chi_Minh"], { signal, stdin: JSON.stringify(list) });
       pages.push({
         name, url,
         reels: st.reels_analyzed, perWeek: st.reels_per_week,
@@ -59,7 +61,7 @@ async function comparePrompt(input, { setPhase, signal }) {
   return {
     fields: { compare: pages },
     prompt: [
-      `So sánh ${ok.length} fanpage theo skill competitor-compare, bằng tiếng Việt.${input.focus ? ` Người dùng muốn chú ý: ${input.focus}.` : ""}`,
+      `So sánh ${ok.length} fanpage theo skill competitor-compare, bằng tiếng Việt. Giờ đăng tính theo ${TIME_ZONES[input.tz] ?? "giờ Việt Nam"}.${input.focus ? ` Người dùng muốn chú ý: ${input.focus}.` : ""}`,
       "Số liệu từng kênh (đã tính sẵn từ các reel gần nhất):",
       JSON.stringify(ok.map(({ url, ...p }) => p)),
       // Free models misread which number is bigger: state the leaders outright.
@@ -113,21 +115,85 @@ async function mapsPromptApify(input, { setPhase, signal }) {
   if (!place.low.length && !place.high.length) throw new Error(`Không đọc được bài đánh giá nào của ${place.name}.`);
   await setPhase(`Đã đọc ${place.low.length + place.high.length} đánh giá của ${place.name}, AI đang phân tích…`);
   const starCounts = page && Object.keys(page.starCounts ?? {}).length ? page.starCounts : null;
+  return reviewSides(place, { site: "Google Maps", starCounts, focus: input.focus });
+}
+
+/** Prompt + scorecard fields from the lowest and highest rated reviews of one place (Google Maps or Yelp). */
+function reviewSides(place, { site, starCounts = null, focus = "" }) {
   const line = (r) => `- (${r.stars ?? "?"} sao, ${r.when}${r.ownerReplied ? ", chủ quán đã trả lời" : ""}) ${r.text.slice(0, 160)}`;
   const prompt = [
-    "Phân tích đánh giá Google Maps của quán dưới đây theo skill review-analyzer, bằng tiếng Việt.",
+    `Phân tích đánh giá ${site} của quán dưới đây theo skill review-analyzer, bằng tiếng Việt.`,
     `Quán: ${place.name}${place.address ? ` (${place.address})` : ""}. Điểm: ${place.rating || "?"} sao trên ${place.total || "?"} lượt đánh giá.`,
-    starCounts ? `Phân bố số sao trên TOÀN BỘ đánh giá của Google (dùng cho bảng "Phân bố số sao"): ${[5, 4, 3, 2, 1].map((n) => `${n} sao: ${starCounts[n] ?? 0}`).join(", ")}.` : 'Không có phân bố số sao: bỏ mục "Phân bố số sao".',
+    starCounts ? `Phân bố số sao trên TOÀN BỘ đánh giá của ${site} (dùng cho bảng "Phân bố số sao"): ${[5, 4, 3, 2, 1].map((n) => `${n} sao: ${starCounts[n] ?? 0}`).join(", ")}.` : 'Không có phân bố số sao: bỏ mục "Phân bố số sao".',
     `ĐÁNH GIÁ ÍT SAO NHẤT (${place.low.length} bài, xếp từ điểm thấp nhất). Mục "Khách chê gì" lấy từ đây; "Số bài nhắc" không được lớn hơn ${place.low.length}:`,
     place.low.map(line).join("\n"),
     `ĐÁNH GIÁ NHIỀU SAO NHẤT (${place.high.length} bài, xếp từ điểm cao nhất). Mục "Khách khen gì" lấy từ đây; "Số bài nhắc" không được lớn hơn ${place.high.length}:`,
     place.high.map(line).join("\n"),
-    "Ở Tổng quan, nói rõ đã đọc bao nhiêu bài ít sao và bao nhiêu bài nhiều sao (không phải toàn bộ đánh giá). Số bài nhắc phải là số nguyên, không ghi \"~\" hay \"khoảng\".",
-    input.focus ? `Người dùng muốn chú ý thêm: ${input.focus}` : "",
+    "Ở Tổng quan, nói rõ đã đọc bao nhiêu bài ít sao và bao nhiêu bài nhiều sao (không phải toàn bộ đánh giá). Số bài nhắc phải là số nguyên, không ghi \"~\" hay \"khoảng\". Trích dẫn giữ nguyên ngôn ngữ gốc của review.",
+    focus ? `Người dùng muốn chú ý thêm: ${focus}` : "",
   ].filter(Boolean).join("\n\n");
   return {
     prompt,
-    fields: { place: { name: place.name, rating: place.rating, total: place.total, address: place.address, url: place.url, starCounts, read: place.low.length + place.high.length, readLow: place.low.length, readHigh: place.high.length, source: "apify" } },
+    fields: { place: { name: place.name, rating: place.rating, total: place.total, address: place.address ?? "", url: place.url, starCounts, read: place.low.length + place.high.length, readLow: place.low.length, readHigh: place.high.length, source: "apify", site },
+      // A few real low-star reviews, each with a "Soạn trả lời" button on the result page.
+      lowReviews: place.low.filter((r) => (r.stars ?? 5) <= 3).slice(0, 6).map((r) => ({ stars: r.stars, when: r.when, text: r.text.slice(0, 600), ownerReplied: r.ownerReplied })) },
+  };
+}
+
+/** Yelp: lowest and highest rated reviews through Apify, analysed like the Google Maps ones. */
+async function yelpPrompt(input, { setPhase, signal }) {
+  if (!socialEnabled()) throw new Error("Chưa cấu hình APIFY_REVIEWS_TOKEN trong deploy/.env: Yelp chỉ đọc được qua Apify (khoảng $0,06 mỗi lần).");
+  await setPhase("Đang lấy review ít sao và nhiều sao nhất trên Yelp…");
+  const place = await fetchYelpReviews(input.url, { perSide: 30, signal });
+  await setPhase(`Đã đọc ${place.low.length + place.high.length} review Yelp của ${place.name}, AI đang phân tích…`);
+  return reviewSides(place, { site: "Yelp", starCounts: place.starCounts, focus: input.focus });
+}
+
+/** Copy a remote picture into the clips folder (served at /media/thumbs/<name>); null when it fails. */
+async function keepThumb(src, name, signal) {
+  if (!src || !CLIPS_DIR) return null;
+  try {
+    const res = await fetch(src, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(20_000)]) });
+    if (!res.ok || !/^image\//.test(res.headers.get("content-type") ?? "")) return null;
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(CLIPS_DIR, { recursive: true });
+    await writeFile(path.join(CLIPS_DIR, name), Buffer.from(await res.arrayBuffer()));
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+/** Instagram: latest posts through Apify, turned into the fanpage analyzer's numbers and report. */
+async function instagramPrompt(input, { setPhase, signal }) {
+  if (!socialEnabled()) throw new Error("Chưa cấu hình APIFY_REVIEWS_TOKEN trong deploy/.env: Instagram chỉ đọc được qua Apify (khoảng $0,07 mỗi lần).");
+  await setPhase(`Đang đọc 40 bài gần nhất của @${input.user}…`);
+  const { name, data } = await fetchInstagramPosts(input.user, { limit: 40, signal });
+  await setPhase(`Đã đọc ${data.count} bài, đang tính số liệu…`);
+  const stats = await runScript("fanpage-analyzer", "analyze_reels.py", ["--tz", input.tz ?? "Asia/Ho_Chi_Minh"], { signal, stdin: JSON.stringify(data) });
+  // Post types matter on Instagram (reels vs photos vs albums): computed here, the analyzer only knows reels.
+  const groups = {};
+  for (const p of data.reels) (groups[p.kind] ??= []).push(p.reactions + 2 * p.comments);
+  const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0;
+  const byKind = Object.entries(groups).map(([kind, xs]) => ({ kind, posts: xs.length, median_engagement: median(xs) })).sort((a, b) => b.posts - a.posts);
+  // Cards for the posts the report lists (top and bottom): keep a copy of each picture, Instagram's
+  // links expire and cannot be shown from another site.
+  const listed = new Set([...(stats.top ?? []), ...(stats.bottom ?? [])].map((r) => r.url));
+  const igPosts = await Promise.all(data.reels.filter((p) => listed.has(p.url) && p.code).map(async (p) => ({
+    url: p.url, code: p.code, kind: p.kind, likes: p.reactions, comments: p.comments,
+    date: new Date(p.created_ts * 1000).toISOString().slice(0, 10), caption: String(p.caption ?? "").replace(/\s+/g, " ").slice(0, 160),
+    image: await keepThumb(p.image, `ig-${p.code}.jpg`, signal),
+  })));
+  await setPhase("AI đang viết báo cáo…");
+  return {
+    direct: { skill: "fanpage-analyzer", from: /Step 2/ },
+    fields: { igName: name, igPosts },
+    prompt: [
+      `Viết báo cáo phân tích tài khoản INSTAGRAM @${input.user} (${name}) theo đúng cấu trúc ở Step 3, bằng tiếng Việt. Đây là Instagram, không phải Facebook: gọi là "bài đăng" (gồm ảnh, album và video/reel), tương tác = lượt thích + 2 x bình luận (Instagram không cho xem lượt chia sẻ). Mọi giờ đăng tính theo ${TIME_ZONES[input.tz] ?? "giờ Việt Nam"}.${input.focus ? ` Chú ý thêm: ${input.focus}.` : ""}`,
+      `Thêm vào mục "Video dài bao lâu, caption ra sao" một bảng "Loại bài | Số bài | Tương tác trung vị" từ số liệu này và nhận xét loại nào hiệu quả nhất: ${JSON.stringify(byKind)}. Không có số liệu độ dài video thì bỏ phần độ dài.`,
+      "Số liệu đã tính sẵn (JSON, dùng đúng các con số này, không tự tính lại):",
+      JSON.stringify(stats),
+    ].join("\n\n"),
   };
 }
 
@@ -157,7 +223,7 @@ async function mapsPrompt(input, { setPhase, signal }) {
   ].filter(Boolean).join("\n\n");
   // The result page draws the scorecard from these numbers rather than from the AI's text.
   const counts = Object.keys(place.starCounts ?? {}).length ? place.starCounts : Object.fromEntries([5, 4, 3, 2, 1].map((n) => [n, place.reviews.filter((r) => r.stars === n).length]));
-  return { prompt, fields: { place: { name: place.name, rating: place.rating, total: place.total, address: place.address, url: place.url, starCounts: counts, read: place.reviews.length } } };
+  return { prompt, fields: { place: { name: place.name, rating: place.rating, total: place.total, address: place.address, url: place.url, starCounts: counts, read: place.reviews.length }, lowReviews: low.slice(0, 6).map((r) => ({ stars: r.stars, when: r.when, text: r.text.slice(0, 600) })) } };
 }
 
 const SOURCE_RULE =
@@ -274,12 +340,12 @@ async function scanDirect(job, { setPhase, signal }) {
     await setPhase("Đang đọc 100 reel gần nhất của fanpage…");
     const list = await runScript("fanpage-analyzer", "list_reels.py", [input.url, "--count", "100", "--stats", "--limit", "200"], { signal });
     await setPhase(`Đã đọc ${list.count ?? list.reels?.length ?? 0} reel, đang tính số liệu…`);
-    const stats = await runScript("fanpage-analyzer", "analyze_reels.py", [], { signal, stdin: JSON.stringify(list) });
+    const stats = await runScript("fanpage-analyzer", "analyze_reels.py", ["--tz", input.tz ?? "Asia/Ho_Chi_Minh"], { signal, stdin: JSON.stringify(list) });
     await setPhase("AI đang viết báo cáo…");
     return {
       direct: { skill: "fanpage-analyzer", from: /Step 2/ },
       prompt: [
-        `Viết báo cáo phân tích fanpage ${input.url} theo đúng cấu trúc ở Step 3, bằng tiếng Việt.${input.focus ? ` Chú ý thêm: ${input.focus}.` : ""}`,
+        `Viết báo cáo phân tích fanpage ${input.url} theo đúng cấu trúc ở Step 3, bằng tiếng Việt. Mọi giờ đăng tính theo ${TIME_ZONES[input.tz] ?? "giờ Việt Nam"}, ghi rõ điều này ở mục "Đăng khi nào".${input.focus ? ` Chú ý thêm: ${input.focus}.` : ""}`,
         "Số liệu đã tính sẵn (JSON, dùng đúng các con số này, không tự tính lại):",
         JSON.stringify(stats),
       ].join("\n\n"),
@@ -317,8 +383,10 @@ export function createPreparer({ facebook, mock = false, clipsDir = null, log = 
   return async function prepare(job, { setPhase, signal }) {
     const input = job.input ?? {};
     // Demo mode answers from canned replies: do not open Chrome, search the web or run scripts.
-    if (mock && ["tiktok", "maps", "compare", "campaign"].includes(job.type)) return { prompt: job.prompt || job.title };
+    if (mock && ["tiktok", "maps", "compare", "campaign", "yelp", "instagram"].includes(job.type)) return { prompt: job.prompt || job.title };
     if (job.type === "tiktok") return tiktokPrompt(input, { setPhase, signal });
+    if (job.type === "yelp") return yelpPrompt(input, { setPhase, signal });
+    if (job.type === "instagram") return instagramPrompt(input, { setPhase, signal });
     if (job.type === "maps") return mapsPrompt(input, { setPhase, signal });
     if (job.type === "compare") return comparePrompt(input, { setPhase, signal });
     if (job.type === "campaign") return campaignPrompt(job, { setPhase, signal });

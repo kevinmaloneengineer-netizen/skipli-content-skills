@@ -14,7 +14,7 @@ python3 {baseDir}/scripts/list_reels.py "<PAGE_URL>" --count 100 --stats --limit
 python3 {baseDir}/scripts/analyze_reels.py /tmp/reels.json
 ```
 
-`analyze_reels.py` prints the statistics as JSON: reels per week, median and average engagement, breakdowns by weekday, time of day (Vietnam time), video length and caption length, top hashtags, the top 8 and bottom 5 reels. **Use these numbers as given; never recompute or invent numbers.** If `ok` is false, say in one plain sentence that the page could not be read (private, no reels, or blocked) and stop.
+`analyze_reels.py` prints the statistics as JSON: reels per week, median and average engagement, breakdowns by weekday, time of day (the page's local time: Vietnam time unless the prompt gives `--tz`), video length and caption length, top hashtags, the top 8 and bottom 5 reels. **Use these numbers as given; never recompute or invent numbers.** If `ok` is false, say in one plain sentence that the page could not be read (private, no reels, or blocked) and stop.
 
 ## Step 2: Read the content yourself
 
