@@ -407,5 +407,7 @@ export async function mockReply({ kind, prompt, delayMs, signal }) {
   await sleep(delayMs, undefined, { signal });
   if (kind === "chat") return { content: mockChat(prompt), usage: null };
   if (/mock-fail/i.test(prompt)) throw new Error("Mock failure requested (input contains 'mock-fail')");
+  // A photo slideshow asks for image ideas (image-prompter), not a shot list.
+  if (kind === "video" && /TRÌNH CHIẾU/.test(prompt)) return { content: REPLIES.image, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
   return { content: REPLIES[kind] ?? WRITE, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
 }

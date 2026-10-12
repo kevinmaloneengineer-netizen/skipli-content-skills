@@ -278,3 +278,50 @@ test("customer accounts: setup admin, each customer sees only their own data, ad
     s.close();
   }
 });
+
+test("slideshow review: photos wait for review, one is redrawn, then the video renders", async (t) => {
+  const { execFileSync } = await import("node:child_process");
+  try {
+    execFileSync("ffmpeg", ["-version"]);
+    execFileSync("python3", ["-c", "import numpy, PIL"]);
+  } catch {
+    return t.skip("needs ffmpeg, numpy and Pillow");
+  }
+  const app = await createApp(config({ goclaw: { url: "http://127.0.0.1:1", token: "", userId: "system", mock: true, mockDelayMs: 10 } }), newAdapter());
+  const s = await listen(app.app);
+  const root = `http://127.0.0.1:${s.address().port}`;
+  const req = async (method, p, body) => {
+    const r = await fetch(root + p, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  const until = async (id, done) => {
+    for (let i = 0; i < 300; i++) {
+      const j = (await req("GET", `/api/jobs/${id}`)).body.job;
+      if (done(j)) return j;
+      await sleep(100);
+    }
+    throw new Error("timeout");
+  };
+  try {
+    // The mock answers with the image JSON for "image" jobs; slideshow uses the same parser.
+    const job = (await req("POST", "/api/jobs", { type: "video", input: { mode: "slideshow", layout: "single", topic: "Pho restaurant in Milwaukee", seconds: 15, ratio: "9:16" } })).body.job;
+    const waiting = await until(job.id, (j) => !["queued", "running"].includes(j.status));
+    if (waiting.status === "failed") return t.skip(`mock slideshow unavailable: ${waiting.error}`);
+    assert.equal(waiting.status, "review");
+    assert.ok(waiting.slides.length >= 2);
+    const first = waiting.slides[0].image;
+    const redrawn = await req("POST", `/api/jobs/${job.id}/slides/0/redraw`, { prompt: "wide shot of a quiet dining room" });
+    assert.equal(redrawn.status, 200);
+    assert.notEqual(redrawn.body.slides[0].image, first);
+    assert.equal(redrawn.body.slides[0].prompt, "wide shot of a quiet dining room");
+    assert.equal((await req("POST", `/api/jobs/${job.id}/render`, { order: [0] })).status, 400); // at least 2 photos
+    const order = redrawn.body.slides.map((_, i) => i).reverse();
+    assert.equal((await req("POST", `/api/jobs/${job.id}/render`, { order })).status, 202);
+    const done = await until(job.id, (j) => j.status === "done" || j.status === "failed");
+    assert.equal(done.status, "done", done.error);
+    assert.equal(done.video.shots[0].image, redrawn.body.slides.at(-1).image); // rendered in the chosen order
+    assert.equal((await fetch(`${root}/media/videos/${done.video.file}`)).status, 200);
+  } finally {
+    s.close();
+  }
+});

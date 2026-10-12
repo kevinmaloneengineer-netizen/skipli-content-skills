@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import "./styles.css";
+import { startTranslator } from "./lib/i18n.js";
 
 // Apply a saved light/dark choice before the first paint (no inline script: the CSP forbids it).
 try {
@@ -16,3 +17,4 @@ createRoot(document.getElementById("root")).render(
     <App />
   </StrictMode>,
 );
+startTranslator(); // English UI when chosen (lib/i18n.js)

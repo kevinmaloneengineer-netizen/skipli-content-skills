@@ -11,7 +11,7 @@ import UserMenu from "./UserMenu.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
 import Footer from "./Footer.jsx";
 import HealthStatus from "./HealthStatus.jsx";
-import { Bell, SearchButton, ThemeButton, useTheme } from "./NavExtras.jsx";
+import { Bell, SearchButton, ThemeButton, useTheme, LangButton } from "./NavExtras.jsx";
 
 const GROUPS = CATEGORIES.map((c) => ({ ...c, items: c.skills.map(skillById).filter(Boolean) }));
 
@@ -232,6 +232,7 @@ export default function Layout() {
           <div className="icon-group">
             <Bell />
             <ThemeButton dark={dark} onToggle={toggle} />
+            <LangButton />
           </div>
           <HealthStatus />
           <UserMenu />

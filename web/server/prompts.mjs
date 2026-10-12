@@ -67,6 +67,35 @@ function facebookUrl(raw) {
   return u.toString();
 }
 
+export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold"]);
+const BASE_ROLES = ["ext", "int", "table", "medium", "close", "side"];
+const TEMPLATE_ROLES = { top3: ["dish1", "dish2", "dish3", "ext", "int", "table"], menu: ["dish1", "dish2", "dish3", "dish4", "ext", "int"] };
+/**
+ * Role of every slide of a slideshow template: real photos take the template's first roles (the dishes,
+ * in the order the user listed them), the image model draws the rest in order.
+ */
+export function slideRoles(layout, realCount, count = 6) {
+  const roles = (TEMPLATE_ROLES[layout] ?? (realCount ? ["food", "food", "food", "food", "food", "food"] : BASE_ROLES)).slice(0, count);
+  if (!TEMPLATE_ROLES[layout] && realCount) {
+    // Real photos are usually dishes: the model draws the place first, then more food.
+    return { realRoles: Array(realCount).fill("food"), drawRoles: ["int", "ext", "table", "medium", "side", "close"].slice(0, count - realCount) };
+  }
+  return { realRoles: roles.slice(0, realCount), drawRoles: roles.slice(realCount) };
+}
+
+/** "Phở đặc biệt - $14.95" per line → [{ name, price }]; a price only when the user wrote one. */
+export function parseDishes(raw) {
+  return String(raw ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((l) => {
+      const m = l.match(/^(.*?)\s*[-:|–]\s*(\$\s?\d+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{3})*\s?(?:k|đ|vnd|usd|\$)?)\s*$/i);
+      return m ? { name: m[1].slice(0, 40), price: m[2].replace(/\s+/g, "") } : { name: l.slice(0, 40), price: "" };
+    });
+}
+
 /** Where the page posts from: its posting hours are read in this zone (default Vietnam). */
 export const TIME_ZONES = { "Asia/Ho_Chi_Minh": "giờ Việt Nam", "America/New_York": "giờ miền Đông Mỹ (ET)", "America/Chicago": "giờ miền Trung Mỹ (CT)", "America/Denver": "giờ miền Núi Mỹ (MT)", "America/Los_Angeles": "giờ miền Tây Mỹ (PT)" };
 const timeZone = (v) => (TIME_ZONES[v] ? v : "Asia/Ho_Chi_Minh");
@@ -100,7 +129,8 @@ const VI_MARKS = /[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹ
 // Vietnamese typed without accents ("quan lau bo ngon") must not count as English.
 const VI_PLAIN = /\b(quan|lau|bo|pho|com|bun|ngon|gia|mon|khach|ban|cua|cho|nhe|nha hang|tiem|uu dai|giam)\b/gi;
 function userText(raw = {}) {
-  const skip = /^(url|urls|start|platform|platforms|tone|style|size|ratio|engine|voice|mode|kind|templateId|referenceJobId|referenceImageId|panelIds|pillars|source|lang)$/;
+  // Names and addresses do not tell the language ("Phở Cali" is a restaurant in Milwaukee).
+  const skip = /^(url|urls|start|platform|platforms|tone|style|size|ratio|engine|voice|mode|kind|layout|templateId|referenceJobId|referenceImageId|logoId|photoIds|panelIds|pillars|source|lang|name|city|address|phone)$/;
   return Object.entries(raw)
     .filter(([k, v]) => !skip.test(k) && (typeof v === "string" || Array.isArray(v)))
     .map(([, v]) => [v].flat().join(" "))
@@ -108,8 +138,14 @@ function userText(raw = {}) {
     .replace(/https?:\/\/\S+/g, " ");
 }
 export function isEnglish(text) {
-  if (VI_MARKS.test(text)) return false;
-  if ((text.match(VI_PLAIN) ?? []).length >= 2) return false;
+  // By share of words, so a Vietnamese dish or shop name inside English text ("Phở Cali, a Vietnamese
+  // restaurant in Milwaukee") does not flip the language.
+  const words = String(text).split(/[\s,.;:!?()"“”/-]+/).filter((w) => /\p{L}/u.test(w));
+  if (!words.length) return false;
+  const vi = words.filter((w) => VI_MARKS.test(w)).length;
+  if (vi / words.length > 0.2) return false;
+  if ((text.match(VI_PLAIN) ?? []).length >= 2 && vi > 0) return false;
+  if ((text.match(VI_PLAIN) ?? []).length >= 3) return false;
   return (text.match(/\b[a-z]{3,}\b/gi) ?? []).length >= 3;
 }
 
@@ -261,9 +297,8 @@ function buildSpec(type, raw, refs) {
       };
       const common = [`Phong cách hình ảnh: ${VIDEO_STYLES[style]}`, `Tone cảm xúc: ${VIDEO_TONES[tone]}`, `Khung hình: ${ratio}`];
       if (brief) common.push(`Thông tin thêm:\n${brief}`);
-      const engine = ["wan", "wan5b", "ltx"].includes(raw.engine) ? raw.engine : "wan";
       const audio = raw.audio === "music" ? "music" : "voice";
-      const base = { mode, ratio, voice, style, tone, brief, engine, audio };
+      const base = { mode, ratio, voice, style, tone, brief, audio };
       const kind = raw.kind === "showcase" ? "showcase" : "story";
       base.kind = kind;
       if (kind === "showcase") common.push("LOẠI VIDEO: Showcase (food and place) theo skill: không có nhân vật chính, không có cảnh người kể, món ăn và không gian quán là chủ thể của mọi cảnh.");
@@ -274,32 +309,57 @@ function buildSpec(type, raw, refs) {
         // AI-drawn photos of the dishes and the place, shown with slow zoom/pan and crossfades over soft music.
         const topic = str(raw.topic, "quán / món ăn", { required: true, max: 300 });
         const seconds = Number(raw.seconds) === 30 ? 30 : 15;
-        const count = seconds === 30 ? 6 : 5;
+        // Templates: "collage" (Canva-like layouts), "single" (one photo per scene) and the marketing ones
+        // (top3, menu, promo, polaroid, bold). All but "single" use 6 photos.
+        const layout = SLIDE_TEMPLATES.has(raw.layout) ? raw.layout : "collage";
+        const count = layout !== "single" || seconds === 30 ? 6 : 5;
+        const dishes = parseDishes(raw.dishes);
+        const offer = str(raw.offer, "ưu đãi", { max: 120 });
+        if (layout === "promo" && !offer) throw new InputError("Mẫu Khuyến mãi cần câu ưu đãi (chỉ ghi ưu đãi có thật)");
         // Title card on the first photo (drawn by the server, not by the image model).
         const card = { name: str(raw.name, "tên quán", { max: 60 }), city: str(raw.city, "thành phố", { max: 60 }), address: str(raw.address, "địa chỉ", { max: 160 }), phone: str(raw.phone, "số điện thoại", { max: 30 }), logoId: upload(raw.logoId, "Logo") };
         // Real photos of the restaurant come first; the image model only fills the remaining slots.
         const photoIds = (Array.isArray(raw.photoIds) ? raw.photoIds : []).slice(0, count).map((id) => upload(id, "Ảnh của quán"));
         const ai = count - photoIds.length;
         const want = Math.max(1, ai); // with every slot filled the model's answer is not drawn
-        const plan = photoIds.length
-          ? [
-              `Người dùng đã có ${photoIds.length} ảnh thật (thường là món ăn), dùng làm các ảnh đầu video. Viết đúng ${want} ý tưởng ảnh VẼ THÊM theo định dạng JSON của skill image-prompter, cho một video TRÌNH CHIẾU ảnh quảng bá quán (ảnh nối nhau, có nhạc nền, không chữ).`,
-              `Ưu tiên theo thứ tự cho ${want} ảnh: bên trong quán (phòng ăn ấm cúng, bàn ghế, đèn, không có khách); bên ngoài quán (mặt tiền lúc chạng vạng, cửa kính sáng đèn vàng ấm, cây xanh, không biển hiệu, không chữ); món đặc trưng (suy từ tên quán) ở góc khác; cả bàn đầy món nhìn từ trên xuống; bếp đang nấu món đặc trưng (chỉ thấy nồi). Nếu có ảnh bên ngoài quán thì để nó ở CUỐI.`,
-            ]
-          : [
-              `Viết đúng ${count} ý tưởng ảnh theo định dạng JSON của skill image-prompter, dùng làm ${count} khung hình cho một video TRÌNH CHIẾU ảnh quảng bá quán (ảnh nối nhau, có nhạc nền, không chữ).`,
-              `MÓN ĐẶC TRƯNG: suy ra từ tên quán và mô tả (quán "Phở …" → phở bò; quán BBQ → brisket). Video xoay quanh món này: ít nhất ${count - 2} ảnh có món đặc trưng, mỗi ảnh một góc khác nhau (tô món nhìn chéo 45 độ có khói bốc lên, cận cảnh gắp sợi/miếng thịt, rót nước dùng hoặc nước sốt, nhìn từ trên xuống cùng rau và món ăn kèm${count >= 6 ? ", đầu bếp đang nấu món này trong bếp (chỉ thấy nồi, không thấy người)" : ""}).`,
-              `BẮT BUỘC có 2 ảnh về quán: ảnh ${count - 1} là bên trong quán (phòng ăn ấm cúng, bàn ghế, đèn, không có khách), ảnh ${count} là bên ngoài quán (mặt tiền lúc chạng vạng, cửa kính sáng đèn vàng ấm, cây xanh, vỉa hè, không có biển hiệu, không có chữ). Ảnh 1 là món đặc trưng đẹp nhất (thông tin quán sẽ đè lên ảnh này).`,
-            ];
+        const { drawRoles } = slideRoles(layout, photoIds.length, count);
+        // Shot list: outside → inside → the table → the signature dish, mixing wide and close framing.
+        const SHOTS = [
+          "BÊN NGOÀI QUÁN, chụp xa (wide shot) cả mặt tiền lúc chạng vạng: cửa kính sáng đèn vàng ấm, cây xanh, phố vắng không có xe và không có người, không có biển hiệu, kính trong không dán chữ. Prompt của ảnh này CHỈ tả kiến trúc và ánh sáng (ví dụ \"a small brick corner storefront\"), TUYỆT ĐỐI không nhắc tên món, loại quán hay chữ restaurant/pho/bbq: model vẽ ảnh sẽ in những chữ đó lên biển hiệu",
+          "BÊN TRONG QUÁN, chụp xa (wide shot) phòng ăn: bàn ghế, đèn, trang trí đúng kiểu quán, không có khách",
+          "CẢ BÀN ĐẦY MÓN chụp từ trên xuống (overhead flat lay), thấy nhiều món của quán cùng lúc",
+          "MÓN ĐẶC TRƯNG chụp tầm trung (medium shot, góc 45 độ) đặt trên bàn, thấy được mặt bàn và khung cảnh quán mờ phía sau",
+          "MÓN ĐẶC TRƯNG chụp cận (close-up) chi tiết bề mặt món, độ sâu trường ảnh nông",
+          "MÓN ĂN KÈM hoặc ĐỒ UỐNG đặc trưng của quán chụp tầm trung (medium shot) trên bàn",
+        ];
+        const shotList = (list) => list.map((x, i) => `${i + 1}. ${x}`).join("\n");
+        const dishName = (k) => (dishes[k]?.name ? `"${dishes[k].name}"` : `món đặc trưng thứ ${k + 1} của quán (tự chọn món tiêu biểu, khác các món kia)`);
+        const SHOT = {
+          ext: SHOTS[0], int: SHOTS[1], table: SHOTS[2], medium: SHOTS[3], close: SHOTS[4], side: SHOTS[5],
+          dish1: `MÓN ${dishName(0)} chụp tầm trung (medium shot), CHỈ một món này trong khung, đặt trên bàn của quán, nền mờ`,
+          dish2: `MÓN ${dishName(1)} chụp tầm trung (medium shot), CHỈ một món này trong khung, đặt trên bàn của quán, nền mờ`,
+          dish3: `MÓN ${dishName(2)} chụp tầm trung (medium shot), CHỈ một món này trong khung, đặt trên bàn của quán, nền mờ`,
+          dish4: `MÓN ${dishName(3)} chụp tầm trung (medium shot), CHỈ một món này trong khung, đặt trên bàn của quán, nền mờ`,
+        };
+        const plan = [
+          photoIds.length
+            ? `Người dùng đã có ${photoIds.length} ảnh thật, dùng làm các ảnh đầu video. Viết đúng ${want} ý tưởng ảnh VẼ THÊM theo định dạng JSON của skill image-prompter, cho một video TRÌNH CHIẾU ảnh tĩnh quảng bá quán (ảnh nối nhau, có nhạc nền, không chữ).`
+            : `Viết đúng ${count} ý tưởng ảnh theo định dạng JSON của skill image-prompter, dùng làm ${count} khung hình cho một video TRÌNH CHIẾU ảnh tĩnh quảng bá quán (ảnh nối nhau, có nhạc nền, không chữ). Có ảnh chụp xa và ảnh chụp gần, KHÔNG phải ảnh nào cũng cận cảnh.`,
+          `Đúng ${want} ảnh theo thứ tự này:\n${shotList(drawRoles.slice(0, want).map((r) => SHOT[r]))}`,
+          'MÓN ĐẶC TRƯNG: suy ra từ tên quán và mô tả (quán "Phở …" → tô phở bò; quán BBQ → brisket cắt lát). Tả đúng món đó và cách bày của chính loại quán đó, không mượn chi tiết của món khác.',
+        ];
         return {
           agent: "writer",
           direct: "image-prompter",
           title: `Video trình chiếu ${seconds}s · ${topic.slice(0, 60)}`,
-          input: { mode, ratio, style, brief, seconds, count, topic, audio: "music", ...card, photoIds, ai },
+          input: { mode, ratio, style, brief, seconds, count, layout, topic, audio: "music", review: raw.review !== false, ...card, photoIds, ai, dishes, offer },
           prompt: [
             ...plan,
-            "Mỗi \"prompt\" (tiếng Anh, dưới 60 từ) tả một bức ảnh chụp thật như của nhiếp ảnh gia: món ăn thật, chi tiết bề mặt, ánh sáng tự nhiên ấm, độ sâu trường ảnh nông, đúng kiểu quán và vùng miền (quán Việt ở Mỹ thì bát đĩa, bàn gỗ kiểu quán Việt). TUYỆT ĐỐI không có người, mặt, tay, chữ, logo, biển hiệu. KHÔNG ghi tên quán hay bất kỳ chữ nào trong prompt (model vẽ ảnh sẽ cố viết chữ đó lên ảnh và bị méo).",
+            "Mỗi \"prompt\" (tiếng Anh, dưới 60 từ) mở đầu bằng cỡ cảnh (wide shot / overhead / medium shot / close-up) rồi tả một bức ảnh TĨNH chụp thật như của nhiếp ảnh gia: ánh sáng tự nhiên ấm, đồng bộ màu giữa các ảnh, nội thất, bát đĩa và trang trí đúng phong cách của CHÍNH loại quán này (quán BBQ Texas thì gỗ mộc, gạch, đèn công nghiệp; quán phở thì kiểu quán Việt; quán pizza Ý thì kiểu Ý), không mượn phong cách của loại quán khác. TUYỆT ĐỐI không có người, mặt, tay, xe cộ, động vật, chữ, logo; ảnh bên ngoài ghi rõ \"empty street, no cars, no people, blank sign\". KHÔNG ghi tên quán hay bất kỳ chữ nào trong prompt (model vẽ ảnh sẽ cố viết chữ đó lên ảnh và bị méo).",
             '"headline", "sub", "cta", "caption" để chuỗi rỗng "".',
+            'Thêm ở CẤP NGOÀI CÙNG của JSON (cạnh "images"): "post_caption" là caption để đăng kèm video lên Facebook, Instagram, TikTok (2 đến 3 câu tự nhiên, có 1 lời mời ghé quán, 1 đến 3 emoji, CHỈ dùng thông tin người dùng nhập: không bịa giá, ưu đãi, giờ mở cửa) và "hashtags" là mảng 8 đến 12 hashtag đúng món, đúng thành phố của quán (không có hashtag thương hiệu khác). Viết tiếng Anh nếu thông tin được nhập bằng tiếng Anh, ngược lại viết tiếng Việt.',
+            'Thêm ở CẤP NGOÀI CÙNG của JSON: "words" là mảng đúng 3 từ hoặc cụm 1 đến 2 từ thật ngắn, mạnh, nói về quán (kiểu ["Fresh.", "Fast.", "Friendly."]), và "dishes" là mảng tên các món đặc trưng bạn đã tả trong ảnh món (theo thứ tự ảnh), không kèm giá.',
+            layout !== "single" ? 'Thêm 2 trường ở CẤP NGOÀI CÙNG của JSON (cạnh "images"): "tagline" là câu slogan ngắn 3 đến 6 từ mời khách ghé quán (kiểu "Come In & Come Back"), "blurb" là 1 đến 2 câu, tối đa 30 từ, giới thiệu quán và các món, CHỈ dựa vào thông tin người dùng nhập: không bịa giá, ưu đãi, giờ mở cửa hay giải thưởng. Viết tiếng Anh nếu thông tin được nhập bằng tiếng Anh, ngược lại viết tiếng Việt.' : "",
             card.name ? `Tên quán (chỉ để biết món đặc trưng, KHÔNG đưa vào prompt): ${card.name}` : "",
             card.city ? `Khu vực: ${card.city}` : "",
             `Quán / món: ${topic}`,

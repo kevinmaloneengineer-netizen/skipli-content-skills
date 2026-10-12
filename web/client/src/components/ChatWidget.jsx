@@ -1,3 +1,4 @@
+import { getLang } from "../lib/i18n.js";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useJobs } from "../context/JobsContext.jsx";
@@ -149,7 +150,7 @@ export default function ChatWidget() {
     setBusy(true);
     try {
       const history = next.filter((m) => m !== HELLO).map(({ role, content: c }) => ({ role, content: c }));
-      const res = await api("/chat", { method: "POST", body: { messages: history, path: pathname } });
+      const res = await api("/chat", { method: "POST", body: { messages: history, path: pathname, lang: getLang() } });
       setMsgs((m) => [...m, { role: "assistant", content: res.text || "…", action: res.action }]);
     } catch (e) {
       setMsgs((m) => [...m, { role: "assistant", content: e.message, error: true }]);

@@ -1,3 +1,4 @@
+import { getLang, setLang } from "../lib/i18n.js";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useJobs } from "../context/JobsContext.jsx";
@@ -103,5 +104,15 @@ export function Bell() {
         </div>
       )}
     </div>
+  );
+}
+
+/** VI / EN switch: English swaps the interface text (lib/i18n.js); AI reports follow it too. */
+export function LangButton() {
+  const lang = getLang();
+  return (
+    <button type="button" className="icon-btn lang-btn" onClick={() => setLang(lang === "en" ? "vi" : "en")} title={lang === "en" ? "Tiếng Việt" : "English"} aria-label={lang === "en" ? "Chuyển sang tiếng Việt" : "Switch to English"} translate="no">
+      {lang === "en" ? "VI" : "EN"}
+    </button>
   );
 }

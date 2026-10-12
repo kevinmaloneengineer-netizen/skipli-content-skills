@@ -61,6 +61,8 @@ export function loadConfig() {
     },
     jobs: {
       concurrency: int("JOB_CONCURRENCY", 1, 1, 8),
+      // Parallel lanes: quick writing jobs, scans (one Chrome / Apify), GPU jobs (one worker).
+      lanes: { light: int("LIGHT_JOB_CONCURRENCY", 3, 1, 8), scan: int("JOB_CONCURRENCY", 1, 1, 8), gpu: 1 },
       timeoutMs: int("JOB_TIMEOUT_MIN", 20, 1, 120) * 60_000,
     },
   };

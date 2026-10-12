@@ -12,7 +12,8 @@ FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 SKILLS_DIR=/skills PYTHON=python3
 # The scan scripts (skills/*/scripts, Python) and the "AI xem video" step (yt-dlp + ffmpeg) run in here.
-RUN apk add --no-cache python3 py3-numpy py3-pillow ffmpeg tzdata yt-dlp
+RUN apk add --no-cache python3 py3-numpy py3-pillow py3-pip ffmpeg tzdata yt-dlp \
+ && pip install --no-cache-dir --break-system-packages edge-tts  # voice-over for the GPU videos (server/voice/tts.py)
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY web/server ./server

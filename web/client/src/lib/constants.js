@@ -1,4 +1,4 @@
-export const STATUS = { queued: "Đang chờ", running: "Đang chạy", done: "Hoàn tất", failed: "Lỗi", canceled: "Đã huỷ" };
+export const STATUS = { queued: "Đang chờ", running: "Đang chạy", review: "Chờ duyệt ảnh", done: "Hoàn tất", failed: "Lỗi", canceled: "Đã huỷ" };
 
 export const ACTIVE = new Set(["queued", "running"]);
 
@@ -59,8 +59,8 @@ export const SKILLS = [
     title: "Tạo video AI",
     short: "Video AI",
     pitch: "Từ một chủ đề, một ảnh storyboard hay một đoạn lời kể, AI dựng thành video ngắn có giọng đọc tiếng Việt và phụ đề. Chạy trên GPU miễn phí.",
-    eta: "15 đến 40 phút",
-    etaLong: "Trên GPU miễn phí, mỗi cảnh mất vài phút: thường 15 đến 40 phút cho cả video.",
+    eta: "2 đến 5 phút",
+    etaLong: "GPU miễn phí vẽ ảnh từng cảnh trong vài giây, cả video thường xong trong 2 đến 5 phút.",
   },
   {
     id: "library",

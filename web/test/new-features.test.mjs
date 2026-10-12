@@ -125,8 +125,9 @@ test("slideshow title card: name, city and address drawn into a transparent PNG"
   assert.equal(job.input.name, "Phở Cali");
   assert.equal(job.input.seconds, 15);
   assert.match(job.prompt, /Tên quán \(chỉ để biết món đặc trưng, KHÔNG đưa vào prompt\): Phở Cali/); // the server also strips it before drawing
-  assert.match(job.prompt, /bên trong quán/);
-  assert.match(job.prompt, /bên ngoài quán/);
+  assert.match(job.prompt, /BÊN TRONG QUÁN, chụp xa/);
+  assert.match(job.prompt, /BÊN NGOÀI QUÁN, chụp xa/);
+  assert.match(job.prompt, /chụp cận \(close-up\)/); // wide and close shots, not every photo a close-up
   const { execFileSync } = await import("node:child_process");
   try {
     execFileSync("python3", ["-c", "import PIL"]);
@@ -142,12 +143,89 @@ test("slideshow title card: name, city and address drawn into a transparent PNG"
 
 test("slideshow with real photos: the image model only fills the missing slots", () => {
   const has = { hasUpload: () => true };
-  const some = buildJob("video", { mode: "slideshow", topic: "Pho restaurant", photoIds: ["a.jpg", "b.jpg"] }, has);
+  const some = buildJob("video", { mode: "slideshow", layout: "single", topic: "Pho restaurant", photoIds: ["a.jpg", "b.jpg"] }, has);
   assert.equal(some.input.ai, 3);
   assert.match(some.prompt, /đã có 2 ảnh thật/);
   assert.match(some.prompt, /Viết đúng 3 ý tưởng ảnh VẼ THÊM/);
-  const full = buildJob("video", { mode: "slideshow", topic: "Pho restaurant", photoIds: ["a", "b", "c", "d", "e", "f"] }, has);
+  const full = buildJob("video", { mode: "slideshow", layout: "single", topic: "Pho restaurant", photoIds: ["a", "b", "c", "d", "e", "f"] }, has);
   assert.equal(full.input.photoIds.length, 5); // 15 s = 5 slides
+  const canva = buildJob("video", { mode: "slideshow", topic: "Pho restaurant", photoIds: ["a", "b"] }, has);
+  assert.equal(canva.input.layout, "collage"); // the default
+  assert.equal(canva.input.ai, 4); // collages always use 6 photos
   assert.equal(full.input.ai, 0);
   assert.throws(() => buildJob("video", { mode: "slideshow", topic: "x", photoIds: ["gone.jpg"] }, { hasUpload: () => false }), /không còn/);
+});
+
+test("collage: search box text from the address, else the city", async () => {
+  const { searchPlace } = await import("../server/collage.mjs");
+  assert.equal(searchPlace({ address: "4756 S 27th St\nMilwaukee, WI 53221", city: "Milwaukee, Wisconsin" }), "Milwaukee, WI");
+  assert.equal(searchPlace({ address: "", city: "Austin, Texas" }), "Austin, Texas");
+});
+
+test("collage landing text: slogan and intro from the JSON, invented prices dropped", async () => {
+  const { landingText } = await import("../server/video.mjs");
+  const out = landingText('```json\n{"tagline":"Come In & Come Back","blurb":"Slow-simmered pho and banh mi. Bowls only $9.99 today! Fast and friendly service.","images":[]}\n```');
+  assert.equal(out.tagline, "Come In & Come Back");
+  assert.equal(out.blurb, "Slow-simmered pho and banh mi. Fast and friendly service.");
+  assert.deepEqual(landingText("no json"), { tagline: "", blurb: "", caption: "", hashtags: [], words: [], dishes: [] });
+  const tags = landingText('{"post_caption":"Warm pho 🍜","hashtags":["milwaukeefood","#PHO","pho","bad tag!"],"images":[]}');
+  assert.equal(tags.caption, "Warm pho 🍜");
+  assert.deepEqual(tags.hashtags, ["#milwaukeefood", "#pho", "#badtag"]); // "#", lower case, no duplicates
+});
+
+test("language: English text with a Vietnamese shop name stays English", async () => {
+  const { isEnglish } = await import("../server/prompts.mjs");
+  assert.equal(isEnglish("Phở Cali, a Vietnamese restaurant in Milwaukee serving pho and banh mi"), true);
+  assert.equal(isEnglish("Quán phở bò ngon ở Quận 3, mở cửa từ sáng"), false);
+  assert.equal(isEnglish("quan lau bo ngon nhung cho lau"), false);
+  assert.equal(isEnglish("Lẩu bò nhúng giấm combo 2 người"), false);
+});
+
+test("review quotes: trimmed or reworded quotes become the review's own words", async () => {
+  const { verifyQuotes, reviewsIn } = await import("../server/quotes.mjs");
+  const prompt = "ĐÁNH GIÁ:\n- (1 sao, 2025-04-29) Seasoning on the meat has nil. The service was okay, it took two hours standing in line, and the price is a little high.\n- (5 sao, 2026-01-02) Now I know what real barbecue should taste like. Amazing ribs.";
+  const reviews = reviewsIn(prompt);
+  assert.equal(reviews.length, 2);
+  const md = '## Khách chê gì\n- "Seasoning on the meat has nil… price is a little high." (1 sao)\n- "Now I know what real barbecue should taste like." (5 sao)\n- "Amazing ribs" (5 sao)\n- Không gian chật (tóm tắt, không phải trích dẫn)';
+  const { text, fixed } = verifyQuotes(md, reviews);
+  assert.equal(fixed, 1);
+  assert.match(text, /- "Seasoning on the meat has nil\. The service was okay, it took two hours standing in line, and the price is a little high\." \(1 sao\)/);
+  assert.match(text, /- "Now I know what real barbecue should taste like\." \(5 sao\)/); // verbatim: kept
+  assert.match(text, /- "Amazing ribs" \(5 sao\)/); // a verbatim piece from the middle: kept
+});
+
+test("job lanes: writing jobs run beside a long scan instead of waiting behind it", async () => {
+  const { createJobRunner, laneOf } = await import("../server/jobs.mjs");
+  const { openStore } = await import("../server/store/index.mjs");
+  const { memoryAdapter } = await import("../server/store/memory.mjs");
+  assert.equal(laneOf({ type: "maps" }), "scan");
+  assert.equal(laneOf({ type: "video" }), "gpu");
+  assert.equal(laneOf({ type: "write" }), "light");
+  const store = await openStore(memoryAdapter());
+  let release;
+  const slowScan = new Promise((r) => (release = r));
+  const goclaw = { mock: true, run: async ({ kind }) => (kind === "maps" ? (await slowScan, { content: "scan" }) : { content: "post" }) };
+  const runner = createJobRunner({ store, goclaw, agents: { writer: "w", scout: "s" }, lanes: { light: 3, scan: 1, gpu: 1 }, timeoutMs: 5000, log: { error() {} } });
+  const scan = await runner.submit({ type: "maps", agent: "scout", title: "scan", input: {}, prompt: "p" });
+  const scan2 = await runner.submit({ type: "yelp", agent: "scout", title: "scan2", input: {}, prompt: "p" });
+  const posts = await Promise.all([1, 2].map((i) => runner.submit({ type: "write", agent: "writer", title: `w${i}`, input: {}, prompt: "p" })));
+  for (let i = 0; i < 50 && posts.some((p) => store.cachedJob(p.id).status !== "done"); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(posts.map((p) => store.cachedJob(p.id).status), ["done", "done"]); // finished while the scan still runs
+  assert.equal(store.cachedJob(scan.id).status, "running");
+  assert.equal(store.cachedJob(scan2.id).status, "queued"); // one scan at a time
+  assert.equal(runner.position(scan2.id), 1);
+  release();
+});
+
+test("slideshow templates: dish lists with prices, roles per template, promo needs a real offer", async () => {
+  const { parseDishes, slideRoles } = await import("../server/prompts.mjs");
+  assert.deepEqual(parseDishes("Phở đặc biệt - $14.95\nBánh mì thịt: 89k\nGỏi cuốn"), [{ name: "Phở đặc biệt", price: "$14.95" }, { name: "Bánh mì thịt", price: "89k" }, { name: "Gỏi cuốn", price: "" }]);
+  assert.deepEqual(slideRoles("top3", 0).drawRoles, ["dish1", "dish2", "dish3", "ext", "int", "table"]);
+  assert.deepEqual(slideRoles("menu", 2), { realRoles: ["dish1", "dish2"], drawRoles: ["dish3", "dish4", "ext", "int"] }); // real photos = the listed dishes, in order
+  const has = { hasUpload: () => true };
+  const top3 = buildJob("video", { mode: "slideshow", layout: "top3", topic: "Pho restaurant", dishes: "Beef pho - $14.95" }, has);
+  assert.match(top3.prompt, /MÓN "Beef pho" chụp tầm trung/);
+  assert.equal(top3.input.dishes[0].price, "$14.95");
+  assert.throws(() => buildJob("video", { mode: "slideshow", layout: "promo", topic: "Pho restaurant" }, has), /câu ưu đãi/);
+  assert.equal(buildJob("video", { mode: "slideshow", layout: "nonsense", topic: "x" }, has).input.layout, "collage");
 });

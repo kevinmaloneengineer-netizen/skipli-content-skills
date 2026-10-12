@@ -16,6 +16,7 @@ import Waiting from "../components/Waiting.jsx";
 import { useJobs } from "../context/JobsContext.jsx";
 import { useCopy, useToast } from "../context/ToastContext.jsx";
 import { api } from "../lib/api.js";
+import { crop, loadImage, upload } from "../lib/image.js";
 import { ACTIVE, CLONE_PLATFORMS, PLATFORMS, skillByType } from "../lib/constants.js";
 import { ago, duration } from "../lib/format.js";
 import { PILLARS, splitLivestream, splitVariants, toPlainText } from "../lib/text.js";
@@ -67,14 +68,23 @@ function inputRows(job) {
       ["Khách hàng", i.audience],
       ["Phong cách", i.host],
     ],
-    video: [
+    video: i.mode === "slideshow" ? [
+      ["Cách làm", "Trình chiếu ảnh"],
+      ["Kiểu", i.layout === "single" ? "Từng ảnh" : "Ghép ảnh kiểu Canva"],
+      ["Quán và món", i.topic],
+      ["Tên quán", i.name],
+      ["Thành phố", i.city],
+      ["Ảnh thật", i.photoIds?.length || null],
+      ["Độ dài", i.seconds && `${i.seconds} giây`],
+      ["Khung hình", i.ratio],
+    ] : [
       ["Cách làm", { topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" }[i.mode]],
       ["Chủ đề", i.topic],
       ["Lời kể", i.narration && (i.narration.length > 160 ? `${i.narration.slice(0, 160)}…` : i.narration)],
       ["Số ô storyboard", i.panelIds?.length],
       ["Độ dài", i.mode === "topic" ? `${i.seconds} giây` : null],
       ["Khung hình", i.ratio],
-      ["Chất lượng", { wan: "Đẹp nhất (Wan 2.2)", wan5b: "Đẹp (Wan 5B)", ltx: "Nhanh (LTX)" }[i.engine] ?? "Nhanh (LTX)"],
+      ["Chất lượng", i.engine && { wan: "Đẹp nhất (Wan 2.2)", wan5b: "Đẹp (Wan 5B)", ltx: "Nhanh (LTX)" }[i.engine]], // only older jobs made moving clips
       ["Giọng đọc", i.voice === "male" ? "Nam" : "Nữ"],
       ["Tỉ lệ cảnh có người kể", i.mode === "story" ? `${i.narratorPct}%` : null],
     ],
@@ -199,6 +209,127 @@ function LivestreamResult({ job }) {
   );
 }
 
+const ROLE_NAMES = { ext: "Bên ngoài quán", int: "Bên trong quán", table: "Bàn đầy món", medium: "Món, tầm trung", close: "Món, cận cảnh", side: "Món kèm, đồ uống", food: "Ảnh của bạn" };
+
+/** Slideshow step between drawing and rendering: redraw, replace or reorder the photos, then render. */
+function SlideReview({ job }) {
+  const toast = useToast();
+  const { refresh } = useJobs();
+  const [slides, setSlides] = useState(job.slides);
+  const [order, setOrder] = useState(() => job.slides.map((_, i) => i));
+  const [busy, setBusy] = useState(null); // index being redrawn / replaced
+  const [editing, setEditing] = useState(null);
+  const [prompt, setPrompt] = useState("");
+  const [rendering, setRendering] = useState(false);
+  const [version, setVersion] = useState(0); // busts the browser cache of replaced pictures
+
+  async function act(i, fn) {
+    setBusy(i);
+    try {
+      setSlides((await fn()).slides);
+      setVersion((v) => v + 1);
+      setEditing(null);
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+    } finally {
+      setBusy(null);
+    }
+  }
+  const redraw = (i) => act(i, () => api(`/jobs/${job.id}/slides/${i}/redraw`, { method: "POST", body: { prompt: editing === i ? prompt : undefined } }));
+  async function replace(i, file) {
+    if (!file) return;
+    const img = await loadImage(file).catch(() => null);
+    if (!img) return toast("Không đọc được ảnh này", { kind: "error" });
+    act(i, async () => api(`/jobs/${job.id}/slides/${i}/replace`, { method: "POST", body: { uploadId: await upload(crop(img, 0, 0, img.naturalWidth, img.naturalHeight, 1920)) } }));
+  }
+  const move = (k, d) => setOrder((o) => {
+    const n = [...o];
+    [n[k], n[k + d]] = [n[k + d], n[k]];
+    return n;
+  });
+  async function render() {
+    setRendering(true);
+    try {
+      await api(`/jobs/${job.id}/render`, { method: "POST", body: { order } });
+      refresh();
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+      setRendering(false);
+    }
+  }
+
+  return (
+    <section className="card slide-review" data-ratio={job.input?.ratio}>
+      <header>
+        <h2>Duyệt ảnh trước khi dựng video</h2>
+        <p>Ảnh nào chưa ưng thì bấm Vẽ lại (sửa mô tả nếu muốn) hoặc thay bằng ảnh của bạn. Dùng mũi tên để đổi thứ tự, xong bấm Dựng video.</p>
+      </header>
+      <ol className="slide-grid">
+        {order.map((i, k) => {
+          const s = slides[i];
+          return (
+            <li key={i} className={busy === i ? "is-busy" : undefined}>
+              <figure>
+                <img src={`/media/images/${s.image}?v=${version}`} alt={s.prompt} />
+                <span className="slide-num">{k + 1}</span>
+                <span className="slide-role">{s.real ? "Ảnh của bạn" : ROLE_NAMES[s.role] ?? "Ảnh"}</span>
+                {busy === i && <span className="slide-wait"><i className="wait-spin" />Đang vẽ…</span>}
+              </figure>
+              {editing === i ? (
+                <div className="slide-edit">
+                  <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Mô tả ảnh (tiếng Anh)" />
+                  <div className="actions">
+                    <button type="button" className="btn small primary" disabled={busy !== null} onClick={() => redraw(i)}>Vẽ lại ảnh này</button>
+                    <button type="button" className="btn small ghost" onClick={() => setEditing(null)}>Huỷ</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="slide-tools">
+                  <button type="button" className="btn small" disabled={busy !== null} onClick={() => redraw(i)} title="Vẽ lại với cùng mô tả">↻ Vẽ lại</button>
+                  <button type="button" className="btn small ghost" disabled={busy !== null} onClick={() => { setEditing(i); setPrompt(s.prompt); }} title="Sửa mô tả rồi vẽ lại">Sửa mô tả</button>
+                  <label className={busy !== null ? "btn small ghost is-disabled" : "btn small ghost"}>
+                    Thay ảnh
+                    <input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={busy !== null} onChange={(e) => { replace(i, e.target.files?.[0]); e.target.value = ""; }} />
+                  </label>
+                  <span className="slide-move">
+                    <button type="button" disabled={k === 0} onClick={() => move(k, -1)} aria-label="Lên trước">←</button>
+                    <button type="button" disabled={k === order.length - 1} onClick={() => move(k, 1)} aria-label="Ra sau">→</button>
+                  </span>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="slide-go">
+        <small>{job.input?.layout === "collage" ? "Kiểu ghép ảnh tự xếp ảnh vào khung theo loại ảnh (mặt tiền, trong quán, món ăn)." : "Video chiếu ảnh theo đúng thứ tự trên."}</small>
+        <button type="button" className="btn primary" disabled={rendering || busy !== null} onClick={render}>{rendering ? "Đang bắt đầu…" : "Dựng video →"}</button>
+      </div>
+    </section>
+  );
+}
+
+/** Caption + hashtags written with a slideshow, ready to paste under the video. */
+function PostCaption({ caption, hashtags = [] }) {
+  const copy = useCopy();
+  if (!caption && !hashtags.length) return null;
+  const full = [caption, hashtags.join(" ")].filter(Boolean).join("\n\n");
+  return (
+    <section className="card post-caption">
+      <div className="variant-head">
+        <h2>Caption để đăng kèm video</h2>
+        <button className="btn small" onClick={() => copy(full)}><CopyIcon />Sao chép</button>
+      </div>
+      {caption && <p className="post-caption-text">{caption}</p>}
+      {hashtags.length > 0 && (
+        <div className="post-tags">
+          {hashtags.map((t) => <button key={t} type="button" onClick={() => copy(t)} title="Sao chép hashtag này">{t}</button>)}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function VideoResult({ job }) {
   const src = `/media/videos/${job.video.file}`;
   return (
@@ -207,10 +338,11 @@ function VideoResult({ job }) {
         <video src={src} controls playsInline preload="metadata" />
         <div className="video-side">
           {job.video.title && <h2>{job.video.title}</h2>}
-          <p className="hint">{job.video.shots.length} {job.video.slideshow ? "ảnh · nhạc nền không lời" : "cảnh"}{job.video.duration ? ` · ${Math.round(job.video.duration)} giây` : ""}</p>
+          <p className="hint">{job.video.shots.length} {job.video.slideshow ? "ảnh, nhạc nền không lời" : "cảnh"}{job.video.duration ? ` · ${Math.round(job.video.duration)} giây` : ""}</p>
           <a className="btn primary" href={src} download={`${(job.video.title || "video").slice(0, 60)}.mp4`}>Tải MP4</a>
         </div>
       </section>
+      <PostCaption caption={job.video.caption} hashtags={job.video.hashtags} />
       {job.video.slideshow ? (
         <section className="card">
           <h2>{job.video.shots.length} ảnh trong video</h2>
@@ -284,6 +416,7 @@ function FactCheck({ check }) {
 
 export function Result({ job, onSave, edits, setEdits }) {
   if (ACTIVE.has(job.status)) return <Waiting job={job} />;
+  if (job.status === "review" && job.slides) return <SlideReview job={job} />;
   if (job.status === "failed") {
     return (
       <section className="card">

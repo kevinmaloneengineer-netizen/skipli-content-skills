@@ -10,6 +10,7 @@ import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
 import { buildJob, cleanHashtags, InputError } from "./prompts.mjs";
 import { CHECKED_TYPES, checkFacts, englishBlanks } from "./facts.mjs";
+import { reviewsIn, verifyQuotes } from "./quotes.mjs";
 import { complete, directEnabled, fixDashes } from "./llm.mjs";
 import { sampleReply } from "./mock.mjs";
 import { createWatcher } from "./watcher.mjs";
@@ -186,6 +187,11 @@ export async function createApp(config, adapter) {
       // The fanpage report template says "reel"; most Instagram posts are photos and albums.
       if (job.type === "instagram") content = content.replace(/(?<![/#@]\s?)\b(R|r)eels?\b/g, (w, r) => (r === "R" ? "Bài" : "bài"));
       if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
+      if (job.type === "maps" || job.type === "yelp") {
+        // Quotes must be word for word: a trimmed or reworded one is replaced by the review's own words.
+        const { text, fixed } = verifyQuotes(content, reviewsIn(job.prompt));
+        return { result: text, fields: { quotesFixed: fixed } };
+      }
       if (CHECKED_TYPES.has(job.type)) {
         // Prices, discounts, hours the user never gave → placeholders; gifts → warnings shown on the result page.
         const { text, replaced, warnings } = checkFacts(content, Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n")); // what the user typed, not our prompt wording
@@ -328,7 +334,7 @@ export async function createApp(config, adapter) {
     const found = jobId ? await store.getJob(jobId) : null;
     const job = found && own(req, found) ? found : null;
     try {
-      const system = systemPrompt({ path, job });
+      const system = systemPrompt({ path, job }) + (req.body?.lang === "en" ? "\n\nThe user's interface is in English: always reply in natural US English." : "");
       let content = goclaw.mock ? null : await askDirect({ system, messages: messages.slice(-8) });
       if (content === null) {
         // GoClaw agents keep their own system prompt and ignore ours, so the instructions ride on the latest user turn.
@@ -466,7 +472,9 @@ export async function createApp(config, adapter) {
 
   api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
-    const job = await runner.submit({ type, ...(await jobSpec(type, input)), userId: userId(req) });
+    const spec = await jobSpec(type, input);
+    if (input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" }; // English interface: English reports
+    const job = await runner.submit({ type, ...spec, userId: userId(req) });
     res.status(201).json({ job: summary(job, runner) });
   });
 
@@ -484,8 +492,53 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
-    const fresh = await runner.submit({ type: job.type, ...(await jobSpec(job.type, job.input)), userId: userId(req) });
+    const spec = await jobSpec(job.type, job.input);
+    if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
+    const fresh = await runner.submit({ type: job.type, ...spec, userId: userId(req) });
     res.status(201).json({ job: summary(fresh, runner) });
+  });
+
+  // ---- slideshow photo review (job status "review") ----
+  async function reviewJob(req) {
+    const job = await loadJob(req);
+    if (job.status !== "review" || !Array.isArray(job.slides)) throw new HttpError(409, "Video này không ở bước duyệt ảnh");
+    return job;
+  }
+  const slideIndex = (req, job) => {
+    const i = Number(req.params.i);
+    if (!Number.isInteger(i) || i < 0 || i >= job.slides.length) throw new HttpError(400, "Không có ảnh này");
+    return i;
+  };
+  const videoCall = async (fn) => {
+    try {
+      return await fn();
+    } catch (e) {
+      throw e instanceof VideoError ? new HttpError(400, e.message) : e;
+    }
+  };
+  api.post("/jobs/:id/slides/:i/redraw", async (req, res) => {
+    const job = await reviewJob(req);
+    const slides = await videoCall(() => video.redrawSlide(job, slideIndex(req, job), req.body?.prompt));
+    res.json({ slides: (await store.updateJob(job.id, { slides })).slides });
+  });
+  api.post("/jobs/:id/slides/:i/replace", async (req, res) => {
+    const job = await reviewJob(req);
+    const slides = await videoCall(() => video.replaceSlide(job, slideIndex(req, job), String(req.body?.uploadId ?? "")));
+    res.json({ slides: (await store.updateJob(job.id, { slides })).slides });
+  });
+  /** Render the reviewed photos (in the order chosen on the page); runs in the background, the page polls. */
+  api.post("/jobs/:id/render", async (req, res) => {
+    const job = await reviewJob(req);
+    const order = Array.isArray(req.body?.order) ? req.body.order.map(Number) : job.slides.map((_, i) => i);
+    if (order.length < 2 || new Set(order).size !== order.length || order.some((i) => !job.slides[i])) throw new HttpError(400, "Thứ tự ảnh không hợp lệ (cần ít nhất 2 ảnh)");
+    const slides = order.map((i) => job.slides[i]);
+    await store.updateJob(job.id, { status: "running", phase: "Đang ghép ảnh thành video…", slides, startedAt: new Date().toISOString() });
+    const setPhase = (phase) => store.updateJob(job.id, { phase });
+    video.renderSlides(job, slides, job.draft ?? "", setPhase).then(
+      (out) => store.updateJob(job.id, { status: "done", result: out.result, ...out.fields, phase: null, finishedAt: new Date().toISOString() }),
+      (e) => store.updateJob(job.id, { status: "failed", error: e.message, phase: null, finishedAt: new Date().toISOString() }),
+    );
+    res.status(202).json({ ok: true });
   });
 
   api.delete("/jobs/:id", async (req, res) => {

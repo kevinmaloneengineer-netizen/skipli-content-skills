@@ -4,15 +4,29 @@ import { directSkill } from "./prompts.mjs";
 
 export const ACTIVE = new Set(["queued", "running"]);
 
+const REPORT_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare"]);
+const ENGLISH_REPORT = "LANGUAGE: write the report in natural US English. Keep in Vietnamese ONLY the structure the app reads: the section headings (\"## Tổng quan\", \"## Khách khen gì\"…), the table header rows (\"| Điểm khen | Số bài nhắc |\"), star markers like \"(5 sao)\" and labels like \"- Vì sao viral:\". Everything else is English: every table row, every bullet, every sentence (the first sentence of Tổng quan may keep the template wording with the numbers). Quotes keep their original language.";
+
 /**
  * FIFO job runner. Concurrency defaults to 1: scans share one Chrome sidecar
  * and one Facebook session, and free-tier model quotas punish bursts.
  */
 /** @param {{ prepare?: (job, ctx: { setPhase, signal }) => Promise<{ prompt: string, notice?: string }> }} opts */
 /** finish(job, content, ctx) may post-process the agent answer (e.g. render a video) → { result, fields } or null. */
-export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, log = console }) {
+/**
+ * Lanes (when `lanes` is set): writing jobs take a few seconds on the model and run side by side;
+ * scans share one Chrome sidecar and one Apify account, and image / video jobs share the one GPU,
+ * so those run one at a time each, without making the quick jobs wait behind them.
+ */
+const SCAN_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare", "clone", "campaign", "watch"]);
+export const laneOf = (job) => (job.type === "image" || job.type === "video" ? "gpu" : SCAN_TYPES.has(job.type) ? "scan" : "light");
+
+export function createJobRunner({ store, goclaw, agents, concurrency, lanes = null, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, log = console }) {
   const queue = [];
   const running = new Map(); // id -> AbortController
+  const lane = (job) => (lanes ? laneOf(job) : "all");
+  const limit = (name) => (lanes ? lanes[name] ?? 1 : concurrency);
+  const busy = (name) => [...running.keys()].filter((id) => lane(store.cachedJob(id) ?? {}) === name).length;
 
   async function recover() {
     // A restart kills in-flight HTTP calls to GoClaw; they cannot be resumed.
@@ -27,11 +41,20 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
   }
 
   function pump() {
-    while (running.size < concurrency && queue.length) {
-      const id = queue.shift();
-      const job = store.cachedJob(id);
-      if (!job || job.status !== "queued") continue;
-      execute(job).catch((e) => log.error(`job ${id}: could not record state:`, e.message));
+    // Oldest first within each lane; a full lane does not hold back the others.
+    for (let i = 0; i < queue.length; ) {
+      const job = store.cachedJob(queue[i]);
+      if (!job || job.status !== "queued") {
+        queue.splice(i, 1);
+        continue;
+      }
+      const name = lane(job);
+      if (busy(name) >= limit(name)) {
+        i++;
+        continue;
+      }
+      queue.splice(i, 1);
+      execute(job).catch((e) => log.error(`job ${job.id}: could not record state:`, e.message));
     }
   }
 
@@ -50,8 +73,13 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
         else phases.push(step);
         return store.updateJob(job.id, { phase, phases: phases.slice(-20) });
       };
-      const { prompt, notice, fields, direct } = await prepare(job, { setPhase, signal: ctrl.signal });
+      let { prompt, notice, fields, direct } = await prepare(job, { setPhase, signal: ctrl.signal });
       if (ctrl.signal.aborted) throw new Error("canceled");
+      // English interface: reports in English, with the template's Vietnamese headings kept (the result
+      // views read them; the interface shows them in English).
+      if (job.input?.uiLang === "en" && REPORT_TYPES.has(job.type)) {
+        prompt = `${prompt.replace(/,? bằng tiếng Việt/g, "").replace(/Trả lời bằng tiếng Việt\.?/g, "")}\n\n${ENGLISH_REPORT}`;
+      }
       await store.updateJob(job.id, { prompt, notice: notice ?? null, ...fields }); // fields: data the result page draws (e.g. the Maps scorecard)
       // Jobs that need no tools run straight on the model when a key is set (much cheaper than an agent run).
       // Scan jobs whose data the server collected itself (prepare → direct) also skip the agent.
@@ -121,9 +149,12 @@ export function createJobRunner({ store, goclaw, agents, concurrency, timeoutMs,
       return true;
     },
 
+    /** Place in its own lane's queue (1 = next). */
     position(id) {
       const i = queue.indexOf(id);
-      return i < 0 ? null : i + 1;
+      if (i < 0) return null;
+      const name = lane(store.cachedJob(id) ?? {});
+      return queue.slice(0, i + 1).filter((q) => lane(store.cachedJob(q) ?? {}) === name).length;
     },
   };
 }

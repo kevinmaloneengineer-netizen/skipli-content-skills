@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { askNotifyPermission, useJobs } from "../context/JobsContext.jsx";
+import { getLang } from "../lib/i18n.js";
 import { api } from "../lib/api.js";
 
 export function Field({ label, hint, children }) {
@@ -52,7 +53,7 @@ export function useSubmitJob(type) {
     setError("");
     try {
       askNotifyPermission(); // inside the click: browsers block the prompt otherwise
-      const { job } = await api("/jobs", { method: "POST", body: { type, input } });
+      const { job } = await api("/jobs", { method: "POST", body: { type, input: { ...input, uiLang: getLang() } } });
       track(job);
       navigate(`/jobs/${job.id}`);
     } catch (e) {

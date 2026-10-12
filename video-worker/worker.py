@@ -75,6 +75,7 @@ class Shot(BaseModel):
     cont: bool = Field(False, alias="continue")
     role: str = "scene"  # "narrator": the storyteller talking to camera (keyframe = reference photo as is)
     image: Optional[str] = None  # base64 keyframe for this shot (a storyboard panel); skips generation
+    audio: Optional[str] = None  # base64 MP3 narration read by the web app (Edge voices refuse Kaggle IPs); else read here
 
 
 # Final sizes. With SDXL-Turbo (sharp near 512 px) each image is drawn at half size, upscaled 2x
@@ -441,7 +442,10 @@ def render(job, req):
             dur = MUSIC_SHOT_S
             run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", f"{dur:.2f}", "-c:a", "libmp3lame", str(audio)])
         else:
-            tts(shot.narration, voice, audio)
+            if shot.audio:
+                audio.write_bytes(base64.b64decode(shot.audio))
+            else:
+                tts(shot.narration, voice, audio)
             dur = duration(audio) + 0.3
         image = keyframe(shot, last, reference, w, h, seed + i, req.style)
         clip = d / f"s{i}_raw.mp4"

@@ -3,10 +3,54 @@ import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.js
 import { GpuCard, PhotoPick, PhotosPick } from "../components/GpuCard.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
+import { getLang } from "../lib/i18n.js";
 import { cutGrid, loadImage, upload } from "../lib/image.js";
 
-const MODES = { topic: "Kịch bản tự do", slideshow: "Trình chiếu ảnh", storyboard: "Story Board", story: "Kể chuyện" };
-const SLIDE_SECONDS = { 15: "15 giây (5 ảnh)", 30: "30 giây (6 ảnh)" };
+const MODES = { slideshow: "Trình chiếu ảnh", topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
+const SLIDE_SECONDS = { 15: "15 giây", 30: "30 giây" };
+// Slideshow templates: [id, name, what it shows].
+const TEMPLATES = [
+  ["collage", "Ghép ảnh kiểu Canva", "Ô tìm kiếm, trang giới thiệu, khung ghép ảnh, ảnh nghiêng"],
+  ["top3", "Top 3 món phải thử", "Đếm ngược #3, #2, #1: mỗi món một ảnh lớn kèm tên và giá"],
+  ["menu", "Menu và giá", "Thẻ món có ảnh, tên, giá như menu điện tử"],
+  ["promo", "Khuyến mãi", "Câu ưu đãi chữ to, ruy băng ưu đãi trên ảnh món"],
+  ["polaroid", "Tường ảnh Polaroid", "Ảnh polaroid rơi xuống xếp nghiêng trên nền màu"],
+  ["bold", "Chữ to kiểu tạp chí", "3 chữ thật to xen kẽ ảnh toàn khung"],
+  ["single", "Từng ảnh", "Mỗi cảnh một ảnh, chuyển cảnh mờ dần"],
+];
+// Sample clip of a template (client/public/samples, rendered from the same code with stock photos).
+const SAMPLE_VERSION = 3; // bump after re-rendering the samples so browsers fetch the new files
+const sampleOf = (id) => `/samples/${id === "single" ? "single" : `${id}-${getLang()}`}`;
+const calm = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** Templates as a list on the left, a large sample player on the right that plays the picked template. */
+function TemplatePicker({ value, onChange }) {
+  const shown = TEMPLATES.find(([id]) => id === value) ?? TEMPLATES[0];
+  const still = calm();
+  return (
+    <div className="tpl-pick">
+      <div className="tpl-list" role="radiogroup" aria-label="Mẫu video">
+        {TEMPLATES.map(([id, title, desc]) => (
+          <button key={id} type="button" role="radio" aria-checked={value === id} className={value === id ? "tpl-item on" : "tpl-item"} onClick={() => onChange(id)}>
+            <img src={`${sampleOf(id)}.jpg?v=${SAMPLE_VERSION}`} alt="" loading="lazy" />
+            <span>
+              <b>{title}</b>
+              <small>{desc}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+      <figure className="tpl-preview">
+        <video key={shown[0]} src={`${sampleOf(shown[0])}.mp4?v=${SAMPLE_VERSION}`} poster={`${sampleOf(shown[0])}.jpg?v=${SAMPLE_VERSION}`} muted loop playsInline autoPlay={!still} controls={still} aria-label={`Video mẫu: ${shown[1]}`} />
+        <figcaption>
+          <span className="tpl-badge">Video mẫu</span>
+          <b>{shown[1]}</b>
+        </figcaption>
+      </figure>
+    </div>
+  );
+}
+
 const STYLES = { real: "Chân thực", cinematic: "Điện ảnh", anime: "Anime", pixar: "Hoạt hình 3D", clay: "Đất sét", cyberpunk: "Cyberpunk" };
 const TONES = { warm: "Nhẹ nhàng", fun: "Vui nhộn", emotional: "Cảm động", dramatic: "Kịch tính", inspiring: "Truyền cảm hứng" };
 const RATIOS = { "9:16": "Dọc 9:16", "16:9": "Ngang 16:9", "1:1": "Vuông 1:1" };
@@ -16,12 +60,6 @@ const KINDS = { story: "Có người dẫn", showcase: "Showcase món ăn và qu
 const SECONDS = { 15: "15 giây", 30: "30 giây", 45: "45 giây", 60: "60 giây" };
 const NARRATOR = { 0: "0%", 20: "20%", 40: "40%", 60: "60%", 100: "100%" };
 const MAX_WORDS = 350;
-const ENGINES = { wan: "Đẹp (Wan 2.2)", ltx: "Nhanh (LTX)" };
-const ENGINE_HINT = {
-  wan: "Wan 2.2 trên Hugging Face: đẹp nhất, khoảng 1 phút mỗi cảnh. Mỗi ngày chỉ đủ khoảng 1 video; hết lượt thì các cảnh còn lại tự dựng bằng LTX.",
-  wan5b: "Wan 2.2 bản 5B trên GPU Kaggle: không lo hết lượt, đẹp hơn LTX nhiều nhưng chậm hơn (vài phút mỗi cảnh).",
-  ltx: "LTX trên GPU Kaggle: nhanh nhất, hình kém hơn.",
-};
 
 function StoryboardPick({ panels, onChange }) {
   const [img, setImg] = useState(null);
@@ -77,8 +115,8 @@ function StoryboardPick({ panels, onChange }) {
 
 export default function VideoPage() {
   const [gpu, setGpu] = useState(null);
-  const [mode, setMode] = useState("topic");
-  const [form, setForm] = useState({ topic: "", narration: "", brief: "", seconds: "30", style: "real", tone: "warm", ratio: "9:16", voice: "female", narratorPct: "20", engine: "wan", audio: "voice", kind: "story", name: "", city: "", address: "", phone: "" });
+  const [mode, setMode] = useState("slideshow"); // photo show of the dishes and the place: the most asked for
+  const [form, setForm] = useState({ topic: "", narration: "", brief: "", seconds: "30", style: "real", tone: "warm", ratio: "9:16", voice: "female", narratorPct: "20", audio: "voice", kind: "story", name: "", city: "", address: "", phone: "", layout: "collage", review: true, dishes: "", offer: "" });
   const [logo, setLogo] = useState(null);
   const [photos, setPhotos] = useState([]); // real photos for a slideshow
   const [photo, setPhoto] = useState(null);
@@ -163,13 +201,32 @@ export default function VideoPage() {
 
         {mode === "slideshow" && (
           <>
-            <Field label="Quán và món ăn" hint="AI vẽ ảnh món ăn và không gian quán (không người, không chữ), ghép thành video có nhạc nhẹ.">
+            <Field label="Quán và món ăn" hint="Video chiếu ảnh tĩnh: bên ngoài quán, bên trong quán, bàn đầy món, món đặc trưng chụp tầm trung và cận cảnh. Không người, không xe, không chữ, có nhạc nhẹ.">
               <input className="input-lg" value={form.topic} onChange={set("topic")} placeholder="Texas BBQ restaurant in Austin: brisket, ribs, mac and cheese" autoComplete="off" required autoFocus />
             </Field>
             <Field label="Món hoặc không gian muốn có (tuỳ chọn)">
               <textarea rows={2} value={form.brief} onChange={set("brief")} placeholder="Brisket cắt lát, sườn heo sốt BBQ, lò hun khói, phòng ăn gỗ ấm cúng, mặt tiền lúc hoàng hôn" />
             </Field>
-            <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint="Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ. Ảnh 1 có thông tin quán đè lên." value={photos} onChange={setPhotos} max={Number(form.seconds) === 30 ? 6 : 5} />
+            <div className="field">
+              <span className="field-label">Mẫu video</span>
+              <TemplatePicker value={form.layout} onChange={set("layout")} />
+              <small>Bấm vào từng mẫu để xem video mẫu bên phải. Ảnh đứng yên, chỉ có hiệu ứng trượt và chuyển cảnh. Điền tên quán để có tên và địa chỉ ở cảnh cuối; mẫu Ghép ảnh còn mở đầu bằng ô tìm kiếm.</small>
+            </div>
+            {(form.layout === "top3" || form.layout === "menu") && (
+              <Field label={form.layout === "menu" ? "Món và giá (tối đa 4 món, mỗi dòng một món)" : "3 món phải thử (mỗi dòng một món, giá tuỳ chọn)"} hint="Viết dạng: Tên món - giá. Không ghi giá thì video không hiện giá. Để trống thì AI tự chọn món, không ghi giá.">
+                <textarea rows={4} value={form.dishes} onChange={set("dishes")} placeholder={"Beef pho - $14.95\nBanh mi - $9.50\nSpring rolls - $7"} />
+              </Field>
+            )}
+            {form.layout === "promo" && (
+              <Field label="Câu ưu đãi (bắt buộc)" hint="Chỉ ghi ưu đãi có thật, video không tự thêm ưu đãi nào.">
+                <input value={form.offer} onChange={set("offer")} placeholder="Free spring rolls with any 2 bowls of pho" maxLength={120} required />
+              </Field>
+            )}
+            <label className="check-row">
+              <input type="checkbox" checked={form.review} onChange={(e) => setForm((f) => ({ ...f, review: e.target.checked }))} />
+              <span>Duyệt ảnh trước khi dựng video (vẽ lại hoặc thay ảnh chưa ưng)</span>
+            </label>
+            <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint={form.layout === "top3" || form.layout === "menu" ? "Ảnh món ăn xếp đúng thứ tự các món đã nhập ở trên. AI chỉ vẽ phần còn thiếu." : "Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ."} value={photos} onChange={setPhotos} max={form.layout !== "single" || Number(form.seconds) === 30 ? 6 : 5} />
             <fieldset className="slide-card-fields">
               <legend>Thông tin quán ở ảnh đầu (tuỳ chọn)</legend>
               <p className="hint">Hiện trên ảnh đầu tiên như bìa video. Để trống tên quán thì video chỉ có ảnh.</p>
@@ -205,11 +262,6 @@ export default function VideoPage() {
         )}
 
         {mode !== "slideshow" && <>
-        <div className="field">
-          <span className="field-label">Chất lượng</span>
-          <Segmented name="engine" label="Chất lượng" options={ENGINES} value={form.engine} onChange={set("engine")} />
-          <small>{ENGINE_HINT[form.engine]}</small>
-        </div>
         <div className="row">
           <Field label="Phong cách">
             <select value={form.style} onChange={set("style")}>{Object.entries(STYLES).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select>
@@ -247,12 +299,12 @@ export default function VideoPage() {
         {mode !== "story" && form.audio === "music" && <p className="hint">Không có giọng đọc: mỗi cảnh khoảng 3 giây kèm một dòng chữ ngắn (tên món, lời mời), nhạc nền vui không lời được tạo riêng cho video, không lo bản quyền.</p>}
         </>}
         {(error || localError) && <p className="form-error" role="alert">{localError || error}</p>}
-        <SubmitRow busy={busy || uploading} label="Tạo video" eta={mode === "slideshow" ? "2 đến 5 phút" : { wan: "5 đến 15 phút", wan5b: "20 đến 50 phút", ltx: "15 đến 40 phút" }[form.engine]} />
+        <SubmitRow busy={busy || uploading} label="Tạo video" eta="2 đến 5 phút" />
         <Notes
           items={[
             "Chạy bằng model mã nguồn mở trên GPU miễn phí (Kaggle, Hugging Face), không tốn phí API. Vẫn cần kết nối GPU Kaggle để vẽ ảnh, đọc giọng và ghép video.",
-            "Giọng đọc và phụ đề được thêm tự động (nhập tiếng Anh thì đọc giọng Mỹ), hoặc chọn nhạc nền không lời. Các cảnh ghép thành một file MP4.",
-            "Cảnh người kể chưa nhép môi theo lời, chỉ cử động tự nhiên.",
+            "Mỗi cảnh là một ảnh AI vẽ (hoặc ô storyboard, ảnh của bạn), kèm giọng đọc và phụ đề (nhập tiếng Anh thì đọc giọng Mỹ), hoặc nhạc nền không lời. Các cảnh ghép thành một file MP4.",
+            "Cảnh người kể dùng đúng ảnh chân dung bạn tải lên.",
           ]}
         />
       </form>

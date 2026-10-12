@@ -44,9 +44,9 @@ export const GUIDE = {
     steps: [
       ["Chọn cách làm", "Chủ đề, ảnh storyboard hoặc đoạn lời kể."],
       ["AI chia cảnh", "Viết lời thoại và mô tả hình cho từng cảnh."],
-      ["Dựng video", "Tạo clip, lồng tiếng, chèn phụ đề, ghép thành MP4."],
+      ["Dựng video", "Vẽ ảnh từng cảnh, lồng tiếng, chèn phụ đề, ghép thành MP4."],
     ],
-    output: ["File MP4 dọc, ngang hoặc vuông", "Giọng đọc và phụ đề tiếng Việt", "Kịch bản từng cảnh để chỉnh lại"],
+    output: ["File MP4 dọc, ngang hoặc vuông", "Trình chiếu ảnh có nhạc, hoặc video AI có giọng đọc", "Kịch bản từng cảnh để chỉnh lại"],
   },
   fanpage: {
     perks: ["Miễn phí", "Không cần đăng nhập", "Có số liệu"],
