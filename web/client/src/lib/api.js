@@ -10,3 +10,12 @@ export async function api(path, { method = "GET", body } = {}) {
   if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
   return data;
 }
+
+/** A long video for the Cắt Reels tool: the raw file goes up as it is (the server checks size and length). */
+export async function uploadVideo(file) {
+  const res = await fetch("/api/uploads/video", { method: "POST", headers: { "Content-Type": file.type || "video/mp4" }, body: file });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.auth) window.dispatchEvent(new Event("auth-required"));
+  if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+  return data;
+}

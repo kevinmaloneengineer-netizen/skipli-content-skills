@@ -23,7 +23,7 @@ const VOICE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "vo
 const VOICES = { female: "vi-VN-HoaiMyNeural", male: "vi-VN-NamMinhNeural", "en-female": "en-US-AriaNeural", "en-male": "en-US-GuyNeural" };
 export const RATIOS = { "9:16": [480, 832], "16:9": [832, 480], "1:1": [640, 640] };
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
-export const UPLOAD_ID = /^[0-9a-f-]{36}\.(png|jpg|webp)$/;
+export const UPLOAD_ID = /^[0-9a-f-]{36}\.(png|jpg|webp|mp4)$/;
 const MAX_UPLOAD = 6 * 1024 * 1024;
 
 export class VideoError extends Error {}
@@ -159,6 +159,21 @@ export function captionChunks(text) {
   }
   if (cur.length) chunks.push(cur.join(" "));
   return chunks;
+}
+
+/**
+ * A shot's picture description made safe for the image model, which paints names and signs as garbled
+ * letters: Vietnamese proper names ("Phở Cali") become "the restaurant", sign / logo / lettering phrases go,
+ * and a storefront is asked for as architecture with a blank awning.
+ */
+export function stillPrompt(visual) {
+  let p = String(visual ?? "")
+    .replace(/[\p{Lu}][\p{L}'’]*(?:\s+[\p{Lu}][\p{L}'’]*)*/gu, (m) => (/[^\x00-\x7F]/.test(m) ? "the restaurant" : m))
+    .replace(/[^,.]*\b(?:sign(?:age|board|s)?|logo|lettering|text|neon)\b[^,.]*[,.]?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s,]+|[\s,]+$/g, "");
+  if (/storefront|exterior|facade|façade|shopfront/i.test(p)) p += ", architecture only, plain blank awning, no signboard";
+  return p;
 }
 
 /** One MP3 per text (dir/s1.mp3, s2.mp3, …) read with the free Edge voices on this machine (server/voice/tts.py). */
@@ -355,6 +370,11 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
 
   /** Photo slideshow, step 2: lay the slides out (collage or one per scene), add the music, write the caption. */
   async function renderSlides(job, slides, content, setPhase = async () => {}) {
+    if (job.input.mode !== "slideshow") {
+      const script = parseScript(content);
+      const seconds = await renderScripted(job, slides, setPhase);
+      return { result: scriptMarkdown(script), fields: narratedFields(job, slides, seconds, script.title) };
+    }
     const files = slides.map((x) => path.join(dirs.images, x.image));
     await setPhase("Đang ghép ảnh thành video…");
     const out = videoPath(job.id);
@@ -408,7 +428,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       await run("ffmpeg", ["-y", "-f", "lavfi", "-i", `color=c=0x${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0")}:s=${w}x${h}`, "-frames:v", "1", path.join(dirs.images, image)]);
     } else {
       if (!worker.url) throw new VideoError("Chưa kết nối GPU. Mở trang Tạo video AI để kết nối rồi thử lại.");
-      const { id } = await call("/image", { method: "POST", body: { prompts: [text], size: job.input.ratio, style: job.input.style ?? "real", negative: SLIDE_NEGATIVE } });
+      const { id } = await call("/image", { method: "POST", body: { prompts: [text], size: job.input.ratio, style: job.input.style ?? "real", negative: job.input.mode === "slideshow" ? SLIDE_NEGATIVE : STILL_NEGATIVE } });
       const deadline = Date.now() + 10 * 60_000;
       let res;
       for (;;) {
@@ -454,65 +474,73 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
   }
 
   const STILL_NEGATIVE = "text, letters, words, watermark, logo, signage, sign lettering, menu board, blurry, low quality, deformed, extra fingers";
+  const narratedFields = (job, slides, seconds, title) => ({
+    video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title, shots: slides.map((x) => ({ narration: x.narration, visual: x.prompt, role: x.role, image: x.image })) },
+  });
 
   /**
-   * Narrated videos (topic, storyboard, story): one still per shot (a storyboard panel, the narrator's photo,
-   * or drawn on the GPU like the slideshow photos), the narration read on this machine, subtitles burned in,
-   * crossfades between shots. Moving clips from the free GPU looked bad, so there are none.
-   * Sets script.images (files in /media/images) and returns the length in seconds.
+   * Narrated videos, step 1: one still per shot. A storyboard panel or the narrator's own photo is used as it is,
+   * every other shot is drawn on the GPU. Each slide keeps its own narration, so reordering moves the words with it.
    */
-  async function stillsVideo(job, script, out, { setPhase, signal }) {
+  async function drawStills(job, shots, { setPhase, signal }) {
     if (!worker.url) throw new VideoError("Chưa kết nối GPU. Mở trang Tạo video AI để kết nối rồi chạy lại.");
     const panels = (job.input.panelIds ?? []).filter(hasUpload);
-    const shots = panels.length ? script.shots.slice(0, panels.length) : script.shots;
     const reference = job.input.referenceImageId && hasUpload(job.input.referenceImageId) ? job.input.referenceImageId : null;
-    const [w, h] = SLIDE_SIZES[job.input.ratio] ?? SLIDE_SIZES["9:16"];
-    const music = job.input.audio === "music";
+    const slides = [];
+    const draw = [];
+    for (const [i, shot] of shots.entries()) {
+      const own = panels[i] ?? (shot.role === "narrator" && reference ? reference : null);
+      const slide = { narration: shot.narration, role: shot.role, prompt: stillPrompt(shot.visual), real: !!own };
+      if (own) {
+        slide.image = freeName(job.id, path.extname(own).slice(1), "s");
+        await copyFile(path.join(dirs.uploads, own), path.join(dirs.images, slide.image));
+      } else draw.push(i);
+      slides.push(slide);
+    }
+    if (draw.length) {
+      await setPhase(`Đang vẽ ${draw.length} ảnh trên GPU…`);
+      const res = await drawOnGpu({ prompts: draw.map((i) => slides[i].prompt), size: job.input.ratio, style: job.input.style ?? "real", negative: STILL_NEGATIVE }, signal);
+      for (const [k, i] of draw.entries()) {
+        slides[i].image = freeName(job.id, "png", "s");
+        await writeFile(path.join(dirs.images, slides[i].image), Buffer.from(res.images[k], "base64"));
+      }
+    }
+    return slides;
+  }
+
+  /**
+   * Narrated videos, step 2: the voice of each slide (one MP3 per slide, read on this machine), subtitles burned in,
+   * crossfades between the stills, then the music when that was asked. Returns the length in seconds.
+   */
+  async function renderScripted(job, slides, setPhase = async () => {}) {
+    const out = videoPath(job.id);
     const dir = path.join(tmpdir(), `stills-${job.id}`);
     await mkdir(dir, { recursive: true });
     try {
-      // 1. One still per shot: the storyboard panel, the narrator's own photo, else drawn on the GPU.
-      const images = [];
-      const draw = [];
-      for (const [i, shot] of shots.entries()) {
-        const own = panels[i] ?? (shot.role === "narrator" && reference ? reference : null);
-        if (own) {
-          images[i] = freeName(job.id, path.extname(own).slice(1), "s");
-          await copyFile(path.join(dirs.uploads, own), path.join(dirs.images, images[i]));
-        } else draw.push(i);
-      }
-      if (draw.length) {
-        await setPhase(`Đang vẽ ${draw.length} ảnh trên GPU…`);
-        const res = await drawOnGpu({ prompts: draw.map((i) => shots[i].visual), size: job.input.ratio, style: job.input.style ?? "real", negative: STILL_NEGATIVE }, signal);
-        for (const [k, i] of draw.entries()) {
-          images[i] = freeName(job.id, "png", "s");
-          await writeFile(path.join(dirs.images, images[i]), Buffer.from(res.images[k], "base64"));
-        }
-      }
-      script.images = images;
-
-      // 2. Voice (one MP3 per shot) and the time each shot stays on screen.
+      const [w, h] = SLIDE_SIZES[job.input.ratio] ?? SLIDE_SIZES["9:16"];
+      const n = slides.length;
+      const music = job.input.audio === "music";
       const FADE = 0.4;
       const LEAD = 0.25; // silence before the voice in each shot
       let voices = [];
       let talk;
       if (music) {
-        talk = shots.map((x) => Math.min(5, Math.max(2.6, x.narration.split(/\s+/).length / 2.6)));
+        talk = slides.map((x) => Math.min(5, Math.max(2.6, x.narration.split(/\s+/).length / 2.6)));
       } else {
         await setPhase("Đang tạo giọng đọc…");
         const voice = job.input.lang === "en" ? `en-${job.input.voice ?? "female"}` : (job.input.voice ?? "female");
-        voices = await readAloud(shots.map((x) => x.narration), voice, dir);
+        voices = await readAloud(slides.map((x) => x.narration), voice, dir);
         talk = await Promise.all(voices.map(mediaLength));
       }
       const dur = talk.map((t) => LEAD + t + FADE + 0.25);
       const start = dur.map((_, i) => dur.slice(0, i).reduce((a, d) => a + d - FADE, 0));
       const total = start.at(-1) + dur.at(-1);
 
-      // 3. Subtitles: each line gets its share of the shot's voice by length.
+      // Subtitles: each line gets its share of the shot's voice by length.
       await setPhase("Đang ghép ảnh, giọng đọc và phụ đề…");
       const lines = [];
-      for (const [i, shot] of shots.entries()) {
-        const chunks = captionChunks(shot.narration);
+      for (const [i, slide] of slides.entries()) {
+        const chunks = captionChunks(slide.narration);
         const chars = chunks.reduce((a, c) => a + c.length, 0) || 1;
         let t = start[i] + LEAD;
         for (const c of chunks) {
@@ -524,13 +552,12 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       await writeFile(path.join(dir, "captions.json"), JSON.stringify({ kind: "captions", width: w, height: h, chunks: lines.map((x) => x.text) }));
       await run("python3", [TITLE_SCRIPT, path.join(dir, "caps"), path.join(dir, "captions.json")]);
 
-      // 4. ffmpeg: stills crossfaded, subtitle PNGs switched on in their window, each voice padded to its shot.
-      const n = shots.length;
+      // ffmpeg: stills crossfaded, subtitle PNGs switched on in their window, each voice padded to its shot.
       const args = ["-y", "-loglevel", "error"];
-      for (const [i, img] of images.entries()) args.push("-loop", "1", "-framerate", "30", "-t", dur[i].toFixed(3), "-i", path.join(dirs.images, img));
+      for (const [i, slide] of slides.entries()) args.push("-loop", "1", "-framerate", "30", "-t", dur[i].toFixed(3), "-i", path.join(dirs.images, slide.image));
       for (const k of lines.keys()) args.push("-loop", "1", "-framerate", "30", "-t", total.toFixed(3), "-i", path.join(dir, "caps", `cap${k + 1}.png`));
       for (const v of voices) args.push("-i", v);
-      const f = images.map((_, i) => `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30,format=yuv420p[v${i}]`);
+      const f = slides.map((_, i) => `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30,format=yuv420p[v${i}]`);
       let last = "v0";
       for (let i = 1; i < n; i++) {
         f.push(`[${last}][v${i}]xfade=transition=fade:duration=${FADE}:offset=${start[i].toFixed(3)}[x${i}]`);
@@ -552,35 +579,35 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
         map.push("-map", "[aout]", "-c:a", "aac", "-b:a", "160k");
       }
       await run("ffmpeg", [...args, "-filter_complex", f.join(";"), ...map, "-t", total.toFixed(3), "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p", "-movflags", "+faststart", out], { maxBuffer: 1 << 24 });
+      if (music) {
+        await setPhase("Đang thêm nhạc nền…");
+        return addMusic(out, job.id);
+      }
       return Math.round(total * 10) / 10;
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   }
 
-  /** Runner hook: shot list -> stills + voice + subtitles -> MP4 in DATA_DIR. */
+  /** Runner hook: shot list -> stills -> review (optional) or straight to the MP4 in DATA_DIR. */
   async function finish(job, content, ctx) {
     if (job.type === "image") return finishImages(job, content, ctx);
     if (job.type !== "video") return null;
     if (job.input.mode === "slideshow") return finishSlideshow(job, content, ctx);
-    const { setPhase } = ctx;
     const script = parseScript(content);
-    const result = scriptMarkdown(script);
-    const out = videoPath(job.id);
-    let seconds;
-
+    const shots = job.input.panelIds?.length ? script.shots.slice(0, job.input.panelIds.length) : script.shots;
     if (isMock()) {
-      await setPhase("Đang dựng video demo…");
-      seconds = await mockRender(job, script, out);
-    } else {
-      seconds = await stillsVideo(job, script, out, ctx);
+      await ctx.setPhase("Đang dựng video demo…");
+      const seconds = await mockRender(job, script, videoPath(job.id));
+      return { result: scriptMarkdown(script), fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: script.title, shots } } };
     }
-    if (job.input.audio === "music") {
-      await setPhase("Đang thêm nhạc nền…");
-      seconds = await addMusic(out, job.id);
+    const slides = await drawStills(job, shots, ctx);
+    // Optional review: the user can put their own photo into any shot, redraw or reorder, then render.
+    if (job.input.review !== false) {
+      return { result: `Đã vẽ xong ${slides.length} cảnh. Thêm ảnh của bạn ở cảnh nào cần, rồi bấm Dựng video.`, fields: { status: "review", slides, draft: content } };
     }
-    const shots = (job.input.panelIds?.length ? script.shots.slice(0, job.input.panelIds.length) : script.shots).map((x, i) => ({ ...x, image: script.images?.[i] }));
-    return { result, fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: script.title, shots } } };
+    const seconds = await renderScripted(job, slides, ctx.setPhase);
+    return { result: scriptMarkdown(script), fields: narratedFields(job, slides, seconds, script.title) };
   }
 
   /** Music mode: an upbeat instrumental made for this video (server/music/make_music.py) replaces the silent track. */

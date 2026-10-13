@@ -21,6 +21,11 @@ import ThreadsPage from "./pages/ThreadsPage.jsx";
 import VideoPage from "./pages/VideoPage.jsx";
 import WritePage from "./pages/WritePage.jsx";
 import HashtagPage from "./pages/HashtagPage.jsx";
+import CutReelsPage from "./pages/CutReelsPage.jsx";
+import DubPage from "./pages/DubPage.jsx";
+import DashboardPage from "./pages/DashboardPage.jsx";
+import TextSkillPage from "./pages/TextSkillPage.jsx";
+import { TEXT_SKILLS } from "./lib/textSkills.js";
 import InboxPage from "./pages/InboxPage.jsx";
 import MapsPage from "./pages/MapsPage.jsx";
 import YelpPage from "./pages/YelpPage.jsx";
@@ -65,6 +70,12 @@ export default function App() {
               <Route path="review" element={<ReviewPage />} />
               <Route path="inbox" element={<InboxPage />} />
               <Route path="hashtag" element={<HashtagPage />} />
+              <Route path="cut-reels" element={<CutReelsPage />} />
+              <Route path="dub" element={<DubPage />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="dish-riddle" element={<TextSkillPage config={TEXT_SKILLS["dish-riddle"]} />} />
+              <Route path="story-behind" element={<TextSkillPage config={TEXT_SKILLS["story-behind"]} />} />
+              <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />
               <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
               <Route path="library" element={<LibraryPage />} />
               <Route path="history" element={<HistoryPage />} />

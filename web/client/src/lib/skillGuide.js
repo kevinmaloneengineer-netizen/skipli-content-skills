@@ -147,6 +147,60 @@ export const GUIDE = {
     ],
     output: ["Câu trả lời cho từng câu khách hay hỏi", "Tin nhắn gửi lại khi khách im lặng", "Mẹo chốt đơn qua inbox"],
   },
+  library: {
+    perks: ["Mẫu có sẵn", "Bài đã lưu", "Tìm nhanh"],
+    steps: [
+      ["Chọn mẫu", "Cấu trúc bài viết như PAS, AIDA hay kể chuyện."],
+      ["Lưu bài hay", "Giữ lại bài đã viết để dùng lại."],
+      ["Tìm lại", "Gõ từ khoá trong thư viện."],
+    ],
+    output: ["Mẫu cấu trúc bài viết để AI viết theo", "Bài đã lưu dùng lại được"],
+  },
+  "dish-riddle": {
+    perks: ["Có đáp án", "Gợi ý bình luận", "Dựa trên ảnh"],
+    steps: [
+      ["Nhập quán và món", "Món cần đố và phần nhìn thấy trong ảnh."],
+      ["Chọn bài", "Đăng câu đố, để khách đoán."],
+      ["Trả lời", "Dùng 2 câu gợi ý cho admin."],
+    ],
+    output: ["Câu đố kèm vài gợi ý", "3 đáp án để khách chọn", "Đáp án và câu trả lời gợi ý"],
+  },
+  "story-behind": {
+    perks: ["Theo lời chủ quán", "Có lời kể video", "Không bịa"],
+    steps: [
+      ["Trả lời vài câu hỏi", "Học công thức ở đâu, ai nấu đầu tiên."],
+      ["Nhận bài", "Bài đăng, lời kể và caption."],
+      ["Chỉnh", "Đổi lời cho đúng giọng quán."],
+    ],
+    output: ["Bài đăng kể về công thức", "Lời kể 25 giây cho video", "Caption một dòng"],
+  },
+  "weather-post": {
+    perks: ["Theo thời tiết hôm nay", "Gợi ý món hợp trời", "Miễn phí"],
+    steps: [
+      ["Nhập quán và thành phố", "Để lấy thời tiết đúng nơi quán."],
+      ["Nhận bài", "Bài đăng hôm nay và món gợi ý."],
+      ["Đăng sớm", "Thời tiết thay đổi nhanh, nên đăng trong ngày."],
+    ],
+    output: ["Bài đăng nhắc thời tiết hôm nay", "Món hoặc đồ uống hợp trời", "Caption sẵn để dán"],
+  },
+  dub: {
+    perks: ["Giữ nhịp video", "Tiếng Anh hoặc Việt", "Có phụ đề"],
+    steps: [
+      ["Tải video", "MP4 hoặc MOV, tối đa 200MB và 10 phút."],
+      ["Chọn ngôn ngữ", "Lồng sang tiếng Anh hay tiếng Việt, giọng nam hoặc nữ."],
+      ["Tải về", "Một file MP4 có giọng đọc và phụ đề mới."],
+    ],
+    output: ["Video MP4 đã lồng tiếng", "Phụ đề đúng nhịp từng câu", "Bản dịch từng câu để chỉnh sửa"],
+  },
+  "reel-cut": {
+    perks: ["Tới 10 phút video", "Chọn đoạn bằng lời nói", "Mỗi đoạn một file MP4"],
+    steps: [
+      ["Tải video dài", "MP4 hoặc MOV, tối đa 200MB."],
+      ["Chọn số đoạn", "Số đoạn và độ dài mỗi đoạn, dọc hoặc ngang."],
+      ["Đăng ngay", "Tải từng file hoặc đăng lên lịch."],
+    ],
+    output: ["Các file Reels MP4 đã cắt", "Tiêu đề và lý do chọn từng đoạn", "Mốc thời gian để đối chiếu với video gốc"],
+  },
   hashtag: {
     perks: ["4 bộ hashtag", "Theo khu vực", "Kèm giờ đăng"],
     steps: [

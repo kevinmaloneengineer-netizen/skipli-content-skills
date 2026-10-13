@@ -6,6 +6,8 @@ import { StatusBadge } from "../components/JobBits.jsx";
 import SkillArt from "../components/SkillArt.jsx";
 import { CountUp } from "../components/CountUp.jsx";
 import { useJobs } from "../context/JobsContext.jsx";
+import { useToast } from "../context/ToastContext.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { ACTIVE, SKILLS, skillByType } from "../lib/constants.js";
 import { duration } from "../lib/format.js";
 import { BackLink } from "../components/SkillShell.jsx";
@@ -264,23 +266,56 @@ function TopSkills({ jobs, onPick, active }) {
 }
 
 function HistoryRow({ job }) {
+  const { refresh } = useJobs();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const skill = skillByType(job.type);
   const time = new Date(job.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
   const secs = secondsOf(job);
+  // The server refuses to delete a run that is still going; watch rows belong to the watchlist.
+  const deletable = job.type !== "watch" && !["queued", "running"].includes(job.status);
+  async function remove() {
+    setBusy(true);
+    try {
+      await api(`/jobs/${job.id}`, { method: "DELETE" });
+      refresh?.();
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <Link className="hist-row" to={`/jobs/${job.id}`} data-tone={skill?.tone} data-status={job.status}>
-      <span className="hist-thumb" aria-hidden="true"><SkillArt id={skill?.id} /></span>
-      <span className="hist-row-main">
-        <span className="hist-row-skill">{job.type === "watch" ? "Theo dõi đối thủ" : skill?.short}</span>
-        <span className="hist-row-title">{job.title}</span>
-        {job.status === "failed" && job.error && <span className="hist-row-err">{job.error.slice(0, 120)}</span>}
-      </span>
-      <span className="hist-row-side">
-        <StatusBadge status={job.status} />
-        <small>{time}{secs ? ` · ${duration(job.startedAt, job.finishedAt)}` : ""}</small>
-      </span>
-      <i className="hist-go" aria-hidden="true">→</i>
-    </Link>
+    <>
+    <div className={deletable ? "hist-row has-del" : "hist-row"} data-tone={skill?.tone} data-status={job.status}>
+      <Link className="hist-open" to={`/jobs/${job.id}`}>
+        <span className="hist-thumb" aria-hidden="true"><SkillArt id={skill?.id} /></span>
+        <span className="hist-row-main">
+          <span className="hist-row-skill">{job.type === "watch" ? "Theo dõi đối thủ" : skill?.short}</span>
+          <span className="hist-row-title">{job.title}</span>
+          {job.status === "failed" && job.error && <span className="hist-row-err">{job.error.slice(0, 120)}</span>}
+        </span>
+        <span className="hist-row-side">
+          <StatusBadge status={job.status} />
+          <small>{time}{secs ? ` · ${duration(job.startedAt, job.finishedAt)}` : ""}</small>
+        </span>
+        <i className="hist-go" aria-hidden="true">→</i>
+      </Link>
+      {deletable && (
+        <button type="button" className="hist-del" onClick={() => setAsking(true)} disabled={busy} aria-label="Xoá lần chạy này" title="Xoá lần chạy này">{busy ? "…" : "×"}</button>
+      )}
+    </div>
+    {asking && (
+      <ConfirmDialog
+        title="Xoá lần chạy này?"
+        body="Video đã dựng (nếu có) cũng sẽ bị xoá."
+        okLabel="Xoá"
+        onOk={remove}
+        onClose={() => setAsking(false)}
+      />
+    )}
+    </>
   );
 }
 

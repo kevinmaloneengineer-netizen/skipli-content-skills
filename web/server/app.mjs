@@ -21,6 +21,8 @@ import { openStore } from "./store/index.mjs";
 import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
+import { ClipError, createClipper } from "./clipper.mjs";
+import { dashboard } from "./dashboard.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 
 const CLIENT_DIST = path.join(WEB_ROOT, "client", "dist");
@@ -168,6 +170,8 @@ export async function createApp(config, adapter) {
   const facebook = createFacebookSource(config.facebook);
   // Tests build a config without `video`: keep their files out of the repo.
   const video = createVideoService(config.video ?? { dataDir: path.join(tmpdir(), `skipli-video-${process.pid}`), timeoutMs: 60_000, mock: config.goclaw.mock });
+  const videoRoot = config.video?.dataDir ?? path.join(tmpdir(), `skipli-video-${process.pid}`);
+  const clipper = createClipper({ dir: path.join(videoRoot, "uploads"), outDir: path.join(videoRoot, "videos") });
   await video.init();
   const clipsDir = path.join(config.video?.dataDir ?? path.join(tmpdir(), `skipli-clips-${process.pid}`), "clips"); // watched videos, for playback
   // Clips older than CLIP_KEEP_DAYS are removed daily; an old report re-downloads one when it is played.
@@ -181,12 +185,14 @@ export async function createApp(config, adapter) {
     }
   };
   if (!config.goclaw.mock) setInterval(sweepClips, 86_400_000).unref();
-  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir }),
+  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir, clipper, uploadsDir: path.join(videoRoot, "uploads") }),
     finish: async (job, content, ctx) => {
       if (job.input?.lang === "en") content = englishBlanks(content);
       // The fanpage report template says "reel"; most Instagram posts are photos and albums.
       if (job.type === "instagram") content = content.replace(/(?<![/#@]\s?)\b(R|r)eels?\b/g, (w, r) => (r === "R" ? "Bài" : "bài"));
       if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
+      if (job.type === "reel-cut") return clipper.finishReels(job, content, ctx);
+      if (job.type === "dub") return clipper.finishDub(job, content, ctx);
       if (job.type === "maps" || job.type === "yelp") {
         // Quotes must be word for word: a trimmed or reworded one is replaced by the review's own words.
         const { text, fixed } = verifyQuotes(content, reviewsIn(job.prompt));
@@ -230,6 +236,14 @@ export async function createApp(config, adapter) {
       res.status(201).json({ id: await video.saveUpload(req.body?.dataUrl) });
     } catch (e) {
       throw e instanceof VideoError ? new HttpError(400, e.message) : e;
+    }
+  });
+  // Long videos (Cắt Reels, Lồng tiếng): the raw file, up to 200MB; the length is checked after saving.
+  api.post("/uploads/video", express.raw({ type: ["video/mp4", "video/quicktime", "application/octet-stream"], limit: "200mb" }), async (req, res) => {
+    try {
+      res.status(201).json(await clipper.saveVideo(req.body));
+    } catch (e) {
+      throw e instanceof ClipError ? new HttpError(400, e.message) : e;
     }
   });
   api.use(express.json({ limit: "256kb" }));
@@ -309,6 +323,12 @@ export async function createApp(config, adapter) {
 
   api.get("/stats", (req, res) => {
     res.json(store.stats((x) => own(req, x)));
+  });
+
+  /** Dashboard: every skill's runs, results, tokens and last run (the viewer's own jobs; the admin sees all). */
+  api.get("/dashboard", (req, res) => {
+    const day = (iso) => new Date(Date.parse(iso) + 7 * 3600_000).toISOString().slice(0, 10); // Vietnam calendar day
+    res.json(dashboard(store.listJobs().filter((j) => own(req, j)), { today: day(new Date().toISOString()), dayOf: day }));
   });
 
   api.post("/feedback", async (req, res) => {
@@ -546,6 +566,7 @@ export async function createApp(config, adapter) {
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Huỷ tác vụ trước khi xoá");
     await store.deleteJob(job.id);
     await video.remove(job);
+    await clipper.removeClips(job);
     res.json({ ok: true });
   });
 

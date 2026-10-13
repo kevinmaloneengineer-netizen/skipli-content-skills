@@ -209,7 +209,7 @@ function LivestreamResult({ job }) {
   );
 }
 
-const ROLE_NAMES = { ext: "Bên ngoài quán", int: "Bên trong quán", table: "Bàn đầy món", medium: "Món, tầm trung", close: "Món, cận cảnh", side: "Món kèm, đồ uống", food: "Ảnh của bạn" };
+const ROLE_NAMES = { ext: "Bên ngoài quán", int: "Bên trong quán", table: "Bàn đầy món", medium: "Món, tầm trung", close: "Món, cận cảnh", side: "Món kèm, đồ uống", food: "Ảnh của bạn", narrator: "Người kể", scene: "Cảnh minh hoạ" };
 
 /** Slideshow step between drawing and rendering: redraw, replace or reorder the photos, then render. */
 function SlideReview({ job }) {
@@ -275,6 +275,7 @@ function SlideReview({ job }) {
                 <span className="slide-role">{s.real ? "Ảnh của bạn" : ROLE_NAMES[s.role] ?? "Ảnh"}</span>
                 {busy === i && <span className="slide-wait"><i className="wait-spin" />Đang vẽ…</span>}
               </figure>
+              {s.narration && <p className="slide-line">{s.narration}</p>}
               {editing === i ? (
                 <div className="slide-edit">
                   <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Mô tả ảnh (tiếng Anh)" />
@@ -308,6 +309,30 @@ function SlideReview({ job }) {
     </section>
   );
 }
+
+/** Cắt Reels: one player per cut, with its title, its time range in the source video, and a download. */
+function ClipsResult({ job }) {
+  return (
+    <section className="card clips-card">
+      <header>
+        <h2>{job.title}</h2>
+        <p className="hint">{job.clips.length} đoạn, mỗi đoạn là một file MP4 riêng</p>
+      </header>
+      <div className="clips-grid">
+        {job.clips.map((c, i) => (
+          <article key={c.file} className="clip-card">
+            <video src={`/media/videos/${c.file}`} controls playsInline preload="metadata" />
+            <h3>{i + 1}. {c.title || "Đoạn " + (i + 1)}</h3>
+            <p className="hint">{fmtTime(c.start)} → {fmtTime(c.end)} · {Math.round(c.duration)} giây</p>
+            {c.why && <p className="clip-why">{c.why}</p>}
+            <a className="btn small" href={`/media/videos/${c.file}`} download={`reel-${i + 1}.mp4`}>Tải MP4</a>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
 /** Caption + hashtags written with a slideshow, ready to paste under the video. */
 function PostCaption({ caption, hashtags = [] }) {
@@ -462,6 +487,7 @@ export function Result({ job, onSave, edits, setEdits }) {
     return <ReelsResult markdown={job.result} clips={clips} />;
   }
   if (job.type === "video" && job.video) return <VideoResult job={job} />;
+  if ((job.type === "reel-cut" || job.type === "dub") && job.clips) return <ClipsResult job={job} />;
   return <Markdown className="card md">{job.result}</Markdown>;
 }
 

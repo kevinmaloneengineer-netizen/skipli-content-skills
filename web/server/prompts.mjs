@@ -612,6 +612,72 @@ function buildSpec(type, raw, refs) {
       };
     }
 
+    case "dub": {
+      const videoId = String(raw.videoId ?? "");
+      if (!refs.hasUpload?.(videoId)) throw new InputError("Video chưa được tải lên hoặc đã hết hạn. Hãy chọn lại video.");
+      const target = raw.target === "en" ? "en" : "vi";
+      const voice = raw.voice === "male" ? "male" : "female";
+      const sourceLang = ["vi", "en"].includes(raw.sourceLang) ? raw.sourceLang : "";
+      return {
+        agent: "writer",
+        direct: "video-dubber",
+        title: `Lồng tiếng ${target === "en" ? "tiếng Anh" : "tiếng Việt"}`,
+        input: { videoId, target, voice, sourceLang },
+        prompt: "", // filled in from the transcript by prepare.mjs
+      };
+    }
+
+    case "reel-cut": {
+      const videoId = String(raw.videoId ?? "");
+      if (!refs.hasUpload?.(videoId)) throw new InputError("Video chưa được tải lên hoặc đã hết hạn. Hãy chọn lại video.");
+      const count = Math.min(5, Math.max(1, Number(raw.count) || 3));
+      const clipSeconds = Math.min(60, Math.max(15, Number(raw.clipSeconds) || 30));
+      const lang = raw.lang === "en" ? "en" : "vi";
+      const ratio = raw.ratio === "16:9" ? "16:9" : "9:16";
+      return {
+        agent: "writer",
+        direct: "reel-cutter",
+        title: `Cắt Reels · ${count} đoạn ${clipSeconds} giây`,
+        input: { videoId, count, clipSeconds, lang, ratio },
+        prompt: "", // filled in from the transcript by prepare.mjs
+      };
+    }
+
+    case "dish-riddle": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const dish = str(raw.dish, "món", { required: true, max: 200 });
+      const seen = str(raw.seen, "phần nhìn thấy trong ảnh", { max: 300 });
+      const photoId = raw.photoId ? String(raw.photoId) : "";
+      if (photoId && !refs.hasUpload?.(photoId)) throw new InputError("Ảnh chưa được tải lên hoặc đã hết hạn. Hãy chọn lại ảnh.");
+      const sections = ["Viết bài đố món ăn theo skill dish-riddle, bằng tiếng Việt.", `Quán: ${business}`, `Món cần đố: ${dish}`];
+      if (seen) sections.push(`Trong ảnh chỉ thấy: ${seen}`);
+      return { agent: "writer", direct: "dish-riddle", title: `Đoán món · ${dish.slice(0, 60)}`, input: { business, dish, seen, photoId }, prompt: sections.join("\n\n") };
+    }
+
+    case "story-behind": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const answers = str(raw.answers, "câu trả lời của chủ quán", { required: true, max: 1500 });
+      return {
+        agent: "writer",
+        direct: "recipe-story",
+        title: `Câu chuyện · ${business.slice(0, 60)}`,
+        input: { business, answers },
+        prompt: `Viết câu chuyện đằng sau công thức theo skill recipe-story, bằng tiếng Việt.\n\nQuán: ${business}\n\nChủ quán trả lời:\n${answers}`,
+      };
+    }
+
+    case "weather-post": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const city = str(raw.city, "thành phố", { required: true, max: 100 });
+      return {
+        agent: "writer",
+        direct: "weather-post",
+        title: `Thời tiết · ${city.slice(0, 60)}`,
+        input: { business, city },
+        prompt: `Viết bài đăng hôm nay theo thời tiết theo skill weather-post, bằng tiếng Việt.\n\nQuán: ${business}`, // the weather facts are added by prepare.mjs
+      };
+    }
+
     case "hashtag": {
       const business = str(raw.business, "quán / sản phẩm", { required: true, max: 300 });
       const area = str(raw.area, "khu vực", { max: 100 });

@@ -218,6 +218,7 @@ export default function Layout() {
             Công cụ
             <span className="nav-caret" aria-hidden="true" />
           </button>
+          <NavLink to="/dashboard"><Icon d={I.grid} />Tổng quan</NavLink>
           <NavLink to="/history"><Icon d={I.clock} />Lịch sử</NavLink>
           <NavLink to="/library"><Icon d={I.book} />Thư viện</NavLink>
         </nav>
@@ -246,6 +247,7 @@ export default function Layout() {
           <div className="mega" id="tool-menu">
             <ToolMenu onPick={() => setMenu(false)} />
             <div className="mega-foot">
+              <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.grid} />Tổng quan công cụ</Link>
               <Link to="/history" onClick={() => setMenu(false)}><Icon d={I.clock} />Lịch sử chạy</Link>
               <Link to="/library" onClick={() => setMenu(false)}><Icon d={I.book} />Thư viện</Link>
               <span><kbd>⌘</kbd><kbd>K</kbd> tìm cả kết quả cũ và bài đã lưu</span>

@@ -296,6 +296,10 @@ export default function VideoPage() {
             </div>
           )}
         </div>
+        <label className="check-row">
+          <input type="checkbox" checked={form.review} onChange={(e) => setForm((f) => ({ ...f, review: e.target.checked }))} />
+          <span>Duyệt và thêm ảnh cho từng cảnh trước khi dựng (tuỳ chọn: ảnh của bạn thay ảnh AI vẽ)</span>
+        </label>
         {mode !== "story" && form.audio === "music" && <p className="hint">Không có giọng đọc: mỗi cảnh khoảng 3 giây kèm một dòng chữ ngắn (tên món, lời mời), nhạc nền vui không lời được tạo riêng cho video, không lo bản quyền.</p>}
         </>}
         {(error || localError) && <p className="form-error" role="alert">{localError || error}</p>}

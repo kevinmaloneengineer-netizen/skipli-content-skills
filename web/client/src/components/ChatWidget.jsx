@@ -193,6 +193,7 @@ export default function ChatWidget() {
               <small>{busy ? "Đang suy nghĩ…" : "Hỏi về sản phẩm hoặc nhờ chạy công cụ"}</small>
             </span>
             <button type="button" className="ai-new" onClick={() => setMsgs([HELLO])} title="Cuộc trò chuyện mới">Mới</button>
+            <button type="button" className="ai-close" onClick={() => setOpen(false)} aria-label="Đóng trợ lý">×</button>
           </header>
           <div className="ai-list" ref={list}>
             {msgs.map((m, i) => (

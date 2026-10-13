@@ -1,3 +1,5 @@
+import { currentWeather, weatherSentence } from "./weather.mjs";
+import { describePhoto } from "./vision.mjs";
 import path from "node:path";
 import { channelPromptWithIds, TIME_ZONES } from "./prompts.mjs";
 import { fetchReviews } from "./sources/maps.mjs";
@@ -254,6 +256,64 @@ async function watchAll(items, { setPhase, signal, label = "reel" }) {
   return { notes, log };
 }
 
+let reelsClipper = null;
+
+/** Cắt Reels: the speech with timings goes to the model, which picks the spans to cut. */
+async function reelsPrompt(job, { setPhase, signal }) {
+  const input = job.input ?? {};
+  if (!reelsClipper) throw new Error("Chưa bật xử lý video.");
+  await setPhase("Đang nghe lời trong video…");
+  const { segments } = await reelsClipper.transcriptOf(input.videoId, { language: input.lang, signal });
+  const lines = segments.map((x) => `[${x.start.toFixed(1)} - ${x.end.toFixed(1)}] ${x.text}`).join("\n");
+  return {
+    prompt: [
+      `Video dài và lời của video, mỗi dòng có mốc thời gian (giây):\n${lines}`,
+      `Chọn đúng ${input.count} đoạn, mỗi đoạn khoảng ${input.clipSeconds} giây (từ 15 đến 60 giây), để làm Reels. Mốc bắt đầu và kết thúc phải là mốc của các dòng trên.`,
+      "Ưu tiên đoạn mở đầu bằng câu gây tò mò, có một ý trọn vẹn, nói về món, quán hoặc một mẹo hữu ích. Không chọn đoạn chỉ là tiếng ồn hay lời chào.",
+      `Tiêu đề và lý do viết bằng ${input.lang === "en" ? "tiếng Anh" : "tiếng Việt"}. Không bịa lời không có trong bản ghi.`,
+      'Chỉ trả về MỘT khối JSON đúng dạng: {"clips":[{"title":"tiêu đề ngắn","start":12.3,"end":41.0,"why":"vì sao đoạn này hay"}]}',
+    ].join("\n\n"),
+  };
+}
+
+/** Lồng tiếng: each speech is translated in place, so the lines keep their timing. */
+async function dubPrompt(job, { setPhase, signal }) {
+  const input = job.input ?? {};
+  if (!reelsClipper) throw new Error("Chưa bật xử lý video.");
+  await setPhase("Đang nghe lời trong video…");
+  const { segments } = await reelsClipper.transcriptOf(input.videoId, { language: input.sourceLang, signal });
+  const target = input.target === "en" ? "tiếng Anh (Mỹ)" : "tiếng Việt";
+  const numbered = segments.map((x, i) => `${i + 1}. [${x.start.toFixed(1)} - ${x.end.toFixed(1)}] ${x.text}`).join("\n");
+  return {
+    prompt: [
+      `Các câu của video, đánh số, mỗi câu có mốc thời gian (giây):\n${numbered}`,
+      `Dịch từng câu sang ${target}, giữ đúng số câu và đúng thứ tự. Mỗi bản dịch ngắn gọn, có độ dài gần bằng câu gốc để đọc vừa khoảng thời gian đó.`,
+      "Không thêm, không bớt ý. Tên món và tên quán giữ nguyên, không dịch.",
+      'Chỉ trả về MỘT khối JSON đúng dạng: {"lines":["bản dịch câu 1","bản dịch câu 2"]}',
+    ].join("\n\n"),
+  };
+}
+
+let photosDir = null;
+
+/** Đoán món từ ảnh: Gemini says what the photo shows (never the dish name); the typed text stays as well. */
+async function riddlePrompt(job, { setPhase, signal }) {
+  const photoId = job.input?.photoId;
+  if (!photoId || !photosDir) return { prompt: job.prompt };
+  await setPhase("AI đang xem ảnh…");
+  const seen = await describePhoto(path.join(photosDir, photoId), { signal }).catch((e) => { if (signal?.aborted) throw e; return null; });
+  if (!seen) return { prompt: job.prompt, notice: "Chưa xem được ảnh, câu đố dựa vào phần mô tả bạn nhập." };
+  return { prompt: `${job.prompt}\n\nAI xem ảnh và thấy: ${seen}\nChỉ dùng những chi tiết này làm gợi ý, không nêu tên món trong câu đố.` };
+}
+
+/** Thời tiết thành bài đăng: today's facts for the city, and nothing the weather service did not say. */
+async function weatherPrompt(job, { setPhase, signal }) {
+  await setPhase("Đang xem thời tiết hôm nay…");
+  const w = await currentWeather(job.input?.city, { signal }).catch((e) => { if (signal?.aborted) throw e; return null; });
+  if (!w) return { prompt: job.prompt, notice: "Chưa lấy được thời tiết của thành phố này, bài sẽ viết theo mùa chung." };
+  return { prompt: `${job.prompt}\n\n${weatherSentence(w)}\nChỉ dùng đúng các thông tin thời tiết này, không thêm số liệu nào khác.` };
+}
+
 /** Top reels to watch: by engagement, or (with a topic) the ones the model finds most on topic. */
 async function pickReels(reels, input, signal) {
   const count = Math.min(input.top, reels.length);
@@ -378,8 +438,10 @@ async function scanDirect(job, { setPhase, signal }) {
  *
  * @returns {Promise<{ prompt: string, notice?: string, fields?: object, direct?: { skill: string, from?: RegExp } }>}
  */
-export function createPreparer({ facebook, mock = false, clipsDir = null, log = console }) {
+export function createPreparer({ facebook, mock = false, clipsDir = null, clipper = null, uploadsDir = null, log = console }) {
   CLIPS_DIR = clipsDir;
+  reelsClipper = clipper;
+  photosDir = uploadsDir;
   return async function prepare(job, { setPhase, signal }) {
     const input = job.input ?? {};
     // Demo mode answers from canned replies: do not open Chrome, search the web or run scripts.
@@ -390,6 +452,10 @@ export function createPreparer({ facebook, mock = false, clipsDir = null, log = 
     if (job.type === "maps") return mapsPrompt(input, { setPhase, signal });
     if (job.type === "compare") return comparePrompt(input, { setPhase, signal });
     if (job.type === "campaign") return campaignPrompt(job, { setPhase, signal });
+    if (job.type === "reel-cut") return reelsPrompt(job, { setPhase, signal });
+    if (job.type === "dub") return dubPrompt(job, { setPhase, signal });
+    if (job.type === "weather-post") return weatherPrompt(job, { setPhase, signal });
+    if (job.type === "dish-riddle") return riddlePrompt(job, { setPhase, signal });
     if (directEnabled() && !mock) {
       const scanned = await scanDirect(job, { setPhase, signal });
       if (scanned) return scanned;

@@ -7,7 +7,7 @@ import path from "node:path";
 import { buildJob, InputError } from "../server/prompts.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { captionChunks, createVideoService, parseScript, VideoError } from "../server/video.mjs";
+import { captionChunks, createVideoService, parseScript, stillPrompt, VideoError } from "../server/video.mjs";
 
 const run = promisify(execFile);
 
@@ -81,7 +81,7 @@ test("finish: stills video, storyboard panels used as is, the other shots drawn 
     const ids = [await video.saveUpload(`data:image/png;base64,${pngB64}`), await video.saveUpload(`data:image/png;base64,${pngB64}`)];
     const phases = [];
     const sb = { id: "11111111-2222-3333-4444-555555555555", type: "video", input: { mode: "storyboard", ratio: "9:16", audio: "music", panelIds: ids } };
-    const out = await video.finish(sb, script(3), { setPhase: async (p) => phases.push(p), signal: new AbortController().signal });
+    const out = await video.finish({ ...sb, input: { ...sb.input, review: false } }, script(3), { setPhase: async (p) => phases.push(p), signal: new AbortController().signal });
     assert.equal(drawn, undefined, "panels are not drawn again");
     assert.equal(out.fields.video.shots.length, 2, "3 shots trimmed to 2 panels");
     assert.ok(out.fields.video.shots.every((x) => video.imagePath(x.image)), "each shot keeps its still");
@@ -89,14 +89,32 @@ test("finish: stills video, storyboard panels used as is, the other shots drawn 
     assert.ok((await readFile(video.videoPath(sb.id))).length > 1000, "an MP4 was written");
     assert.ok(phases.includes("Đang thêm nhạc nền…"));
 
-    // Topic: every shot drawn on the GPU as a still, with the slideshow's no-text negative prompt.
+    // Topic: every shot drawn on the GPU as a still, then the review stops before rendering.
     const tp = { id: "22222222-2222-3333-4444-555555555555", type: "video", input: { mode: "topic", ratio: "9:16", audio: "music", style: "real" } };
-    await video.finish(tp, script(3), { setPhase: async () => {}, signal: new AbortController().signal });
+    const reviewed = await video.finish(tp, script(3), { setPhase: async () => {}, signal: new AbortController().signal });
+    assert.equal(reviewed.fields.status, "review");
+    assert.equal(reviewed.fields.slides.length, 3);
     assert.deepEqual(drawn.prompts, ["v0", "v1", "v2"]);
     assert.match(drawn.negative, /text/);
+    assert.equal(drawn.negative.includes("people"), false, "narrated stills may show people");
+
+    // The user puts their own photo into shot 2, then renders: that still is used, the words stay with their shot.
+    const tpr = { ...tp, slides: reviewed.fields.slides };
+    const replaced = await video.replaceSlide(tpr, 1, ids[0]);
+    assert.equal(replaced[1].real, true);
+    const rendered = await video.renderSlides({ ...tp, input: { ...tp.input } }, replaced, reviewed.fields.draft, async () => {});
+    assert.equal(rendered.fields.video.shots.length, 3);
+    assert.equal(rendered.fields.video.shots[1].image, replaced[1].image);
+    assert.equal(rendered.fields.video.shots[1].narration, replaced[1].narration);
+    assert.ok((await readFile(video.videoPath(tp.id))).length > 1000);
   } finally {
     worker.close();
   }
+});
+
+test("stillPrompt: no names or signs for the image model", () => {
+  assert.equal(stillPrompt("Exterior of Phở Cali storefront, subtle signage, bustling street background"), "Exterior of the restaurant storefront, bustling street background, architecture only, plain blank awning, no signboard");
+  assert.equal(stillPrompt("Bowl of beef pho with fresh herbs, lime wedge"), "Bowl of beef pho with fresh herbs, lime wedge");
 });
 
 test("captionChunks: short subtitle lines, cut at about 7 words or a clause", () => {
