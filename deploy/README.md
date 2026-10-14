@@ -40,6 +40,22 @@ Dừng: `docker compose stop`. **Không** dùng `down -v`, vì lệnh này xoá 
    `cd deploy/firebase && npx firebase-tools deploy --only firestore:rules --project <id>`.
    Nếu project đã có rules cho app chính thì **gộp** đoạn `content_*` vào, không ghi đè.
 
+## 3b. Lưu file trên Cloudflare R2 (khi có nhiều người dùng)
+
+Ảnh AI vẽ, video đã dựng, đoạn Reels và file người dùng tải lên mặc định nằm trên ổ đĩa (`DATA_DIR`, mặc định `web/.data`). Khi chạy cho nhiều người, đặt thêm vào `deploy/.env`:
+
+```
+STORAGE_ENDPOINT=https://<account id>.r2.cloudflarestorage.com
+STORAGE_BUCKET=skipli-media
+STORAGE_ACCESS_KEY_ID=...
+STORAGE_SECRET_ACCESS_KEY=...
+STORAGE_REGION=auto
+```
+
+Job vẫn dựng trên ổ đĩa; xong thì file được chép lên bucket, và trang kết quả mở link có chữ ký (hết hạn sau 15 phút) khi server không còn file. Bucket để riêng tư, không bật public access.
+
+Nên đặt quy tắc tự xoá (Object lifecycle) trên bucket: tiền tố `uploads/` xoá sau 7 ngày. Bất kỳ kho tương thích S3 nào cũng dùng được (đổi `STORAGE_ENDPOINT` và `STORAGE_REGION`).
+
 ## 4. Cấu hình GoClaw sau lần chạy đầu (một lần)
 
 1. Providers: `openai-codex` (chat) và một provider tên đúng **`gemini`** (cho `read_video`).

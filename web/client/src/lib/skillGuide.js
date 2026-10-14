@@ -156,6 +156,24 @@ export const GUIDE = {
     ],
     output: ["Mẫu cấu trúc bài viết để AI viết theo", "Bài đã lưu dùng lại được"],
   },
+  "live-recap": {
+    perks: ["Cắt đoạn hay", "Tóm tắt buổi live", "Bài cảm ơn"],
+    steps: [
+      ["Tải bản ghi", "Video buổi live, MP4 hoặc MOV, tối đa 10 phút."],
+      ["Chọn số đoạn", "Số đoạn hay cần cắt, dọc hoặc ngang."],
+      ["Đăng lại", "Đăng các đoạn cắt và bài cảm ơn."],
+    ],
+    output: ["Các đoạn hay đã cắt thành Reels", "Tóm tắt và món được nhắc", "Bài cảm ơn khách sau buổi live"],
+  },
+  "post-score": {
+    perks: ["Điểm từng phần", "Chỉ chỗ cần sửa", "Có bản đã sửa"],
+    steps: [
+      ["Dán bài", "Bài viết sắp đăng, kèm nền tảng nếu muốn."],
+      ["Xem điểm", "Câu mở đầu, nội dung, lời kêu gọi, độ dài, hashtag."],
+      ["Dùng bản sửa", "Sao chép bản đã sửa rồi đăng."],
+    ],
+    output: ["Điểm bài và lý do", "Danh sách sửa nhanh", "Bản đã sửa giữ nguyên giá và ưu đãi"],
+  },
   "dish-riddle": {
     perks: ["Có đáp án", "Gợi ý bình luận", "Dựa trên ảnh"],
     steps: [

@@ -70,3 +70,14 @@ test("transcribe: timed segments come back from Whisper; silence and missing key
   const noKey = createClipper({ dir });
   await assert.rejects(noKey.transcribe("00000000-0000-0000-0000-000000000000.mp4"), (e) => e instanceof ClipError && /khoá Groq/.test(e.message));
 });
+
+test("saveAudio: a voice-over over 90 s is refused; slideshow music of any length is kept, first minute only", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "aud-"));
+  const clipper = createClipper({ dir });
+  const long = path.join(dir, "long.mp3");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=440:d=100", long]);
+  const buf = await readFile(long);
+  await assert.rejects(clipper.saveAudio(buf), /90 giây/);
+  const music = await clipper.saveAudio(buf, { music: true });
+  assert.ok(music.seconds > 59 && music.seconds <= 60.5, `kept ${music.seconds} s`);
+});

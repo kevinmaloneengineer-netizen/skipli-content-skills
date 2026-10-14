@@ -23,6 +23,7 @@ import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { ClipError, createClipper } from "./clipper.mjs";
 import { dashboard } from "./dashboard.mjs";
+import { cleanUploads, createStorage, filesOf } from "./storage.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 
 const CLIENT_DIST = path.join(WEB_ROOT, "client", "dist");
@@ -185,30 +186,67 @@ export async function createApp(config, adapter) {
     }
   };
   if (!config.goclaw.mock) setInterval(sweepClips, 86_400_000).unref();
+  // Finished files go to object storage (R2) when it is set up; the disk stays the working copy.
+  const storage = createStorage();
+  const localOf = (key) => path.join(videoRoot, key); // keys are "videos/…", "images/…", "uploads/…"
+  async function publish(keys) {
+    if (!storage.remote) return;
+    for (const key of keys) {
+      if (!existsSync(localOf(key))) continue;
+      await storage.put(key, localOf(key)).catch((e) => console.error(`storage: ${key}: ${e.message}`));
+    }
+  }
+  /** After a job (or a render, redraw, replace) wrote its files: copy them up, then hand the result on. */
+  async function publishAfter(job, out) {
+    await publish(filesOf({ ...job, ...(out?.fields ?? {}) }));
+    return out;
+  }
+  /** An upload another server took (or this disk lost): fetch it back before a job needs it. */
+  async function ensureUploads(input = {}) {
+    if (!storage.remote) return;
+    const ids = [input.referenceImageId, input.logoId, input.videoId, input.audioId, input.photoId, ...(input.photoIds ?? []), ...(input.panelIds ?? [])].filter((x) => typeof x === "string" && /^[0-9a-f-]{36}\.\w{3,4}$/.test(x));
+    for (const id of ids) if (!existsSync(localOf(`uploads/${id}`))) await storage.get(`uploads/${id}`, localOf(`uploads/${id}`)).catch(() => false);
+  }
+  // Uploads are kept 7 days (UPLOAD_KEEP_DAYS): cleaned at start, then once a day.
+  const keepDays = Number(process.env.UPLOAD_KEEP_DAYS) || 7;
+  const sweep = () => cleanUploads({ storage, dir: localOf("uploads"), days: keepDays })
+    .then((n) => n && console.log(`storage: removed ${n} uploads older than ${keepDays} days`))
+    .catch((e) => console.error(`storage: cleaning uploads failed: ${e.message}`));
+  if (!config.goclaw?.mock || storage.remote) {
+    sweep();
+    setInterval(sweep, 24 * 3600_000).unref();
+  }
+  /** Send the viewer to the stored copy when this server does not have the file. */
+  const fromStorage = (res, key) => (storage.remote ? res.redirect(302, storage.url(key)) : res.status(404).send("Không tìm thấy file"));
+
+  async function finishContent(job, content, ctx) {
+    if (job.input?.lang === "en") content = englishBlanks(content);
+    // The fanpage report template says "reel"; most Instagram posts are photos and albums.
+    if (job.type === "instagram") content = content.replace(/(?<![/#@]\s?)\b(R|r)eels?\b/g, (w, r) => (r === "R" ? "Bài" : "bài"));
+    if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
+    if (job.type === "reel-cut") return clipper.finishReels(job, content, ctx);
+    if (job.type === "live-recap") return clipper.finishRecap(job, content, ctx);
+    if (job.type === "dub") return clipper.finishDub(job, content, ctx);
+    if (job.type === "maps" || job.type === "yelp") {
+      // Quotes must be word for word: a trimmed or reworded one is replaced by the review's own words.
+      const { text, fixed } = verifyQuotes(content, reviewsIn(job.prompt));
+      return { result: text, fields: { quotesFixed: fixed } };
+    }
+    if (CHECKED_TYPES.has(job.type)) {
+      // Prices, discounts, hours the user never gave → placeholders; gifts → warnings shown on the result page.
+      const { text, replaced, warnings } = checkFacts(content, Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n")); // what the user typed, not our prompt wording
+      return { result: text, fields: { factCheck: { replaced, warnings } } };
+    }
+    return (await video.finish(job, content, ctx)) ?? { result: content }; // content may have been edited above
+  }
+
   const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir, clipper, uploadsDir: path.join(videoRoot, "uploads") }),
-    finish: async (job, content, ctx) => {
-      if (job.input?.lang === "en") content = englishBlanks(content);
-      // The fanpage report template says "reel"; most Instagram posts are photos and albums.
-      if (job.type === "instagram") content = content.replace(/(?<![/#@]\s?)\b(R|r)eels?\b/g, (w, r) => (r === "R" ? "Bài" : "bài"));
-      if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
-      if (job.type === "reel-cut") return clipper.finishReels(job, content, ctx);
-      if (job.type === "dub") return clipper.finishDub(job, content, ctx);
-      if (job.type === "maps" || job.type === "yelp") {
-        // Quotes must be word for word: a trimmed or reworded one is replaced by the review's own words.
-        const { text, fixed } = verifyQuotes(content, reviewsIn(job.prompt));
-        return { result: text, fields: { quotesFixed: fixed } };
-      }
-      if (CHECKED_TYPES.has(job.type)) {
-        // Prices, discounts, hours the user never gave → placeholders; gifts → warnings shown on the result page.
-        const { text, replaced, warnings } = checkFacts(content, Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n")); // what the user typed, not our prompt wording
-        return { result: text, fields: { factCheck: { replaced, warnings } } };
-      }
-      return (await video.finish(job, content, ctx)) ?? { result: content }; // content may have been edited above
-    },
+    finish: async (job, content, ctx) => publishAfter(job, await finishContent(job, content, ctx)),
   });
   await runner.recover();
 
   async function jobSpec(type, input = {}) {
+    await ensureUploads(input);
     const refs = {
       template: input.templateId ? store.getItem(input.templateId) : undefined,
       refJob: input.referenceJobId ? await store.getJob(String(input.referenceJobId)) : undefined,
@@ -233,7 +271,9 @@ export async function createApp(config, adapter) {
   // Reference images for videos arrive as data URLs; only this route accepts a large body.
   api.post("/uploads", express.json({ limit: "9mb" }), async (req, res) => {
     try {
-      res.status(201).json({ id: await video.saveUpload(req.body?.dataUrl) });
+      const id = await video.saveUpload(req.body?.dataUrl);
+      await publish([`uploads/${id}`]);
+      res.status(201).json({ id });
     } catch (e) {
       throw e instanceof VideoError ? new HttpError(400, e.message) : e;
     }
@@ -241,7 +281,19 @@ export async function createApp(config, adapter) {
   // Long videos (Cắt Reels, Lồng tiếng): the raw file, up to 200MB; the length is checked after saving.
   api.post("/uploads/video", express.raw({ type: ["video/mp4", "video/quicktime", "application/octet-stream"], limit: "200mb" }), async (req, res) => {
     try {
-      res.status(201).json(await clipper.saveVideo(req.body));
+      const saved = await clipper.saveVideo(req.body);
+      await publish([`uploads/${saved.id}`]);
+      res.status(201).json(saved);
+    } catch (e) {
+      throw e instanceof ClipError ? new HttpError(400, e.message) : e;
+    }
+  });
+  // The viewer's own narration for a video: any common audio file, up to 25MB; saved as MP3.
+  api.post("/uploads/audio", express.raw({ type: ["audio/*", "video/mp4", "application/octet-stream"], limit: "25mb" }), async (req, res) => {
+    try {
+      const saved = await clipper.saveAudio(req.body, { music: req.query.purpose === "music" });
+      await publish([`uploads/${saved.id}`]);
+      res.status(201).json(saved);
     } catch (e) {
       throw e instanceof ClipError ? new HttpError(400, e.message) : e;
     }
@@ -539,11 +591,13 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/slides/:i/redraw", async (req, res) => {
     const job = await reviewJob(req);
     const slides = await videoCall(() => video.redrawSlide(job, slideIndex(req, job), req.body?.prompt));
+    await publish(filesOf({ slides }));
     res.json({ slides: (await store.updateJob(job.id, { slides })).slides });
   });
   api.post("/jobs/:id/slides/:i/replace", async (req, res) => {
     const job = await reviewJob(req);
     const slides = await videoCall(() => video.replaceSlide(job, slideIndex(req, job), String(req.body?.uploadId ?? "")));
+    await publish(filesOf({ slides }));
     res.json({ slides: (await store.updateJob(job.id, { slides })).slides });
   });
   /** Render the reviewed photos (in the order chosen on the page); runs in the background, the page polls. */
@@ -555,7 +609,7 @@ export async function createApp(config, adapter) {
     await store.updateJob(job.id, { status: "running", phase: "Đang ghép ảnh thành video…", slides, startedAt: new Date().toISOString() });
     const setPhase = (phase) => store.updateJob(job.id, { phase });
     video.renderSlides(job, slides, job.draft ?? "", setPhase).then(
-      (out) => store.updateJob(job.id, { status: "done", result: out.result, ...out.fields, phase: null, finishedAt: new Date().toISOString() }),
+      async (out) => store.updateJob(job.id, { status: "done", result: (await publishAfter(job, out)).result, ...out.fields, phase: null, finishedAt: new Date().toISOString() }),
       (e) => store.updateJob(job.id, { status: "failed", error: e.message, phase: null, finishedAt: new Date().toISOString() }),
     );
     res.status(202).json({ ok: true });
@@ -567,6 +621,7 @@ export async function createApp(config, adapter) {
     await store.deleteJob(job.id);
     await video.remove(job);
     await clipper.removeClips(job);
+    if (storage.remote) for (const key of filesOf(job)) await storage.remove(key).catch(() => {});
     res.json({ ok: true });
   });
 
@@ -656,10 +711,12 @@ export async function createApp(config, adapter) {
   app.disable("x-powered-by");
   app.use(gate.middleware);
   app.get("/media/videos/:file", async (req, res) => {
-    const m = req.params.file.match(/^([0-9a-f-]{36})\.mp4$/);
+    // <job id>.mp4 for the job video, <job id>-clipN.mp4 or <job id>-dub.mp4 for the cut and dubbed files
+    const m = req.params.file.match(/^([0-9a-f-]{36})(-clip\d+|-dub)?\.mp4$/);
     if (accounts && m && !own(req, store.cachedJob(m[1]) ?? (await store.getJob(m[1])))) return res.status(404).send("Không tìm thấy video");
-    const file = m && video.videoPath(m[1]);
-    if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy video");
+    const file = m && path.join(videoRoot, "videos", req.params.file);
+    if (!file) return res.status(404).send("Không tìm thấy video");
+    if (!existsSync(file)) return fromStorage(res, `videos/${req.params.file}`);
     res.set("X-Content-Type-Options", "nosniff").sendFile(file, { dotfiles: "allow" }); // DATA_DIR defaults to web/.data
   });
   // 480p copies of the reels / TikToks the AI watched: played on the result page (platform embeds get blocked).
@@ -680,7 +737,8 @@ export async function createApp(config, adapter) {
     const jobId = req.params.file.slice(0, 36);
     if (accounts && !own(req, store.cachedJob(jobId) ?? (await store.getJob(jobId)))) return res.status(404).send("Không tìm thấy ảnh");
     const file = video.imagePath(req.params.file);
-    if (!file || !existsSync(file)) return res.status(404).send("Không tìm thấy ảnh");
+    if (!file) return res.status(404).send("Không tìm thấy ảnh");
+    if (!existsSync(file)) return fromStorage(res, `images/${req.params.file}`);
     res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
   });
   app.use("/api", (req, res, next) => {
@@ -690,7 +748,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data: blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));

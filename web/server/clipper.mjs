@@ -18,6 +18,8 @@ export const DUB_VOICES = { "vi-female": "vi-VN-HoaiMyNeural", "vi-male": "vi-VN
 export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 export const MAX_VIDEO_SECONDS = 10 * 60;
 export const VIDEO_ID = /^[0-9a-f-]{36}\.mp4$/;
+export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+export const MAX_AUDIO_SECONDS = 90;
 
 export class ClipError extends Error {}
 
@@ -99,6 +101,18 @@ export function parseClips(content) {
     .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.start >= 0 && c.end - c.start >= 5 && c.end - c.start <= 90);
   if (!clips.length) throw new ClipError("AI không chọn được đoạn nào hợp lệ. Thử video khác hoặc thử lại.");
   return clips;
+}
+
+/** The recap the model wrote: {"clips":[…],"summary":"…","items":["…"],"post":"…"}. */
+export function parseRecap(content) {
+  const clips = parseClips(content);
+  const text = String(content ?? "");
+  const data = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+  const summary = String(data.summary ?? "").trim();
+  const post = String(data.post ?? "").trim();
+  if (!summary || !post) throw new ClipError("AI chưa viết đủ tóm tắt và bài cảm ơn. Thử lại nhé.");
+  const items = (Array.isArray(data.items) ? data.items : []).map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 12);
+  return { clips, summary, items, post };
 }
 
 /** Cut one clip to a vertical (9:16) or wide (16:9) file, re-encoded so it plays everywhere. */
@@ -209,9 +223,8 @@ export function createClipper({ dir, outDir = dir, voiceScript = VOICE_SCRIPT })
     }
   }
 
-  /** Reels job: the chosen spans are cut from the upload, each becomes its own MP4 file. */
-  async function finishReels(job, content, { setPhase, signal }) {
-    const clips = parseClips(content);
+  /** Cut the chosen spans from the upload, each to its own MP4 (spans past the end are trimmed or dropped). */
+  async function cutAll(job, clips, { setPhase, signal }) {
     const src = path.join(dir, job.input.videoId);
     const length = await mediaSeconds(src);
     const usable = clips.filter((c) => c.start < length - 1).map((c) => ({ ...c, end: Math.min(c.end, round(length)) })).filter((c) => c.end - c.start >= 5);
@@ -225,8 +238,27 @@ export function createClipper({ dir, outDir = dir, voiceScript = VOICE_SCRIPT })
       await cutClip(src, path.join(outDir, file), { ...c, ratio: job.input.ratio });
       files.push({ file, title: c.title, start: c.start, end: c.end, duration: round(c.end - c.start), why: c.why });
     }
-    const result = files.map((f, i) => `### Đoạn ${i + 1}: ${f.title}\n${fmt(f.start)} → ${fmt(f.end)} (${f.duration} giây)${f.why ? `\n${f.why}` : ""}`).join("\n\n");
-    return { result, fields: { clips: files } };
+    return files;
+  }
+  const clipList = (files) => files.map((f, i) => `### Đoạn ${i + 1}: ${f.title}\n${fmt(f.start)} → ${fmt(f.end)} (${f.duration} giây)${f.why ? `\n${f.why}` : ""}`).join("\n\n");
+
+  /** Reels job: the chosen spans are cut from the upload, each becomes its own MP4 file. */
+  async function finishReels(job, content, ctx) {
+    const files = await cutAll(job, parseClips(content), ctx);
+    return { result: clipList(files), fields: { clips: files } };
+  }
+
+  /** Livestream recap: the best spans as clips, plus a summary, the items talked about and a thank-you post. */
+  async function finishRecap(job, content, ctx) {
+    const recap = parseRecap(content);
+    const files = await cutAll(job, recap.clips, ctx);
+    const result = [
+      "### Tóm tắt buổi live", recap.summary,
+      ...(recap.items.length ? ["### Món và sản phẩm được nhắc", recap.items.map((x) => `- ${x}`).join("\n")] : []),
+      "### Bài cảm ơn", recap.post,
+      clipList(files),
+    ].join("\n\n");
+    return { result, fields: { clips: files, recap: { summary: recap.summary, items: recap.items, post: recap.post } } };
   }
 
   /** Remove the cut files of a deleted job (the uploaded source is kept: a retry may use it). */
@@ -234,8 +266,34 @@ export function createClipper({ dir, outDir = dir, voiceScript = VOICE_SCRIPT })
     for (const c of job.clips ?? []) await rm(path.join(outDir, c.file), { force: true });
   }
 
+  /**
+   * The viewer's own audio, kept as a mono MP3. A voice-over (the video lasts as long as it) may be at
+   * most 90 seconds; music for a slideshow can be any length and only its first 60 seconds are kept.
+   */
+  async function saveAudio(buffer, { music = false } = {}) {
+    if (!buffer?.length) throw new ClipError("Chưa có file âm thanh.");
+    if (buffer.length > MAX_AUDIO_BYTES) throw new ClipError("File âm thanh lớn quá 25MB.");
+    const src = path.join(dir, `${randomUUID()}.src`);
+    const id = `${randomUUID()}.mp3`;
+    await writeFile(src, buffer);
+    try {
+      await run("ffmpeg", ["-y", "-loglevel", "error", "-i", src, "-vn", ...(music ? ["-t", "60"] : []), "-ac", "1", "-ar", "44100", "-b:a", "96k", path.join(dir, id)])
+        .catch(() => { throw new ClipError("Không đọc được file âm thanh. Hãy dùng MP3, M4A hoặc WAV."); });
+      const seconds = await mediaSeconds(path.join(dir, id));
+      if (!music && seconds > MAX_AUDIO_SECONDS) {
+        await rm(path.join(dir, id), { force: true });
+        throw new ClipError("Giọng đọc dài quá 90 giây. Hãy ghi ngắn hơn.");
+      }
+      return { id, seconds: Math.round(seconds * 10) / 10 };
+    } finally {
+      await rm(src, { force: true });
+    }
+  }
+
   return {
+    saveAudio,
     finishReels,
+    finishRecap,
     finishDub,
     transcriptOf,
     removeClips,

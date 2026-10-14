@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { uploadVideo } from "../lib/api.js";
+import FilePick from "../components/FilePick.jsx";
 
 const MAX_BYTES = 200 * 1024 * 1024;
 const TARGETS = { vi: "Tiếng Việt", en: "Tiếng Anh (Mỹ)" };
@@ -16,8 +17,7 @@ export default function DubPage() {
   const [localError, setLocalError] = useState("");
   const [submit, busy, error] = useSubmitJob("dub");
 
-  function pick(e) {
-    const f = e.target.files?.[0];
+  function pick(f) {
     setLocalError("");
     if (!f) return setFile(null);
     if (f.size > MAX_BYTES) return setLocalError("Video lớn quá 200MB. Hãy nén hoặc cắt bớt rồi thử lại.");
@@ -45,10 +45,7 @@ export default function DubPage() {
       <form className="form-card" onSubmit={onSubmit} noValidate>
         <div className="field">
           <span className="field-label">Video cần lồng tiếng (MP4 hoặc MOV, tối đa 200MB và 10 phút)</span>
-          <label className="file-pick">
-            <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" onChange={pick} disabled={uploading || busy} />
-            <span>{file ? `${file.name} · ${(file.size / 1048576).toFixed(1)} MB` : "Chọn video từ máy"}</span>
-          </label>
+          <FilePick accept="video/mp4,video/quicktime,.mp4,.mov" file={file} onChange={pick} placeholder="Chọn video từ máy" kind="video" disabled={uploading || busy} />
         </div>
         <div className="field">
           <span className="field-label">Lồng sang</span>

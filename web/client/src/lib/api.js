@@ -19,3 +19,12 @@ export async function uploadVideo(file) {
   if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
   return data;
 }
+
+/** The viewer's own audio as an MP3: purpose "voice" (at most 90 seconds) or "music" (any length, first minute kept). */
+export async function uploadAudio(file, purpose = "voice") {
+  const res = await fetch(`/api/uploads/audio?purpose=${purpose}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.auth) window.dispatchEvent(new Event("auth-required"));
+  if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+  return data;
+}

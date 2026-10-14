@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import { collage } from "./collage.mjs";
+import { transcribe } from "./clipper.mjs";
 import { checkFacts } from "./facts.mjs";
 import { slideRoles } from "./prompts.mjs";
 
@@ -23,7 +24,7 @@ const VOICE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "vo
 const VOICES = { female: "vi-VN-HoaiMyNeural", male: "vi-VN-NamMinhNeural", "en-female": "en-US-AriaNeural", "en-male": "en-US-GuyNeural" };
 export const RATIOS = { "9:16": [480, 832], "16:9": [832, 480], "1:1": [640, 640] };
 const IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
-export const UPLOAD_ID = /^[0-9a-f-]{36}\.(png|jpg|webp|mp4)$/;
+export const UPLOAD_ID = /^[0-9a-f-]{36}\.(png|jpg|webp|mp4|mp3)$/;
 const MAX_UPLOAD = 6 * 1024 * 1024;
 
 export class VideoError extends Error {}
@@ -174,6 +175,21 @@ export function stillPrompt(visual) {
     .replace(/^[\s,]+|[\s,]+$/g, "");
   if (/storefront|exterior|facade|façade|shopfront/i.test(p)) p += ", architecture only, plain blank awning, no signboard";
   return p;
+}
+
+/**
+ * The viewer's own music or voice under a finished video, in place of its sound: looped when shorter,
+ * cut to the video's length and faded out over the last 1.5 seconds. Returns the length in seconds.
+ */
+export async function withOwnAudio(video, audio) {
+  const length = await mediaLength(video);
+  const tmp = `${video}.own.mp4`;
+  const fade = Math.max(0, length - 1.5);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-i", video, "-stream_loop", "-1", "-i", audio, "-map", "0:v", "-map", "1:a",
+    "-af", `atrim=0:${length.toFixed(3)},afade=t=out:st=${fade.toFixed(3)}:d=1.5`, "-t", length.toFixed(3),
+    "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", tmp]);
+  await rename(tmp, video);
+  return Math.round(length * 10) / 10;
 }
 
 /** One MP3 per text (dir/s1.mp3, s2.mp3, …) read with the free Edge voices on this machine (server/voice/tts.py). */
@@ -392,8 +408,10 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     } finally {
       if (title) await rm(title, { force: true });
     }
-    await setPhase("Đang thêm nhạc nền…");
-    const seconds = await addMusic(out, job.id, "soft");
+    // The viewer's own music or voice replaces the generated music.
+    const ownAudio = job.input.audioId && hasUpload(job.input.audioId) ? path.join(dirs.uploads, job.input.audioId) : null;
+    await setPhase(ownAudio ? "Đang thêm âm thanh của bạn…" : "Đang thêm nhạc nền…");
+    const seconds = ownAudio ? await withOwnAudio(out, ownAudio) : await addMusic(out, job.id, "soft");
     const shots = slides.map((x) => ({ narration: "", visual: x.prompt, motion: "", role: "scene", image: x.image }));
     // Caption + hashtags to post with the video; invented prices or offers become placeholders.
     const words = landingText(content);
@@ -401,7 +419,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     const caption = words.caption ? checkFacts(words.caption, facts).text : "";
     const realCount = slides.filter((x) => x.real).length;
     return {
-      result: `Video trình chiếu ${files.length} ảnh (${realCount} ảnh thật, ${files.length - realCount} ảnh AI vẽ), nhạc nền không lời.\n\n${shots.map((x, i) => `${i + 1}. ${x.visual}`).join("\n")}`,
+      result: `Video trình chiếu ${files.length} ảnh (${realCount} ảnh thật, ${files.length - realCount} ảnh AI vẽ), ${ownAudio ? "âm thanh của bạn" : "nhạc nền không lời"}.\n\n${shots.map((x, i) => `${i + 1}. ${x.visual}`).join("\n")}`,
       fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: job.title, shots, slideshow: true, caption, hashtags: words.hashtags } },
     };
   }
@@ -520,11 +538,20 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       const [w, h] = SLIDE_SIZES[job.input.ratio] ?? SLIDE_SIZES["9:16"];
       const n = slides.length;
       const music = job.input.audio === "music";
+      // The viewer's own narration replaces the AI voice: it is the whole soundtrack.
+      const own = job.input.audioId && hasUpload(job.input.audioId) && !music ? path.join(dirs.uploads, job.input.audioId) : null;
       const FADE = 0.4;
-      const LEAD = 0.25; // silence before the voice in each shot
+      const LEAD = own ? 0 : 0.25; // silence before the voice in each shot
       let voices = [];
       let talk;
-      if (music) {
+      let ownSeconds = 0;
+      if (own) {
+        // Each shot gets a share of the recording, by how many words it has.
+        ownSeconds = await mediaLength(own);
+        const words = slides.map((x) => Math.max(1, x.narration.split(/\s+/).length));
+        const sum = words.reduce((a, b) => a + b, 0);
+        talk = words.map((w) => (ownSeconds * w) / sum);
+      } else if (music) {
         talk = slides.map((x) => Math.min(5, Math.max(2.6, x.narration.split(/\s+/).length / 2.6)));
       } else {
         await setPhase("Đang tạo giọng đọc…");
@@ -532,21 +559,43 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
         voices = await readAloud(slides.map((x) => x.narration), voice, dir);
         talk = await Promise.all(voices.map(mediaLength));
       }
-      const dur = talk.map((t) => LEAD + t + FADE + 0.25);
-      const start = dur.map((_, i) => dur.slice(0, i).reduce((a, d) => a + d - FADE, 0));
-      const total = start.at(-1) + dur.at(-1);
+      let dur = talk.map((t) => LEAD + t + FADE + 0.25);
+      let start = dur.map((_, i) => dur.slice(0, i).reduce((a, d) => a + d - FADE, 0));
+      let total = start.at(-1) + dur.at(-1);
+      if (own) {
+        dur = talk.map((t, i) => (i < n - 1 ? t + FADE : t));
+        start = talk.map((_, i) => talk.slice(0, i).reduce((a, t) => a + t, 0));
+        total = ownSeconds;
+      }
 
-      // Subtitles: each line gets its share of the shot's voice by length.
+      // Subtitles. With the viewer's recording, the words come from its own timing (Whisper); otherwise each
+      // line gets its share of the shot's voice by length.
       await setPhase("Đang ghép ảnh, giọng đọc và phụ đề…");
-      const lines = [];
-      for (const [i, slide] of slides.entries()) {
-        const chunks = captionChunks(slide.narration);
-        const chars = chunks.reduce((a, c) => a + c.length, 0) || 1;
-        let t = start[i] + LEAD;
-        for (const c of chunks) {
-          const d = (talk[i] * c.length) / chars;
-          lines.push({ text: c, from: t, to: t + d });
-          t += d;
+      let lines = [];
+      if (own) {
+        await setPhase("Đang nghe giọng của bạn để làm phụ đề…");
+        const heard = await transcribe(own, { language: job.input.lang === "en" ? "en" : "vi" }).catch(() => null);
+        for (const seg of heard?.segments ?? []) {
+          const chunks = captionChunks(seg.text);
+          const chars = chunks.reduce((a, c) => a + c.length, 0) || 1;
+          let t = seg.start;
+          for (const c of chunks) {
+            const d = ((seg.end - seg.start) * c.length) / chars;
+            lines.push({ text: c, from: t, to: t + d });
+            t += d;
+          }
+        }
+      }
+      if (!lines.length) {
+        for (const [i, slide] of slides.entries()) {
+          const chunks = captionChunks(slide.narration);
+          const chars = chunks.reduce((a, c) => a + c.length, 0) || 1;
+          let t = start[i] + LEAD;
+          for (const c of chunks) {
+            const d = (talk[i] * c.length) / chars;
+            lines.push({ text: c, from: t, to: t + d });
+            t += d;
+          }
         }
       }
       await writeFile(path.join(dir, "captions.json"), JSON.stringify({ kind: "captions", width: w, height: h, chunks: lines.map((x) => x.text) }));
@@ -557,6 +606,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       for (const [i, slide] of slides.entries()) args.push("-loop", "1", "-framerate", "30", "-t", dur[i].toFixed(3), "-i", path.join(dirs.images, slide.image));
       for (const k of lines.keys()) args.push("-loop", "1", "-framerate", "30", "-t", total.toFixed(3), "-i", path.join(dir, "caps", `cap${k + 1}.png`));
       for (const v of voices) args.push("-i", v);
+      if (own) args.push("-i", own);
       const f = slides.map((_, i) => `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30,format=yuv420p[v${i}]`);
       let last = "v0";
       for (let i = 1; i < n; i++) {
@@ -568,7 +618,10 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
         last = `o${k}`;
       }
       const map = ["-map", `[${last}]`];
-      if (voices.length) {
+      if (own) {
+        f.push(`[${n + lines.length}:a]atrim=0:${total.toFixed(3)},asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo[aout]`);
+        map.push("-map", "[aout]", "-c:a", "aac", "-b:a", "160k");
+      } else if (voices.length) {
         const a0 = n + lines.length;
         voices.forEach((_, i) => {
           const len = i < n - 1 ? dur[i] - FADE : dur[i];

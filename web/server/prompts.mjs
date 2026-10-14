@@ -85,6 +85,13 @@ export function slideRoles(layout, realCount, count = 6) {
 
 /** "Phở đặc biệt - $14.95" per line → [{ name, price }]; a price only when the user wrote one. */
 export function parseDishes(raw) {
+  // A retried job sends back the list it already parsed: keep it as it is.
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((d) => d && typeof d === "object" && String(d.name ?? "").trim())
+      .slice(0, 4)
+      .map((d) => ({ name: String(d.name).trim().slice(0, 40), price: String(d.price ?? "").replace(/\s+/g, "").slice(0, 16) }));
+  }
   return String(raw ?? "")
     .split("\n")
     .map((l) => l.trim())
@@ -298,7 +305,8 @@ function buildSpec(type, raw, refs) {
       const common = [`Phong cách hình ảnh: ${VIDEO_STYLES[style]}`, `Tone cảm xúc: ${VIDEO_TONES[tone]}`, `Khung hình: ${ratio}`];
       if (brief) common.push(`Thông tin thêm:\n${brief}`);
       const audio = raw.audio === "music" ? "music" : "voice";
-      const base = { mode, ratio, voice, style, tone, brief, audio };
+      const audioId = mode !== "slideshow" && audio === "voice" && raw.audioId ? upload(raw.audioId, "Giọng đọc của bạn") : null;
+      const base = { mode, ratio, voice, style, tone, brief, audio, audioId, review: raw.review !== false };
       const kind = raw.kind === "showcase" ? "showcase" : "story";
       base.kind = kind;
       if (kind === "showcase") common.push("LOẠI VIDEO: Showcase (food and place) theo skill: không có nhân vật chính, không có cảnh người kể, món ăn và không gian quán là chủ thể của mọi cảnh.");
@@ -352,7 +360,7 @@ function buildSpec(type, raw, refs) {
           agent: "writer",
           direct: "image-prompter",
           title: `Video trình chiếu ${seconds}s · ${topic.slice(0, 60)}`,
-          input: { mode, ratio, style, brief, seconds, count, layout, topic, audio: "music", review: raw.review !== false, ...card, photoIds, ai, dishes, offer },
+          input: { mode, ratio, style, brief, seconds, count, layout, topic, audio: "music", audioId: raw.audioId ? upload(raw.audioId, "Âm thanh của bạn") : null, review: raw.review !== false, ...card, photoIds, ai, dishes, offer },
           prompt: [
             ...plan,
             "Mỗi \"prompt\" (tiếng Anh, dưới 60 từ) mở đầu bằng cỡ cảnh (wide shot / overhead / medium shot / close-up) rồi tả một bức ảnh TĨNH chụp thật như của nhiếp ảnh gia: ánh sáng tự nhiên ấm, đồng bộ màu giữa các ảnh, nội thất, bát đĩa và trang trí đúng phong cách của CHÍNH loại quán này (quán BBQ Texas thì gỗ mộc, gạch, đèn công nghiệp; quán phở thì kiểu quán Việt; quán pizza Ý thì kiểu Ý), không mượn phong cách của loại quán khác. TUYỆT ĐỐI không có người, mặt, tay, xe cộ, động vật, chữ, logo; ảnh bên ngoài ghi rõ \"empty street, no cars, no people, blank sign\". KHÔNG ghi tên quán hay bất kỳ chữ nào trong prompt (model vẽ ảnh sẽ cố viết chữ đó lên ảnh và bị méo).",
@@ -627,6 +635,15 @@ function buildSpec(type, raw, refs) {
       };
     }
 
+    case "live-recap": {
+      const videoId = String(raw.videoId ?? "");
+      if (!refs.hasUpload?.(videoId)) throw new InputError("Video chưa được tải lên hoặc đã hết hạn. Hãy chọn lại video.");
+      const count = Math.min(5, Math.max(1, Number(raw.count) || 3));
+      const ratio = raw.ratio === "16:9" ? "16:9" : "9:16";
+      const lang = raw.lang === "en" ? "en" : "vi";
+      return { agent: "writer", direct: "live-recap", title: `Tóm tắt livestream · ${count} đoạn`, input: { videoId, count, ratio, lang }, prompt: "" }; // filled from the transcript by prepare.mjs
+    }
+
     case "reel-cut": {
       const videoId = String(raw.videoId ?? "");
       if (!refs.hasUpload?.(videoId)) throw new InputError("Video chưa được tải lên hoặc đã hết hạn. Hãy chọn lại video.");
@@ -641,6 +658,17 @@ function buildSpec(type, raw, refs) {
         input: { videoId, count, clipSeconds, lang, ratio },
         prompt: "", // filled in from the transcript by prepare.mjs
       };
+    }
+
+    case "post-score": {
+      const post = str(raw.post, "bài viết", { required: true, max: 3000 });
+      const business = str(raw.business, "quán", { max: 200 });
+      const platform = str(raw.platform, "nền tảng", { max: 60 });
+      const sections = ["Chấm điểm và sửa bài viết dưới đây theo skill post-scorer, bằng tiếng Việt."];
+      if (business) sections.push(`Quán: ${business}`);
+      if (platform) sections.push(`Đăng trên: ${platform}`);
+      sections.push(`Bài viết:\n<<<BÀI\n${post}\nBÀI>>>`);
+      return { agent: "writer", direct: "post-scorer", title: `Chấm bài · ${post.replace(/\s+/g, " ").slice(0, 50)}`, input: { post, business, platform }, prompt: sections.join("\n\n") };
     }
 
     case "dish-riddle": {

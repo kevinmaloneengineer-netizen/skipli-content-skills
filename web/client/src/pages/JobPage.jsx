@@ -318,6 +318,7 @@ function ClipsResult({ job }) {
         <h2>{job.title}</h2>
         <p className="hint">{job.clips.length} đoạn, mỗi đoạn là một file MP4 riêng</p>
       </header>
+      {job.recap && <Recap recap={job.recap} />}
       <div className="clips-grid">
         {job.clips.map((c, i) => (
           <article key={c.file} className="clip-card">
@@ -332,6 +333,26 @@ function ClipsResult({ job }) {
     </section>
   );
 }
+/** Livestream recap: what happened, what was talked about, and the thank-you post ready to copy. */
+function Recap({ recap }) {
+  const copy = useCopy();
+  return (
+    <div className="recap">
+      <h3>Tóm tắt buổi live</h3>
+      <p>{recap.summary}</p>
+      {recap.items?.length > 0 && (
+        <>
+          <h3>Món và sản phẩm được nhắc</h3>
+          <ul>{recap.items.map((x) => <li key={x}>{x}</li>)}</ul>
+        </>
+      )}
+      <h3>Bài cảm ơn</h3>
+      <p className="recap-post">{recap.post}</p>
+      <button type="button" className="btn small" onClick={() => copy(recap.post)}>Sao chép bài cảm ơn</button>
+    </div>
+  );
+}
+
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
 /** Caption + hashtags written with a slideshow, ready to paste under the video. */
@@ -487,7 +508,7 @@ export function Result({ job, onSave, edits, setEdits }) {
     return <ReelsResult markdown={job.result} clips={clips} />;
   }
   if (job.type === "video" && job.video) return <VideoResult job={job} />;
-  if ((job.type === "reel-cut" || job.type === "dub") && job.clips) return <ClipsResult job={job} />;
+  if (["reel-cut", "dub", "live-recap"].includes(job.type) && job.clips) return <ClipsResult job={job} />;
   return <Markdown className="card md">{job.result}</Markdown>;
 }
 

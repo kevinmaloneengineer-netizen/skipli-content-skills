@@ -391,7 +391,166 @@ function Instagram() {
   );
 }
 
-const ART = { "reel-cut": Reels, dub: Video, "dish-riddle": Threads, "story-behind": Write, "weather-post": Fanpage, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+// ---- the newer tools: each one its own picture ----
+
+/** Cắt Reels: a long film strip, scissors, and the short vertical clips cut from it. */
+function ReelCut() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(26 50)">
+        <rect width="150" height="50" rx="8" className="art-card" />
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => <rect key={i} x={8 + i * 20} y="6" width="12" height="6" rx="2" className="art-mid" />)}
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => <rect key={`b${i}`} x={8 + i * 20} y="38" width="12" height="6" rx="2" className="art-mid" />)}
+        <rect x="8" y="16" width="134" height="18" rx="4" className="art-mid" />
+        <path d="M96 4 v42" strokeWidth="3" strokeDasharray="5 4" className="art-stroke" />
+      </g>
+      <g transform="translate(150 22) rotate(-20)">
+        <circle cx="8" cy="8" r="8" fill="none" strokeWidth="4" className="art-stroke" />
+        <circle cx="8" cy="34" r="8" fill="none" strokeWidth="4" className="art-stroke" />
+        <path d="M14 13 l30 14 M14 29 l30 -14" strokeWidth="4" strokeLinecap="round" className="art-stroke" />
+      </g>
+      {[0, 1].map((i) => (
+        <g key={i} transform={`translate(${212 + i * 46} ${24 + i * 8}) rotate(${i ? 6 : -4} 20 50)`}>
+          <rect width="40" height="96" rx="8" className={i ? "art-hi" : "art-card"} />
+          <path d="M14 40 l14 8 -14 8z" className="art-fg" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** Lồng tiếng: a video with a subtitle bar, the speech turning from VI into EN. */
+function Dub() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(40 22)">
+        <rect width="150" height="106" rx="14" className="art-card" />
+        <rect x="10" y="10" width="130" height="64" rx="9" className="art-mid" />
+        <path d="M66 30 l18 12 -18 12z" className="art-fg" />
+        <rect x="22" y="82" width="106" height="12" rx="6" className="art-hi" />
+      </g>
+      <g transform="translate(206 26)">
+        <rect width="62" height="34" rx="12" className="art-card" />
+        <text x="31" y="23" textAnchor="middle" className="art-label" style={{ fill: "var(--art-fg)" }}>VI</text>
+      </g>
+      <path d="M236 66 v16 m-8 -8 l8 8 l8 -8" fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="art-stroke" />
+      <g transform="translate(206 90)">
+        <rect width="62" height="34" rx="12" className="art-fg" />
+        <text x="31" y="23" textAnchor="middle" className="art-label" style={{ fill: "var(--art-card)" }}>EN</text>
+      </g>
+    </svg>
+  );
+}
+
+/** Đoán món: a bowl under a big question mark, three answers to pick from. */
+function DishRiddle() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(48 30)">
+        <path d="M0 50 h120 a60 44 0 0 1 -120 0z" className="art-card" />
+        <ellipse cx="60" cy="50" rx="60" ry="10" className="art-mid" />
+        <path d="M30 34 q8 -16 0 -30 M58 30 q8 -16 0 -30 M86 34 q8 -16 0 -30" fill="none" strokeWidth="4" strokeLinecap="round" className="art-stroke" />
+      </g>
+      <text x="196" y="74" textAnchor="middle" className="art-big">?</text>
+      {[0, 1, 2].map((i) => (
+        <g key={i} transform={`translate(222 ${26 + i * 34})`}>
+          <rect width="68" height="24" rx="12" className={i === 1 ? "art-hi" : "art-card"} />
+          <circle cx="12" cy="12" r="5" className={i === 1 ? "art-fg" : "art-mid"} />
+          <rect x="22" y="9" width={[34, 28, 38][i]} height="6" rx="3" className="art-mid" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** Câu chuyện công thức: an open recipe book with a heart and a quote. */
+function RecipeStory() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(56 26)">
+        <path d="M0 8 q50 -16 100 4 v96 q-50 -20 -100 -4z" className="art-card" />
+        <path d="M100 12 q50 -20 100 -4 v96 q-50 -16 -100 4z" className="art-mid" />
+        {[24, 38, 52, 66].map((y, i) => <rect key={y} x="16" y={y} width={[66, 58, 70, 44][i]} height="6" rx="3" className="art-mid" />)}
+        <text x="150" y="62" textAnchor="middle" className="art-big" style={{ fontSize: 46 }}>“</text>
+        <path d="M150 88 c-10 -10 -20 -2 -10 8 l10 9 10 -9 c10 -10 0 -18 -10 -8z" className="art-hi" />
+      </g>
+    </svg>
+  );
+}
+
+/** Thời tiết thành bài đăng: sun and a rain cloud beside a post card. */
+function WeatherPost() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(40 24)">
+        <circle cx="40" cy="36" r="22" className="art-hi" />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+          <rect key={a} x="38" y="2" width="4" height="9" rx="2" className="art-hi" transform={`rotate(${a} 40 36)`} />
+        ))}
+        <path d="M30 86 a18 18 0 0 1 16 -26 a24 24 0 0 1 44 6 a14 14 0 0 1 4 28 h-58 a14 14 0 0 1 -6 -8z" className="art-card" />
+        {[0, 1, 2].map((i) => <path key={i} d={`M${42 + i * 18} 102 l-5 12`} strokeWidth="4" strokeLinecap="round" className="art-stroke" />)}
+      </g>
+      <g transform="translate(176 24)">
+        <rect width="110" height="102" rx="12" className="art-card" />
+        <rect x="12" y="12" width="86" height="40" rx="8" className="art-mid" />
+        <rect x="12" y="62" width="70" height="7" rx="3.5" className="art-mid" />
+        <rect x="12" y="76" width="52" height="7" rx="3.5" className="art-mid" />
+        <text x="96" y="88" textAnchor="end" className="art-label" style={{ fill: "var(--art-fg)" }}>31°</text>
+      </g>
+    </svg>
+  );
+}
+
+/** Chấm điểm bài: a post with a score badge and ticks on its lines. */
+function PostScore() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(52 20)">
+        <rect width="148" height="110" rx="12" className="art-card" />
+        {[18, 40, 62, 84].map((y, i) => (
+          <g key={y}>
+            <path d={`M14 ${y + 4} l5 5 9 -10`} fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className={i === 2 ? "art-stroke-hi" : "art-stroke"} />
+            <rect x="36" y={y} width={[96, 80, 88, 60][i]} height="8" rx="4" className="art-mid" />
+          </g>
+        ))}
+      </g>
+      <g transform="translate(214 36)">
+        <circle cx="38" cy="38" r="38" className="art-fg" />
+        <circle cx="38" cy="38" r="30" fill="none" strokeWidth="6" strokeDasharray="150 190" transform="rotate(-90 38 38)" style={{ stroke: "var(--art-hi)" }} />
+        <text x="38" y="45" textAnchor="middle" className="art-label" style={{ fill: "var(--art-card)", fontSize: 20 }}>8/10</text>
+      </g>
+    </svg>
+  );
+}
+
+/** Tóm tắt sau livestream: the finished live (dimmed), an arrow, and the clips and recap made from it. */
+function LiveRecap() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(30 28)" opacity=".75">
+        <rect width="112" height="84" rx="12" className="art-card" />
+        <rect x="8" y="8" width="96" height="58" rx="8" className="art-mid" />
+        <rect x="14" y="14" width="38" height="16" rx="8" className="art-hi" />
+        <text x="33" y="26" textAnchor="middle" className="art-live">LIVE</text>
+        <rect x="8" y="72" width="96" height="5" rx="2.5" className="art-hi" />
+      </g>
+      <path d="M152 70 h26 m-9 -9 l9 9 -9 9" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className="art-stroke" />
+      {[0, 1].map((i) => (
+        <g key={i} transform={`translate(${190 + i * 38} ${22 + i * 6})`}>
+          <rect width="32" height="62" rx="7" className={i ? "art-hi" : "art-card"} />
+          <path d="M11 24 l12 7 -12 7z" className="art-fg" />
+        </g>
+      ))}
+      <g transform="translate(190 96)">
+        <rect width="96" height="30" rx="10" className="art-card" />
+        <path d="M12 15 l5 5 9 -10" fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="art-stroke" />
+        <rect x="34" y="12" width="48" height="6" rx="3" className="art-mid" />
+      </g>
+    </svg>
+  );
+}
+
+const ART = { "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

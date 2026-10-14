@@ -7,7 +7,7 @@ import path from "node:path";
 import { buildJob, InputError } from "../server/prompts.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { captionChunks, createVideoService, parseScript, stillPrompt, VideoError } from "../server/video.mjs";
+import { captionChunks, createVideoService, parseScript, stillPrompt, VideoError, withOwnAudio } from "../server/video.mjs";
 
 const run = promisify(execFile);
 
@@ -128,4 +128,24 @@ test("finish without a connected GPU fails with a clear message", async () => {
   const video = createVideoService({ dataDir, timeoutMs: 1000, mock: false });
   await video.init();
   await assert.rejects(video.finish({ id: "x", type: "video", input: {} }, script(2), { setPhase: async () => {}, signal: new AbortController().signal }), /Chưa kết nối GPU/);
+});
+
+test("withOwnAudio: a short track is looped under the whole video and cut to its length", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "own-"));
+  const video = path.join(dir, "v.mp4");
+  const audio = path.join(dir, "a.mp3");
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=320x568:r=10:d=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", video]);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=440:d=2", audio]);
+  const seconds = await withOwnAudio(video, audio);
+  assert.ok(Math.abs(seconds - 6) < 0.2, `length ${seconds}`);
+  const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "csv=p=0", video]);
+  assert.match(stdout, /audio/, "the video now has the sound");
+  const audioDur = Number((await run("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=duration", "-of", "csv=p=0", video])).stdout);
+  assert.ok(audioDur > 5.5, `the 2 s track was looped to ${audioDur} s`);
+});
+
+test("slideshow: an uploaded audio is kept on the job; a missing upload is refused", () => {
+  const ok = buildJob("video", { mode: "slideshow", topic: "Smokey Joe's BBQ", audioId: "11111111-2222-3333-4444-555555555555.mp3" }, { hasUpload: () => true });
+  assert.equal(ok.input.audioId, "11111111-2222-3333-4444-555555555555.mp3");
+  assert.throws(() => buildJob("video", { mode: "slideshow", topic: "x", audioId: "gone.mp3" }, { hasUpload: () => false }), InputError);
 });

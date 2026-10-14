@@ -58,3 +58,24 @@ test("finishReels: each span becomes a 9:16 MP4 of the asked length, the result 
   assert.equal(wide.trim(), "1280,720");
   assert.ok((await readFile(path.join(videos, "wide.mp4"))).length > 1000);
 });
+
+test("live recap: needs an upload; the JSON gives clips, summary, items and the thank-you post", async () => {
+  assert.throws(() => buildJob("live-recap", { videoId: ID }, { hasUpload: () => false }), InputError);
+  assert.deepEqual(buildJob("live-recap", { videoId: ID, count: 9 }, yes).input, { videoId: ID, count: 5, ratio: "9:16", lang: "vi" });
+  const { parseRecap } = await import("../server/clipper.mjs");
+  const r = parseRecap('{"clips":[{"title":"A","start":1,"end":8}],"summary":"Buổi live giới thiệu phở.","items":["Phở bò 65.000đ",""],"post":"Cảm ơn cả nhà!"}');
+  assert.deepEqual(r.items, ["Phở bò 65.000đ"]);
+  assert.equal(r.post, "Cảm ơn cả nhà!");
+  assert.throws(() => parseRecap('{"clips":[{"title":"A","start":1,"end":8}],"summary":"","post":""}'), ClipError);
+
+  const root = await mkdtemp(path.join(tmpdir(), "recap-"));
+  const uploads = path.join(root, "uploads");
+  await mkdir(uploads);
+  await run("ffmpeg", ["-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=10:d=12", "-f", "lavfi", "-i", "sine=f=330:d=12", "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", path.join(uploads, ID)]);
+  const clipper = createClipper({ dir: uploads, outDir: path.join(root, "videos") });
+  const out = await clipper.finishRecap({ id: "live-1", input: { videoId: ID, ratio: "9:16" } }, '{"clips":[{"title":"Phở","start":1,"end":8,"why":"món chính"}],"summary":"Buổi live giới thiệu phở.","items":["Phở bò"],"post":"Cảm ơn cả nhà!"}', { setPhase: async () => {}, signal: new AbortController().signal });
+  assert.equal(out.fields.clips.length, 1);
+  assert.deepEqual(out.fields.recap, { summary: "Buổi live giới thiệu phở.", items: ["Phở bò"], post: "Cảm ơn cả nhà!" });
+  assert.match(out.result, /### Tóm tắt buổi live\n\nBuổi live giới thiệu phở\./);
+  assert.match(out.result, /### Bài cảm ơn\n\nCảm ơn cả nhà!/);
+});

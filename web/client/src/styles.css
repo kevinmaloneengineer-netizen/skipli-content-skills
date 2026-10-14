@@ -648,6 +648,7 @@ button.sticker-inner:focus-visible { outline: 2px solid #e25d33; outline-offset:
 .art-hi { fill: var(--art-hi); }
 .art-fg { fill: var(--art-fg); }
 .art-stroke { stroke: var(--art-hi); }
+.art-big { fill: var(--art-hi); font: 700 72px var(--display); }
 .art-label { fill: var(--art-bg); font: 600 13px var(--text); }
 .art-live { fill: var(--art-fg); font: 700 11px var(--text); letter-spacing: .06em; }
 .art-stroke-fg { stroke: var(--art-fg); }
@@ -2620,3 +2621,20 @@ html[data-on-dark] .running-pill .pulse::after { background: none; }
   .dash-hero { grid-template-columns: 1fr; padding: 26px 22px; }
   .dash-grid { grid-template-columns: 1fr; }
 }
+.recap { display: grid; gap: 6px; margin-bottom: 18px; padding: 16px 18px; border-radius: 18px; background: var(--surface-2); }
+.recap h3 { margin: 6px 0 0; font-size: 14.5px; }
+.recap p, .recap ul { margin: 0; line-height: 1.55; }
+.recap-post { white-space: pre-wrap; }
+.recap .btn { justify-self: start; margin-top: 4px; }
+
+/* A chosen file: a solid card with its icon, name and size, a × to remove it, and a player for audio */
+.file-pick.has-file { flex-wrap: wrap; justify-content: flex-start; gap: 12px; min-height: 76px; padding: 14px 16px; border-style: solid; border-color: color-mix(in srgb, var(--tone, var(--ink)) 55%, var(--line)); background: color-mix(in srgb, var(--tone, var(--ink)) 7%, var(--field)); color: var(--ink); text-align: left; cursor: default; }
+.file-pick.has-file:hover { color: var(--ink); }
+.file-icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--tone, var(--ink)); color: var(--tone-on, #fff); }
+.file-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.file-meta { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.file-meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; }
+.file-meta small { color: var(--muted); font-size: 12.5px; }
+.file-clear { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--surface); color: var(--muted); font: inherit; font-size: 20px; line-height: 1; cursor: pointer; }
+.file-clear:hover { color: var(--err); background: var(--err-soft); }
+.file-audio { flex-basis: 100%; width: 100%; height: 36px; }

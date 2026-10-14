@@ -5,6 +5,8 @@ import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
 import { getLang } from "../lib/i18n.js";
 import { cutGrid, loadImage, upload } from "../lib/image.js";
+import { uploadAudio } from "../lib/api.js";
+import FilePick from "../components/FilePick.jsx";
 
 const MODES = { slideshow: "Trình chiếu ảnh", topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
 const SLIDE_SECONDS = { 15: "15 giây", 30: "30 giây" };
@@ -124,6 +126,8 @@ export default function VideoPage() {
     if (mode === "slideshow") setForm((f) => ({ ...f, seconds: f.seconds === "30" && f.topic ? f.seconds : "15" })); // slideshows default to 15 s
   }, [mode]);
   const [panels, setPanels] = useState([]);
+  const [ownVoice, setOwnVoice] = useState(null); // the viewer's own narration, instead of the AI voice
+  const [voiceError, setVoiceError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [localError, setLocalError] = useState("");
   const [submit, busy, error] = useSubmitJob("video");
@@ -142,6 +146,11 @@ export default function VideoPage() {
     try {
       const input = { mode, ...form, audio: mode === "story" ? "voice" : form.audio, seconds: Number(form.seconds), narratorPct: Number(form.narratorPct) };
       if (mode === "storyboard") input.panelIds = await Promise.all(panels.map(upload));
+      if (ownVoice && (mode === "slideshow" || input.audio === "voice")) {
+        const up = await uploadAudio(ownVoice, mode === "slideshow" ? "music" : "voice");
+        input.audioId = up.id;
+        if (mode !== "slideshow") input.seconds = Math.round(up.seconds); // a narrated video lasts as long as the recording
+      }
       else if (mode === "slideshow") {
         if (logo) input.logoId = await upload(logo);
         if (photos.length) input.photoIds = await Promise.all(photos.map(upload));
@@ -226,6 +235,11 @@ export default function VideoPage() {
               <input type="checkbox" checked={form.review} onChange={(e) => setForm((f) => ({ ...f, review: e.target.checked }))} />
               <span>Duyệt ảnh trước khi dựng video (vẽ lại hoặc thay ảnh chưa ưng)</span>
             </label>
+            <div className="field">
+              <span className="field-label">Âm thanh của bạn (tuỳ chọn)</span>
+              <FilePick accept="audio/*,video/mp4" file={ownVoice} onChange={setOwnVoice} placeholder="Chọn nhạc hoặc giọng đọc (MP3, M4A, WAV)" kind="audio" clearLabel="Bỏ file, dùng nhạc nền tự tạo" />
+              <small>Bài dài cũng được: video dùng đoạn đầu, cắt vừa độ dài video và nhỏ dần ở cuối. Ngắn hơn video thì phát lặp lại. Chỉ dùng nhạc bạn có quyền sử dụng.</small>
+            </div>
             <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint={form.layout === "top3" || form.layout === "menu" ? "Ảnh món ăn xếp đúng thứ tự các món đã nhập ở trên. AI chỉ vẽ phần còn thiếu." : "Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ."} value={photos} onChange={setPhotos} max={form.layout !== "single" || Number(form.seconds) === 30 ? 6 : 5} />
             <fieldset className="slide-card-fields">
               <legend>Thông tin quán ở ảnh đầu (tuỳ chọn)</legend>
@@ -300,6 +314,13 @@ export default function VideoPage() {
           <input type="checkbox" checked={form.review} onChange={(e) => setForm((f) => ({ ...f, review: e.target.checked }))} />
           <span>Duyệt và thêm ảnh cho từng cảnh trước khi dựng (tuỳ chọn: ảnh của bạn thay ảnh AI vẽ)</span>
         </label>
+        {mode !== "slideshow" && form.audio === "voice" && (
+          <div className="field">
+            <span className="field-label">Giọng đọc của bạn (tuỳ chọn)</span>
+            <FilePick accept="audio/*,video/mp4" file={ownVoice} onChange={(f) => { setOwnVoice(f); setVoiceError(""); }} placeholder="Chọn file ghi âm (MP3, M4A, WAV, tối đa 90 giây)" kind="audio" clearLabel="Bỏ file, dùng giọng AI" />
+            {voiceError && <p className="form-error">{voiceError}</p>}
+          </div>
+        )}
         {mode !== "story" && form.audio === "music" && <p className="hint">Không có giọng đọc: mỗi cảnh khoảng 3 giây kèm một dòng chữ ngắn (tên món, lời mời), nhạc nền vui không lời được tạo riêng cho video, không lo bản quyền.</p>}
         </>}
         {(error || localError) && <p className="form-error" role="alert">{localError || error}</p>}

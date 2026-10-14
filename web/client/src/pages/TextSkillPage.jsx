@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Field, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { crop, loadImage, upload } from "../lib/image.js";
+import FilePick from "../components/FilePick.jsx";
 
 /** A form with a few text fields that submits one job; the page is set by its config (lib/textSkills.js). */
 export default function TextSkillPage({ config }) {
@@ -46,10 +47,7 @@ export default function TextSkillPage({ config }) {
         {config.photo && (
           <div className="field">
             <span className="field-label">Ảnh món (tuỳ chọn)</span>
-            <label className="file-pick">
-              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => { setPhoto(e.target.files?.[0] ?? null); setPhotoError(""); }} disabled={busy || uploading} />
-              <span>{photo ? photo.name : "Chọn ảnh món từ máy"}</span>
-            </label>
+            <FilePick accept="image/png,image/jpeg,image/webp" file={photo} onChange={(f) => { setPhoto(f); setPhotoError(""); }} placeholder="Chọn ảnh món từ máy" kind="image" disabled={busy || uploading} />
           </div>
         )}
         {(photoError || error) && <p className="form-error" role="alert">{photoError || error}</p>}

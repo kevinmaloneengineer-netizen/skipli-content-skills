@@ -1,5 +1,16 @@
 // Forms of the text-only skills, all on TextSkillPage: the fields the request needs and the page's notes.
 export const TEXT_SKILLS = {
+  "post-score": {
+    type: "post-score",
+    label: "Chấm điểm bài",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "post", kind: "area", label: "Bài viết sắp đăng", placeholder: "Dán bài viết vào đây…", required: true },
+      { name: "business", label: "Quán (tuỳ chọn)", placeholder: "Phở Cali, Quận 1" },
+      { name: "platform", label: "Đăng trên (tuỳ chọn)", placeholder: "Facebook, Instagram, TikTok, Threads" },
+    ],
+    notes: ["Điểm từng phần: câu mở đầu, nội dung, lời kêu gọi, độ dài, hashtag.", "Có danh sách sửa nhanh và bản đã sửa, giữ nguyên giá và ưu đãi của bạn."],
+  },
   "dish-riddle": {
     type: "dish-riddle",
     label: "Tạo bài đố",

@@ -276,6 +276,22 @@ async function reelsPrompt(job, { setPhase, signal }) {
   };
 }
 
+/** Tóm tắt livestream: the timed speech goes to the model, which picks clips and writes the recap. */
+async function recapPrompt(job, { setPhase, signal }) {
+  const input = job.input ?? {};
+  if (!reelsClipper) throw new Error("Chưa bật xử lý video.");
+  await setPhase("Đang nghe lời trong buổi live…");
+  const { segments } = await reelsClipper.transcriptOf(input.videoId, { language: input.lang, signal });
+  const lines = segments.map((x) => `[${x.start.toFixed(1)} - ${x.end.toFixed(1)}] ${x.text}`).join("\n");
+  return {
+    prompt: [
+      `Lời của buổi livestream, mỗi dòng có mốc thời gian (giây):\n${lines}`,
+      `Theo skill live-recap: chọn ${input.count} đoạn hay nhất, tóm tắt buổi live, liệt kê món hoặc sản phẩm được nhắc, và viết bài cảm ơn. Viết bằng ${input.lang === "en" ? "tiếng Anh" : "tiếng Việt"}.`,
+      'Chỉ trả về MỘT khối JSON đúng dạng: {"clips":[{"title":"…","start":12.3,"end":41.0,"why":"…"}],"summary":"…","items":["…"],"post":"…"}',
+    ].join("\n\n"),
+  };
+}
+
 /** Lồng tiếng: each speech is translated in place, so the lines keep their timing. */
 async function dubPrompt(job, { setPhase, signal }) {
   const input = job.input ?? {};
@@ -453,6 +469,7 @@ export function createPreparer({ facebook, mock = false, clipsDir = null, clippe
     if (job.type === "compare") return comparePrompt(input, { setPhase, signal });
     if (job.type === "campaign") return campaignPrompt(job, { setPhase, signal });
     if (job.type === "reel-cut") return reelsPrompt(job, { setPhase, signal });
+    if (job.type === "live-recap") return recapPrompt(job, { setPhase, signal });
     if (job.type === "dub") return dubPrompt(job, { setPhase, signal });
     if (job.type === "weather-post") return weatherPrompt(job, { setPhase, signal });
     if (job.type === "dish-riddle") return riddlePrompt(job, { setPhase, signal });

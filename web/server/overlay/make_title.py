@@ -203,7 +203,9 @@ def search_bar(w, u, color, query):
 def layers(spec, out_dir):
     """Static layers of one animated scene + their places: out_dir/layers.json lists {file, x, y, anim, delay}."""
     w, h = int(spec["width"]), int(spec["height"])
-    u = w / 100
+    # Layout unit: 1% of the width of a 9:16 frame of this height. A portrait frame keeps 1% of its width;
+    # a wide or square frame gets smaller type, so the words do not cover the photo.
+    u = min(w, h * 9 / 16) / 100
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     logo_path = spec.get("logo")

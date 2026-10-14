@@ -22,6 +22,7 @@ import VideoPage from "./pages/VideoPage.jsx";
 import WritePage from "./pages/WritePage.jsx";
 import HashtagPage from "./pages/HashtagPage.jsx";
 import CutReelsPage from "./pages/CutReelsPage.jsx";
+import LiveRecapPage from "./pages/LiveRecapPage.jsx";
 import DubPage from "./pages/DubPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import TextSkillPage from "./pages/TextSkillPage.jsx";
@@ -71,8 +72,10 @@ export default function App() {
               <Route path="inbox" element={<InboxPage />} />
               <Route path="hashtag" element={<HashtagPage />} />
               <Route path="cut-reels" element={<CutReelsPage />} />
+              <Route path="live-recap" element={<LiveRecapPage />} />
               <Route path="dub" element={<DubPage />} />
               <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="post-score" element={<TextSkillPage config={TEXT_SKILLS["post-score"]} />} />
               <Route path="dish-riddle" element={<TextSkillPage config={TEXT_SKILLS["dish-riddle"]} />} />
               <Route path="story-behind" element={<TextSkillPage config={TEXT_SKILLS["story-behind"]} />} />
               <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />

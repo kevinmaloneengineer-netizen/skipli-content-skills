@@ -18,3 +18,26 @@ test("dish-riddle, story-behind, weather-post: required fields checked, skill na
   assert.equal(weather.direct, "weather-post");
   assert.equal(weather.input.city, "Hà Nội");
 });
+
+test("video: the review checkbox reaches the job input of the narrated modes", () => {
+  const off = buildJob("video", { mode: "topic", topic: "Phở bò", review: false });
+  assert.equal(off.input.review, false);
+  assert.equal(buildJob("video", { mode: "topic", topic: "Phở bò" }).input.review, true, "on by default");
+});
+
+test("post-score: the post is required and goes into the prompt between markers", () => {
+  assert.throws(() => buildJob("post-score", { business: "Phở Cali" }), InputError);
+  const job = buildJob("post-score", { post: "Phở ngon lắm, ghé nha!", platform: "Facebook" });
+  assert.equal(job.direct, "post-scorer");
+  assert.match(job.prompt, /<<<BÀI\nPhở ngon lắm, ghé nha!\nBÀI>>>/);
+});
+
+test("parseDishes: typed lines and an already parsed list (a retried job) give the same dishes", async () => {
+  const { parseDishes } = await import("../server/prompts.mjs");
+  const typed = parseDishes("Smoked Brisket - $24\nPork Spare Ribs - $21\nMac and Cheese - $7");
+  assert.deepEqual(typed, [{ name: "Smoked Brisket", price: "$24" }, { name: "Pork Spare Ribs", price: "$21" }, { name: "Mac and Cheese", price: "$7" }]);
+  assert.deepEqual(parseDishes(typed), typed);
+  const retried = buildJob("video", { mode: "slideshow", topic: "Smokey Joe's BBQ", layout: "top3", dishes: typed });
+  assert.deepEqual(retried.input.dishes, typed);
+  assert.doesNotMatch(retried.prompt, /object Object/);
+});
