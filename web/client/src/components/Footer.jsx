@@ -4,7 +4,7 @@ import { api } from "../lib/api.js";
 import { CATEGORIES, skillById } from "../lib/constants.js";
 import { FAQ } from "../lib/workflows.js";
 import HealthStatus from "./HealthStatus.jsx";
-import { logout, useAuth } from "./AuthGate.jsx";
+import { loginPath, logout, useAuth } from "./AuthGate.jsx";
 
 const GROUPS = CATEGORIES.map((c) => ({ ...c, items: c.skills.map(skillById).filter(Boolean) }));
 
@@ -74,7 +74,8 @@ export const openSupport = () => window.dispatchEvent(new Event("open-support"))
 
 export default function Footer() {
   const [support, setSupport] = useState(false);
-  const locked = useAuth().mode !== "open"; // a password or accounts: offer "Đăng xuất"
+  const { mode, guest } = useAuth();
+  const locked = mode !== "open" && !guest; // signed in with a password or an account: offer "Đăng xuất"
   useEffect(() => {
     const open = () => setSupport(true);
     window.addEventListener("open-support", open);
@@ -91,7 +92,7 @@ export default function Footer() {
             </span>
           </Link>
           <p>Nghiên cứu đối thủ, viết bài, dựng video và lên kịch bản bán hàng. Một chỗ cho mọi việc content của nhà bán hàng Việt.</p>
-          <HealthStatus />
+          {!guest && <HealthStatus />}
         </div>
         {GROUPS.map((g) => (
           <nav key={g.id} className="foot-col" aria-label={g.title}>
@@ -106,10 +107,16 @@ export default function Footer() {
         ))}
         <nav className="foot-col" aria-label="Của bạn">
           <h3>Của bạn</h3>
-          <Link to="/history">Lịch sử chạy</Link>
-          <Link to="/library?kind=saved">Bài đã lưu</Link>
-          <Link to="/library?kind=template">Mẫu content</Link>
-          <button type="button" className="foot-link" onClick={() => setSupport(true)}>Hỗ trợ và góp ý</button>
+          {guest ? (
+            <Link to={loginPath("/")}>Đăng nhập</Link>
+          ) : (
+            <>
+              <Link to="/history">Lịch sử chạy</Link>
+              <Link to="/library?kind=saved">Bài đã lưu</Link>
+              <Link to="/library?kind=template">Mẫu content</Link>
+              <button type="button" className="foot-link" onClick={() => setSupport(true)}>Hỗ trợ và góp ý</button>
+            </>
+          )}
           {locked && <button type="button" className="foot-link" onClick={logout}>Đăng xuất</button>}
         </nav>
       </div>

@@ -14,5 +14,9 @@ test("dashboard: runs, results, tokens and the last run per skill; watch rows le
   assert.deepEqual(d.byType.write, { runs: 2, done: 1, failed: 1, live: 0, tokens: 1000, last: "2026-10-13T02:00:00Z" });
   assert.equal(d.byType.dub.live, 1);
   assert.equal(d.byType.watch, undefined);
-  assert.deepEqual(dashboard([]), { totals: { runs: 0, today: 0, done: 0, failed: 0, live: 0, tokens: 0 }, byType: {} });
+  assert.deepEqual(dashboard([]), { totals: { runs: 0, today: 0, done: 0, failed: 0, live: 0, tokens: 0 }, byType: {}, days: [], recent: [] });
+  assert.equal(d.days.length, 14);
+  assert.deepEqual(d.days.at(-1), { day: "2026-10-13", done: 1, failed: 0 });
+  assert.deepEqual(d.days.at(-2), { day: "2026-10-12", done: 0, failed: 1 });
+  assert.deepEqual(d.recent.map((j) => j.type), ["dub", "write", "write"], "newest first, watch rows left out");
 });

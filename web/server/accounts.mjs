@@ -106,7 +106,9 @@ export function createAccounts({ store, dataDir }) {
     middleware(req, res, next) {
       req.user = userOf(req);
       if (req.user) return next();
-      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout"].includes(req.path) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      // Open without a login: the session and login calls, the page itself, and the canned sample results
+      // shown on the home page (no customer data in them).
+      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout"].includes(req.path) || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");

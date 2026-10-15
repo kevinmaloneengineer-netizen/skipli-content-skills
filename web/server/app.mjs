@@ -68,7 +68,7 @@ function passwordGate(password) {
     signedIn,
     middleware(req, res, next) {
       if (signedIn(req)) return next();
-      const open = req.path === "/api/login" || req.path === "/api/session" || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = req.path === "/api/login" || req.path === "/api/session" || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");

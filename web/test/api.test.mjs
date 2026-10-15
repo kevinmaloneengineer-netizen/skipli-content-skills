@@ -244,6 +244,10 @@ test("customer accounts: setup admin, each customer sees only their own data, ad
   try {
     assert.equal((await req("GET", "/api/session")).body.setup, true);
     assert.equal((await req("GET", "/api/jobs")).status, 401);
+    // A guest sees the home page's sample results, nothing private.
+    assert.equal((await req("GET", "/api/samples/maps")).status, 200);
+    assert.equal((await req("GET", "/api/stats")).status, 401);
+    assert.equal((await req("POST", "/api/jobs", { type: "write", input: { topic: "x" } })).status, 401);
     const admin = await req("POST", "/api/setup", { email: "Boss@Example.com", password: "admin-pass-1", name: "Boss" });
     assert.equal(admin.status, 201);
     assert.equal(admin.body.user.role, "admin");

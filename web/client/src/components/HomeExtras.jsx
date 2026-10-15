@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "./AuthGate.jsx";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { SKILLS } from "../lib/constants.js";
@@ -53,9 +54,10 @@ const STAT_ICONS = {
 export default function HomeExtras() {
   const [stats, setStats] = useState(null);
   const [ref, seen] = useSeen();
+  const { guest } = useAuth();
   useEffect(() => {
-    api("/stats").then(setStats, () => setStats(null));
-  }, []);
+    if (!guest) api("/stats").then(setStats, () => setStats(null));
+  }, [guest]);
   const ready = SKILLS.filter((s) => s.status !== "soon");
   const rows = [
     ["runs", stats?.runs, "Lần chạy hoàn tất", "Bài viết, báo cáo, video AI đã làm xong"],

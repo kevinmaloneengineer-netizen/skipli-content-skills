@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout.jsx";
-import AuthGate from "./components/AuthGate.jsx";
+import AuthGate, { LoginPage, RequireAuth } from "./components/AuthGate.jsx";
 import SamplePage from "./pages/SamplePage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 import AccountPage from "./pages/AccountPage.jsx";
@@ -52,41 +52,44 @@ export default function App() {
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
-              <Route path="fb" element={<FbScanPage />} />
-              <Route path="threads" element={<ThreadsPage />} />
-              <Route path="write" element={<WriteRoute />} />
-              <Route path="clone" element={<ClonePage />} />
-              <Route path="video" element={<VideoPage />} />
-              <Route path="fanpage" element={<FanpagePage />} />
-              <Route path="livestream" element={<LivestreamPage />} />
-              <Route path="image" element={<ImagePage />} />
-              <Route path="schedule" element={<SchedulePage />} />
-              <Route path="tiktok" element={<TiktokPage />} />
-              <Route path="compare" element={<ComparePage />} />
-              <Route path="campaign" element={<CampaignPage />} />
-              <Route path="maps" element={<MapsPage />} />
-              <Route path="yelp" element={<YelpPage />} />
-              <Route path="instagram" element={<InstagramPage />} />
-              <Route path="menu" element={<MenuPage />} />
-              <Route path="review" element={<ReviewPage />} />
-              <Route path="inbox" element={<InboxPage />} />
-              <Route path="hashtag" element={<HashtagPage />} />
-              <Route path="cut-reels" element={<CutReelsPage />} />
-              <Route path="live-recap" element={<LiveRecapPage />} />
-              <Route path="dub" element={<DubPage />} />
-              <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="post-score" element={<TextSkillPage config={TEXT_SKILLS["post-score"]} />} />
-              <Route path="dish-riddle" element={<TextSkillPage config={TEXT_SKILLS["dish-riddle"]} />} />
-              <Route path="story-behind" element={<TextSkillPage config={TEXT_SKILLS["story-behind"]} />} />
-              <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />
-              <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
-              <Route path="library" element={<LibraryPage />} />
-              <Route path="history" element={<HistoryPage />} />
-              <Route path="jobs/:id" element={<JobPage />} />
               <Route path="samples/:type" element={<SamplePage />} />
-              <Route path="admin" element={<AdminPage />} />
-              <Route path="account" element={<AccountPage />} />
-              <Route path="skills/:id" element={<ComingSoonPage />} />
+              <Route path="login" element={<LoginPage />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route element={<RequireAuth />}>
+                <Route path="fb" element={<FbScanPage />} />
+                <Route path="threads" element={<ThreadsPage />} />
+                <Route path="write" element={<WriteRoute />} />
+                <Route path="clone" element={<ClonePage />} />
+                <Route path="video" element={<VideoPage />} />
+                <Route path="fanpage" element={<FanpagePage />} />
+                <Route path="livestream" element={<LivestreamPage />} />
+                <Route path="image" element={<ImagePage />} />
+                <Route path="schedule" element={<SchedulePage />} />
+                <Route path="tiktok" element={<TiktokPage />} />
+                <Route path="compare" element={<ComparePage />} />
+                <Route path="campaign" element={<CampaignPage />} />
+                <Route path="maps" element={<MapsPage />} />
+                <Route path="yelp" element={<YelpPage />} />
+                <Route path="instagram" element={<InstagramPage />} />
+                <Route path="menu" element={<MenuPage />} />
+                <Route path="review" element={<ReviewPage />} />
+                <Route path="inbox" element={<InboxPage />} />
+                <Route path="hashtag" element={<HashtagPage />} />
+                <Route path="cut-reels" element={<CutReelsPage />} />
+                <Route path="live-recap" element={<LiveRecapPage />} />
+                <Route path="dub" element={<DubPage />} />
+                <Route path="post-score" element={<TextSkillPage config={TEXT_SKILLS["post-score"]} />} />
+                <Route path="dish-riddle" element={<TextSkillPage config={TEXT_SKILLS["dish-riddle"]} />} />
+                <Route path="story-behind" element={<TextSkillPage config={TEXT_SKILLS["story-behind"]} />} />
+                <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />
+                <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
+                <Route path="library" element={<LibraryPage />} />
+                <Route path="history" element={<HistoryPage />} />
+                <Route path="jobs/:id" element={<JobPage />} />
+                <Route path="admin" element={<AdminPage />} />
+                <Route path="account" element={<AccountPage />} />
+                <Route path="skills/:id" element={<ComingSoonPage />} />
+              </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

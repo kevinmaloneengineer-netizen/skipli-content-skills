@@ -8,6 +8,7 @@ import { FLOWS } from "../lib/workflows.js";
 import Backdrop from "./Backdrop.jsx";
 import ChatWidget from "./ChatWidget.jsx";
 import UserMenu from "./UserMenu.jsx";
+import { loginPath, useAuth } from "./AuthGate.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
 import Footer from "./Footer.jsx";
 import HealthStatus from "./HealthStatus.jsx";
@@ -148,6 +149,7 @@ function useFreshBundle(pathname) {
 }
 
 export default function Layout() {
+  const { guest } = useAuth();
   const { jobs } = useJobs();
   const running = jobs.filter((j) => ACTIVE.has(j.status)).length;
   const { pathname, search } = useLocation();
@@ -175,7 +177,7 @@ export default function Layout() {
   // ⌘K / Ctrl+K: palette anywhere. "/": tools menu with search, unless typing in a field.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !guest) {
         e.preventDefault();
         setMenu(false);
         setPalette((v) => !v);
@@ -186,7 +188,7 @@ export default function Layout() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [palette]);
+  }, [palette, guest]);
 
   useFreshBundle(pathname);
 
@@ -219,8 +221,12 @@ export default function Layout() {
             <span className="nav-caret" aria-hidden="true" />
           </button>
           <NavLink to="/dashboard"><Icon d={I.grid} />Tổng quan</NavLink>
-          <NavLink to="/history"><Icon d={I.clock} />Lịch sử</NavLink>
-          <NavLink to="/library"><Icon d={I.book} />Thư viện</NavLink>
+          {!guest && (
+            <>
+              <NavLink to="/history"><Icon d={I.clock} />Lịch sử</NavLink>
+              <NavLink to="/library"><Icon d={I.book} />Thư viện</NavLink>
+            </>
+          )}
         </nav>
         <div className="topbar-right">
           {running > 0 && (
@@ -229,14 +235,14 @@ export default function Layout() {
               {running} đang chạy
             </Link>
           )}
-          <SearchButton onOpen={() => setPalette(true)} />
+          {!guest && <SearchButton onOpen={() => setPalette(true)} />}
           <div className="icon-group">
-            <Bell />
+            {!guest && <Bell />}
             <ThemeButton dark={dark} onToggle={toggle} />
             <LangButton />
           </div>
-          <HealthStatus />
-          <UserMenu />
+          {!guest && <HealthStatus />}
+          {guest ? <Link className="btn small nav-login" to={loginPath(pathname)}>Đăng nhập</Link> : <UserMenu />}
           <span className="nav-sep" aria-hidden="true" />
           <Link className="btn primary nav-cta" to="/write"><Icon d={I.plus} />Tạo content</Link>
           <button type="button" className="nav-burger" aria-label={menu ? "Đóng menu" : "Mở menu"} aria-expanded={menu} aria-controls="tool-menu" onClick={() => setMenu((v) => !v)}>
@@ -246,12 +252,19 @@ export default function Layout() {
         {menu && (
           <div className="mega" id="tool-menu">
             <ToolMenu onPick={() => setMenu(false)} />
-            <div className="mega-foot">
-              <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.grid} />Tổng quan công cụ</Link>
-              <Link to="/history" onClick={() => setMenu(false)}><Icon d={I.clock} />Lịch sử chạy</Link>
-              <Link to="/library" onClick={() => setMenu(false)}><Icon d={I.book} />Thư viện</Link>
-              <span><kbd>⌘</kbd><kbd>K</kbd> tìm cả kết quả cũ và bài đã lưu</span>
-            </div>
+            {guest ? (
+              <div className="mega-foot">
+                <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.grid} />Tổng quan công cụ</Link>
+                <Link to={loginPath(pathname)} onClick={() => setMenu(false)}>Đăng nhập để dùng công cụ</Link>
+              </div>
+            ) : (
+              <div className="mega-foot">
+                <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.grid} />Tổng quan công cụ</Link>
+                <Link to="/history" onClick={() => setMenu(false)}><Icon d={I.clock} />Lịch sử chạy</Link>
+                <Link to="/library" onClick={() => setMenu(false)}><Icon d={I.book} />Thư viện</Link>
+                <span><kbd>⌘</kbd><kbd>K</kbd> tìm cả kết quả cũ và bài đã lưu</span>
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -259,7 +272,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
-      <ChatWidget />
+      {!guest && <ChatWidget />}
       <CommandPalette open={palette} onClose={closePalette} onToggleTheme={toggle} />
     </div>
   );

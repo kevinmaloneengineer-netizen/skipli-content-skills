@@ -33,7 +33,7 @@ export function askNotifyPermission() {
  */
 export function JobsProvider({ children }) {
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, guest } = useAuth();
   const noticeKey = user ? `notices:${user.id}` : "notices"; // one bell per account on a shared browser
   const [jobs, setJobs] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -83,10 +83,16 @@ export function JobsProvider({ children }) {
   const markRead = useCallback(() => setNotices((n) => n.map((x) => ({ ...x, read: true }))), []);
   const clearNotices = useCallback(() => setNotices([]), []);
 
+  // A guest (login required, not signed in) has no jobs: nothing to ask the server.
   useEffect(() => {
+    if (guest) {
+      clearTimeout(timer.current);
+      setJobs([]);
+      return undefined;
+    }
     refresh();
     return () => clearTimeout(timer.current);
-  }, [refresh]);
+  }, [refresh, guest]);
 
   /** Register a job the user just created so its completion is announced, then poll now. */
   const track = useCallback(
