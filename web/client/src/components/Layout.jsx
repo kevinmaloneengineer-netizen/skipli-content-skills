@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useJobs } from "../context/JobsContext.jsx";
 import { ACTIVE, CATEGORIES, skillById, skillByType, STATUS } from "../lib/constants.js";
 import { ago } from "../lib/format.js";
@@ -11,7 +11,7 @@ import UserMenu from "./UserMenu.jsx";
 import { loginPath, useAuth } from "./AuthGate.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
 import Footer from "./Footer.jsx";
-import HealthStatus from "./HealthStatus.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 import { Bell, SearchButton, ThemeButton, useTheme, LangButton } from "./NavExtras.jsx";
 
 const GROUPS = CATEGORIES.map((c) => ({ ...c, items: c.skills.map(skillById).filter(Boolean) }));
@@ -30,6 +30,7 @@ const I = {
   close: "M6 6l12 12M18 6L6 18",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-3.5-3.5",
   bolt: "M13 3L5 14h6l-1 7 8-11h-6z",
+  chart: "M4 20V11M10 20V5M16 20v-6M3 20h18",
 };
 
 /** Typing in a field: global single-key shortcuts must not fire. */
@@ -150,9 +151,11 @@ function useFreshBundle(pathname) {
 
 export default function Layout() {
   const { guest } = useAuth();
-  const { jobs } = useJobs();
+  const { jobs, credits } = useJobs();
   const running = jobs.filter((j) => ACTIVE.has(j.status)).length;
   const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const [needCredits, setNeedCredits] = useState(null); // the 402 message, while the top-up question is open
   const [menu, setMenu] = useState(false);
   const [palette, setPalette] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -162,6 +165,11 @@ export default function Layout() {
   useParallax();
 
   useEffect(() => setMenu(false), [pathname, search]);
+  useEffect(() => {
+    const ask = (e) => setNeedCredits(e.detail || "Bạn đã dùng hết credit.");
+    window.addEventListener("need-credits", ask);
+    return () => window.removeEventListener("need-credits", ask);
+  }, []);
   // A new page starts at the top (the browser keeps the old scroll offset on client-side navigation).
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -207,7 +215,7 @@ export default function Layout() {
   return (
     <div className="app">
       <Backdrop />
-      <header ref={barRef} className={["topbar", scrolled && "is-scrolled", menu && "menu-open"].filter(Boolean).join(" ")}>
+      <header ref={barRef} className={["topbar", scrolled && "is-scrolled", menu && "menu-open", !guest && "is-signed", credits !== null && "has-credits"].filter(Boolean).join(" ")}>
         <Link className="brand" to="/" onClick={() => pathname === "/" && window.scrollTo({ top: 0, behavior: "smooth" })}>
           <img className="brand-logo" src="/logo.jpg" alt="" width="32" height="32" />
           <span>
@@ -216,17 +224,11 @@ export default function Layout() {
         </Link>
         <nav className="topnav" aria-label="Điều hướng">
           <button type="button" className={menu ? "nav-tools open" : "nav-tools"} aria-expanded={menu} aria-controls="tool-menu" onClick={() => setMenu((v) => !v)}>
-            <Icon d={I.grid} />
             Công cụ
             <span className="nav-caret" aria-hidden="true" />
           </button>
-          <NavLink to="/dashboard"><Icon d={I.grid} />Tổng quan</NavLink>
-          {!guest && (
-            <>
-              <NavLink to="/history"><Icon d={I.clock} />Lịch sử</NavLink>
-              <NavLink to="/library"><Icon d={I.book} />Thư viện</NavLink>
-            </>
-          )}
+          <NavLink to="/dashboard">Tổng quan</NavLink>
+          {!guest && <NavLink to="/history">Lịch sử</NavLink>}
         </nav>
         <div className="topbar-right">
           {running > 0 && (
@@ -235,16 +237,20 @@ export default function Layout() {
               {running} đang chạy
             </Link>
           )}
-          {!guest && <SearchButton onOpen={() => setPalette(true)} />}
-          <div className="icon-group">
+          <div className="nav-icons">
+            {!guest && <SearchButton onOpen={() => setPalette(true)} />}
             {!guest && <Bell />}
             <ThemeButton dark={dark} onToggle={toggle} />
             <LangButton />
           </div>
-          {!guest && <HealthStatus />}
+          {credits !== null && (
+            <Link className={credits < 3 ? "credit-chip is-low" : "credit-chip"} to="/billing" title="Credit còn lại, bấm để nạp thêm">
+              <Icon d={I.bolt} />
+              <b>{credits}</b>
+              <span>credit</span>
+            </Link>
+          )}
           {guest ? <Link className="btn small nav-login" to={loginPath(pathname)}>Đăng nhập</Link> : <UserMenu />}
-          <span className="nav-sep" aria-hidden="true" />
-          <Link className="btn primary nav-cta" to="/write"><Icon d={I.plus} />Tạo content</Link>
           <button type="button" className="nav-burger" aria-label={menu ? "Đóng menu" : "Mở menu"} aria-expanded={menu} aria-controls="tool-menu" onClick={() => setMenu((v) => !v)}>
             <Icon d={menu ? I.close : I.menu} />
           </button>
@@ -254,12 +260,13 @@ export default function Layout() {
             <ToolMenu onPick={() => setMenu(false)} />
             {guest ? (
               <div className="mega-foot">
-                <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.grid} />Tổng quan công cụ</Link>
+                <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.chart} />Tổng quan công cụ</Link>
                 <Link to={loginPath(pathname)} onClick={() => setMenu(false)}>Đăng nhập để dùng công cụ</Link>
               </div>
             ) : (
               <div className="mega-foot">
-                <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.grid} />Tổng quan công cụ</Link>
+                <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.chart} />Tổng quan công cụ</Link>
+                {credits !== null && <Link to="/billing" onClick={() => setMenu(false)}><Icon d={I.bolt} />{credits} credit · Nạp thêm</Link>}
                 <Link to="/history" onClick={() => setMenu(false)}><Icon d={I.clock} />Lịch sử chạy</Link>
                 <Link to="/library" onClick={() => setMenu(false)}><Icon d={I.book} />Thư viện</Link>
                 <span><kbd>⌘</kbd><kbd>K</kbd> tìm cả kết quả cũ và bài đã lưu</span>
@@ -274,6 +281,9 @@ export default function Layout() {
       <Footer />
       {!guest && <ChatWidget />}
       <CommandPalette open={palette} onClose={closePalette} onToggleTheme={toggle} />
+      {needCredits && (
+        <ConfirmDialog title="Hết credit" body={needCredits} okLabel="Nạp credit" cancelLabel="Để sau" okClass="primary" onOk={() => navigate("/billing")} onClose={() => setNeedCredits(null)} />
+      )}
     </div>
   );
 }

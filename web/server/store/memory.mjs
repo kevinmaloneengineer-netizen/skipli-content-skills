@@ -20,6 +20,9 @@ export function memoryAdapter() {
     async saveUser(u) {
       users.set(u.id, clone(u));
     },
+    async deleteUser(id) {
+      users.delete(id);
+    },
     async loadWatch() {
       return [...watch.values()].map(clone);
     },

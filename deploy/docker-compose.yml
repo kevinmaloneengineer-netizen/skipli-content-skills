@@ -76,6 +76,22 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - SESSION_SECRET=${SESSION_SECRET:-}
       - USER_DAILY_JOB_LIMIT=${USER_DAILY_JOB_LIMIT:-30}
+      # Self sign-up with trial credits and Stripe top-ups (see deploy/README.md, section 3c).
+      - SIGNUP=${SIGNUP:-}
+      - TRIAL_CREDITS=${TRIAL_CREDITS:-20}
+      - SIGNUP_PER_IP=${SIGNUP_PER_IP:-2}
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      # Sign-up email codes (Gmail SMTP with an App Password).
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - MAIL_FROM=${MAIL_FROM:-}
+      - CREDIT_PACKS=${CREDIT_PACKS:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_CURRENCY=${STRIPE_CURRENCY:-usd}
+      - PUBLIC_URL=${PUBLIC_URL:-}
       - JOB_CONCURRENCY=${JOB_CONCURRENCY:-1}
       # Firestore (firebase-admin). Service account JSON as one line, see deploy/README.md.
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:?set FIREBASE_PROJECT_ID in deploy/.env}

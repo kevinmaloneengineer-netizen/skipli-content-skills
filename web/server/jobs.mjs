@@ -13,6 +13,7 @@ const ENGLISH_REPORT = "LANGUAGE: write the report in natural US English. Keep i
  */
 /** @param {{ prepare?: (job, ctx: { setPhase, signal }) => Promise<{ prompt: string, notice?: string }> }} opts */
 /** finish(job, content, ctx) may post-process the agent answer (e.g. render a video) → { result, fields } or null. */
+/** onEnd(job) runs after a job failed or was canceled (e.g. to give its credits back). */
 /**
  * Lanes (when `lanes` is set): writing jobs take a few seconds on the model and run side by side;
  * scans share one Chrome sidecar and one Apify account, and image / video jobs share the one GPU,
@@ -21,11 +22,15 @@ const ENGLISH_REPORT = "LANGUAGE: write the report in natural US English. Keep i
 const SCAN_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare", "clone", "campaign", "watch"]);
 export const laneOf = (job) => (job.type === "image" || job.type === "video" ? "gpu" : SCAN_TYPES.has(job.type) ? "scan" : "light");
 
-export function createJobRunner({ store, goclaw, agents, concurrency, lanes = null, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, log = console }) {
+export function createJobRunner({ store, goclaw, agents, concurrency, lanes = null, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, onEnd = async () => {}, log = console }) {
   const queue = [];
   const running = new Map(); // id -> AbortController
   const lane = (job) => (lanes ? laneOf(job) : "all");
   const limit = (name) => (lanes ? lanes[name] ?? 1 : concurrency);
+  const ended = async (id) => {
+    const job = store.cachedJob(id);
+    if (job) await onEnd(job).catch((e) => log.error(`job ${id}: onEnd:`, e.message));
+  };
   const busy = (name) => [...running.keys()].filter((id) => lane(store.cachedJob(id) ?? {}) === name).length;
 
   async function recover() {
@@ -33,6 +38,7 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
     for (const job of store.listJobs()) {
       if (job.status === "running") {
         await store.updateJob(job.id, { status: "failed", error: "Bị gián đoạn do server khởi động lại. Hãy chạy lại.", finishedAt: new Date().toISOString() });
+        await ended(job.id);
       }
     }
     const queued = store.listJobs().filter((j) => j.status === "queued").reverse(); // oldest first
@@ -101,6 +107,7 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
         phase: null,
         finishedAt: new Date().toISOString(),
       });
+      await ended(job.id);
     } finally {
       running.delete(job.id);
       pump();
@@ -110,10 +117,11 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
   return {
     recover,
 
-    async submit({ type, agent, direct = null, title, input, prompt, userId }) {
+    async submit({ type, agent, direct = null, title, input, prompt, userId, credits = null }) {
       const job = {
         id: randomUUID(),
         ...(userId ? { userId } : {}), // owner, with customer accounts on
+        ...(credits ? { credits } : {}), // credits this run took (given back if it fails)
         type,
         agent,
         direct,
@@ -145,6 +153,7 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
         const i = queue.indexOf(id);
         if (i >= 0) queue.splice(i, 1);
         await store.updateJob(id, { status: "canceled", finishedAt: new Date().toISOString() });
+        await ended(id);
       }
       return true;
     },

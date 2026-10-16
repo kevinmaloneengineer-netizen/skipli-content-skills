@@ -48,6 +48,9 @@ export function firestoreAdapter(db, prefix = "") {
     async saveUser(u) {
       await users.doc(u.id).set(u);
     },
+    async deleteUser(id) {
+      await users.doc(id).delete();
+    },
     async loadWatch() {
       return data(await watch.get());
     },

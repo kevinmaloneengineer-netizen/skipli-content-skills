@@ -19,6 +19,8 @@ import { createLimits } from "./limits.mjs";
 import { pageConfigured, publishToPage } from "./facebookPage.mjs";
 import { openStore } from "./store/index.mjs";
 import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
+import { BillingError, createBilling } from "./billing.mjs";
+import { createMailer } from "./mailer.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { ClipError, createClipper } from "./clipper.mjs";
@@ -162,7 +164,11 @@ function slotFields(body, partial = false) {
 export async function createApp(config, adapter) {
   const store = await openStore(adapter, { templates: SEED_TEMPLATES });
   // ACCOUNTS=1: one login per customer, each sees only their own data (see ./accounts.mjs).
-  const accounts = config.accounts ? createAccounts({ store, dataDir: config.video?.dataDir ?? path.join(tmpdir(), `skipli-accounts-${process.pid}`) }) : null;
+  // SIGNUP=1: customers make their own account with trial credits and top up through Stripe (./billing.mjs).
+  const billing = createBilling({ store, env: config.billingEnv ?? process.env, fetchFn: config.fetchFn });
+  const mailer = config.mailer ?? createMailer(config.mailEnv ?? process.env); // sign-up codes
+  const accounts = config.accounts ? createAccounts({ store, dataDir: config.video?.dataDir ?? path.join(tmpdir(), `skipli-accounts-${process.pid}`), signup: config.signup ? { credits: billing.trial, perIp: config.signupPerIp, mailer } : null }) : null;
+  if (config.signup && accounts && !mailer.enabled) console.warn("signup: SMTP_USER / SMTP_PASS not set, new accounts skip the email code.");
   if (accounts) await accounts.bootstrap();
   /** Is this record the signed-in customer's? (always true without accounts) */
   const own = (req, item) => !accounts || accounts.ownerId(item) === req.user?.id;
@@ -242,6 +248,7 @@ export async function createApp(config, adapter) {
 
   const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir, clipper, uploadsDir: path.join(videoRoot, "uploads") }),
     finish: async (job, content, ctx) => publishAfter(job, await finishContent(job, content, ctx)),
+    onEnd: (job) => billing.refund(job), // a failed or canceled run gives its credits back
   });
   await runner.recover();
 
@@ -268,6 +275,10 @@ export async function createApp(config, adapter) {
 
   const gate = accounts ?? passwordGate(config.appPassword);
   const api = express.Router();
+  // Stripe calls this after a payment; it needs the raw body for the signature, and no login.
+  api.post("/stripe/webhook", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
+    res.json(await billingCall(() => billing.webhook(req.body.toString("utf8"), req.headers["stripe-signature"])));
+  });
   // Reference images for videos arrive as data URLs; only this route accepts a large body.
   api.post("/uploads", express.json({ limit: "9mb" }), async (req, res) => {
     try {
@@ -309,7 +320,7 @@ export async function createApp(config, adapter) {
   api.get("/session", (req, res) => {
     if (!accounts) return res.json({ mode: config.appPassword ? "password" : "open", required: !!config.appPassword, signedIn: gate.signedIn(req) });
     const user = accounts.userOf(req);
-    res.json({ mode: "accounts", required: true, signedIn: !!user, user: publicUser(user), setup: accounts.needsSetup() });
+    res.json({ mode: "accounts", required: true, signedIn: !!user, user: publicUser(user), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled });
   });
   api.post("/login", (req, res) => gate.login(req, res));
   api.post("/logout", (req, res) => gate.logout(req, res));
@@ -327,6 +338,28 @@ export async function createApp(config, adapter) {
     if (req.user?.role !== "admin") throw new HttpError(403, "Chỉ quản trị viên mới làm được việc này");
   };
   api.post("/setup", accountRoute((req, res) => accounts.setup(req, res)));
+  api.post("/signup", accountRoute((req, res) => accounts.signup(req, res)));
+  api.post("/verify", accountRoute((req, res) => accounts.verify(req, res)));
+  api.post("/verify/resend", accountRoute((req, res) => accounts.resend(req, res)));
+
+  // ---- credits (SIGNUP=1) ----
+  const billingCall = async (fn) => {
+    try {
+      return await fn();
+    } catch (e) {
+      throw e instanceof BillingError ? new HttpError(e.status, e.message) : e;
+    }
+  };
+  const origin = (req) => (process.env.PUBLIC_URL || `${req.headers["x-forwarded-proto"] ?? req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+  api.get("/billing", accountRoute((req, res) => res.json(billing.account(req.user))));
+  api.post("/billing/checkout", accountRoute(async (req, res) => {
+    if (!billing.metered(req.user)) throw new HttpError(400, "Tài khoản này không tính credit");
+    res.json(await billingCall(() => billing.checkout(req.user, String(req.body?.pack ?? ""), origin(req))));
+  }));
+  api.post("/billing/confirm", accountRoute(async (req, res) => {
+    const out = await billingCall(() => billing.confirm(req.user, req.body?.sessionId));
+    res.json({ paid: out.paid, added: out.added, credits: store.getUser(req.user.id).credits ?? null });
+  }));
   api.put("/me/password", accountRoute((req, res) => accounts.changePassword(req, res)));
   api.get("/admin/users", accountRoute((req, res) => {
     adminOnly(req);
@@ -335,7 +368,7 @@ export async function createApp(config, adapter) {
     res.json({
       users: store.listUsers().map((u) => {
         const mine = jobs.filter((j) => accounts.ownerId(j) === u.id);
-        return { ...publicUser(u), lastLoginAt: u.lastLoginAt ?? null, jobs: mine.length, today: mine.filter((j) => vnDay(j.createdAt) === today).length, lastJobAt: mine[0]?.createdAt ?? null };
+        return { ...publicUser(u), paid: (u.payments ?? []).reduce((a, p) => a + (p.amount ?? 0), 0), lastLoginAt: u.lastLoginAt ?? null, jobs: mine.length, today: mine.filter((j) => vnDay(j.createdAt) === today).length, lastJobAt: mine[0]?.createdAt ?? null };
       }),
       defaultLimit: limits.LIMITS.jobsPerUserDay,
     });
@@ -343,6 +376,11 @@ export async function createApp(config, adapter) {
   api.post("/admin/users", accountRoute(async (req, res) => {
     adminOnly(req);
     res.status(201).json({ user: publicUser(await accounts.create({ ...req.body, role: req.body?.role === "admin" ? "admin" : "member" })) });
+  }));
+  api.delete("/admin/users/:id", accountRoute(async (req, res) => {
+    adminOnly(req);
+    await accounts.remove(req.params.id, req.user);
+    res.json({ ok: true });
   }));
   api.put("/admin/users/:id", accountRoute(async (req, res) => {
     adminOnly(req);
@@ -539,14 +577,27 @@ export async function createApp(config, adapter) {
     const { type } = req.query;
     const limit = Math.min(200, Number(req.query.limit) || 50);
     const jobs = store.listJobs().filter((j) => own(req, j) && (!type || j.type === type)).slice(0, limit);
-    res.json({ jobs: jobs.map((j) => summary(j, runner)) });
+    res.json({ jobs: jobs.map((j) => summary(j, runner)), credits: billing.metered(req.user) ? req.user.credits : null });
   });
+
+  /** Take the run's credits (customers on credits), then queue it; credits come back if queuing fails. */
+  async function submitPaid(req, type, spec) {
+    const credits = await billingCall(() => billing.charge(req.user, type));
+    try {
+      return await runner.submit({ type, ...spec, userId: userId(req), credits });
+    } catch (e) {
+      if (credits) await store.updateUser(req.user.id, { credits: store.getUser(req.user.id).credits + credits });
+      throw e;
+    }
+  }
+  const enoughCredits = (req, type) => billingCall(async () => billing.check(req.user, type));
 
   api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
+    await enoughCredits(req, type);
     const spec = await jobSpec(type, input);
     if (input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" }; // English interface: English reports
-    const job = await runner.submit({ type, ...spec, userId: userId(req) });
+    const job = await submitPaid(req, type, spec);
     res.status(201).json({ job: summary(job, runner) });
   });
 
@@ -564,9 +615,10 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
+    await enoughCredits(req, job.type);
     const spec = await jobSpec(job.type, job.input);
     if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
-    const fresh = await runner.submit({ type: job.type, ...spec, userId: userId(req) });
+    const fresh = await submitPaid(req, job.type, spec);
     res.status(201).json({ job: summary(fresh, runner) });
   });
 
@@ -610,7 +662,7 @@ export async function createApp(config, adapter) {
     const setPhase = (phase) => store.updateJob(job.id, { phase });
     video.renderSlides(job, slides, job.draft ?? "", setPhase).then(
       async (out) => store.updateJob(job.id, { status: "done", result: (await publishAfter(job, out)).result, ...out.fields, phase: null, finishedAt: new Date().toISOString() }),
-      (e) => store.updateJob(job.id, { status: "failed", error: e.message, phase: null, finishedAt: new Date().toISOString() }),
+      async (e) => billing.refund(await store.updateJob(job.id, { status: "failed", error: e.message, phase: null, finishedAt: new Date().toISOString() })),
     );
     res.status(202).json({ ok: true });
   });
@@ -709,6 +761,9 @@ export async function createApp(config, adapter) {
 
   const app = express();
   app.disable("x-powered-by");
+  // Behind a reverse proxy (nginx, Cloudflare…) the visitor's IP is in X-Forwarded-For: TRUST_PROXY=1 reads it,
+  // so the per-IP limits (sign-up, runs, chat) count visitors and not the proxy.
+  if (config.trustProxy) app.set("trust proxy", config.trustProxy);
   app.use(gate.middleware);
   app.get("/media/videos/:file", async (req, res) => {
     // <job id>.mp4 for the job video, <job id>-clipN.mp4 or <job id>-dub.mp4 for the cut and dubbed files

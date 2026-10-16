@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { BackLink } from "../components/SkillShell.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { useAuth } from "../components/AuthGate.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import { api } from "../lib/api.js";
@@ -12,6 +14,7 @@ export default function AdminPage() {
   const [data, setData] = useState(null);
   const [form, setForm] = useState({ email: "", name: "", password: "", dailyLimit: "" });
   const [error, setError] = useState("");
+  const [removing, setRemoving] = useState(null); // the account asked about in the delete dialog
   const load = () => api("/admin/users").then(setData, (e) => setError(e.message));
   useEffect(() => {
     if (user?.role === "admin") load();
@@ -39,9 +42,18 @@ export default function AdminPage() {
       toast(err.message, { kind: "error" });
     }
   }
+  async function remove(u) {
+    try {
+      await api(`/admin/users/${u.id}`, { method: "DELETE" });
+      toast(`Đã xoá tài khoản ${u.email}`);
+      load();
+    } catch (err) {
+      toast(err.message, { kind: "error" });
+    }
+  }
   const suggest = () => setForm((f) => ({ ...f, password: Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("") }));
 
-  if (user?.role !== "admin") return <div className="narrow"><BackLink /><p className="empty">Chỉ quản trị viên mới xem được trang này.</p></div>;
+  if (user?.role !== "admin") return <Navigate to="/" replace />; // customers never see the admin page
   return (
     <div className="admin">
       <BackLink />
@@ -70,12 +82,12 @@ export default function AdminPage() {
         <div className="table-wrap">
           <table className="admin-table">
             <thead>
-              <tr><th>Tài khoản</th><th>Hôm nay</th><th>Tổng lượt</th><th>Giới hạn/ngày</th><th>Đăng nhập gần nhất</th><th /></tr>
+              <tr><th>Tài khoản</th><th>Hôm nay</th><th>Tổng lượt</th><th>Giới hạn/ngày</th><th>Credit</th><th>Đăng nhập gần nhất</th><th /></tr>
             </thead>
             <tbody>
               {data?.users.map((u) => (
                 <tr key={u.id} className={u.disabled ? "is-off" : undefined}>
-                  <td><b>{u.name || u.email}</b><small>{u.email}{u.role === "admin" ? " · Quản trị" : ""}{u.disabled ? " · Đã khoá" : ""}</small></td>
+                  <td><b>{u.name || u.email}</b><small>{u.email}{u.role === "admin" ? " · Quản trị" : ""}{u.disabled ? " · Đã khoá" : ""}{u.emailVerified === false ? " · Chưa xác nhận email" : ""}</small></td>
                   <td>{u.today}</td>
                   <td>{u.jobs}</td>
                   <td>
@@ -84,10 +96,21 @@ export default function AdminPage() {
                         onBlur={(e) => String(u.dailyLimit ?? "") !== e.target.value && update(u, { dailyLimit: e.target.value === "" ? null : Number(e.target.value) }, "Đã lưu giới hạn")} />
                     )}
                   </td>
+                  <td>
+                    {u.role === "admin" ? "Không giới hạn" : (
+                      <div className="admin-credits">
+                        <b>{u.credits ?? "Không tính"}</b>
+                        {u.paid > 0 && <small>Đã nạp ${(u.paid / 100).toFixed(2)}</small>}
+                        <input className="admin-limit" type="number" placeholder="+ credit" aria-label={`Thêm credit cho ${u.email}`}
+                          onKeyDown={(e) => { if (e.key === "Enter" && e.currentTarget.value) { update(u, { addCredits: Number(e.currentTarget.value) }, "Đã cập nhật credit"); e.currentTarget.value = ""; } }} />
+                      </div>
+                    )}
+                  </td>
                   <td>{u.lastLoginAt ? ago(u.lastLoginAt) : "Chưa đăng nhập"}</td>
                   <td><div className="admin-actions">
                     <button type="button" className="btn small" onClick={() => { const p = window.prompt(`Mật khẩu mới cho ${u.email} (ít nhất 8 ký tự):`); if (p) update(u, { password: p }, "Đã đặt lại mật khẩu"); }}>Đặt lại mật khẩu</button>
                     {u.role !== "admin" && <button type="button" className={u.disabled ? "btn small" : "btn small danger"} onClick={() => update(u, { disabled: !u.disabled }, u.disabled ? "Đã mở khoá" : "Đã khoá tài khoản")}>{u.disabled ? "Mở khoá" : "Khoá"}</button>}
+                    {u.role !== "admin" && <button type="button" className="btn small danger" onClick={() => setRemoving(u)}>Xoá</button>}
                   </div></td>
                 </tr>
               ))}
@@ -95,6 +118,15 @@ export default function AdminPage() {
           </table>
         </div>
       </section>
+      {removing && (
+        <ConfirmDialog
+          title="Xoá tài khoản này?"
+          body={`${removing.email} sẽ không đăng nhập được nữa và mất số credit còn lại. Các kết quả đã tạo vẫn nằm trong dữ liệu nhưng không ai xem được.`}
+          okLabel="Xoá tài khoản"
+          onOk={() => remove(removing)}
+          onClose={() => setRemoving(null)}
+        />
+      )}
     </div>
   );
 }

@@ -7,6 +7,8 @@ export async function api(path, { method = "GET", body } = {}) {
   const data = await res.json().catch(() => ({}));
   // Session expired or password changed: AuthGate shows the login page again.
   if (res.status === 401 && data.auth) window.dispatchEvent(new Event("auth-required"));
+  // Out of credits: the layout offers the top-up page.
+  if (res.status === 402) window.dispatchEvent(new CustomEvent("need-credits", { detail: data.error }));
   if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
   return data;
 }

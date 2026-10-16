@@ -4,6 +4,7 @@ import AuthGate, { LoginPage, RequireAuth } from "./components/AuthGate.jsx";
 import SamplePage from "./pages/SamplePage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
 import AccountPage from "./pages/AccountPage.jsx";
+import BillingPage from "./pages/BillingPage.jsx";
 import { JobsProvider } from "./context/JobsContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import ClonePage from "./pages/ClonePage.jsx";
@@ -88,6 +89,7 @@ export default function App() {
                 <Route path="jobs/:id" element={<JobPage />} />
                 <Route path="admin" element={<AdminPage />} />
                 <Route path="account" element={<AccountPage />} />
+                <Route path="billing" element={<BillingPage />} />
                 <Route path="skills/:id" element={<ComingSoonPage />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

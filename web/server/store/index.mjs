@@ -51,6 +51,11 @@ export async function openStore(adapter, { templates = [], cacheSize = 1000 } = 
       users.push(user);
       return user;
     },
+    async deleteUser(id) {
+      await adapter.deleteUser(id);
+      const i = users.findIndex((u) => u.id === id);
+      if (i >= 0) users.splice(i, 1);
+    },
     async updateUser(id, patch) {
       const user = users.find((u) => u.id === id);
       if (!user) return undefined;

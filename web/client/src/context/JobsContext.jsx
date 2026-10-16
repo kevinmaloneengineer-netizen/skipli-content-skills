@@ -37,6 +37,7 @@ export function JobsProvider({ children }) {
   const noticeKey = user ? `notices:${user.id}` : "notices"; // one bell per account on a shared browser
   const [jobs, setJobs] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [credits, setCredits] = useState(null); // customers on credits (SIGNUP=1); null = not metered
   // Jobs that finished while the app was open, newest first; shown by the bell.
   const [notices, setNotices] = useState(() => {
     try {
@@ -52,7 +53,9 @@ export function JobsProvider({ children }) {
     clearTimeout(timer.current);
     let list = null;
     try {
-      ({ jobs: list } = await api("/jobs?limit=200"));
+      const data = await api("/jobs?limit=200");
+      list = data.jobs;
+      setCredits(data.credits ?? null);
       const first = known.current.size === 0;
       for (const j of list) {
         const prev = known.current.get(j.id);
@@ -88,6 +91,7 @@ export function JobsProvider({ children }) {
     if (guest) {
       clearTimeout(timer.current);
       setJobs([]);
+      setCredits(null);
       return undefined;
     }
     refresh();
@@ -103,7 +107,7 @@ export function JobsProvider({ children }) {
     [refresh],
   );
 
-  return <JobsContext.Provider value={{ jobs, loaded, refresh, track, notices, markRead, clearNotices }}>{children}</JobsContext.Provider>;
+  return <JobsContext.Provider value={{ jobs, loaded, refresh, track, notices, markRead, clearNotices, credits }}>{children}</JobsContext.Provider>;
 }
 
 export function useJobs() {

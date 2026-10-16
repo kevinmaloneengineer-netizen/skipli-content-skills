@@ -56,6 +56,28 @@ Job vẫn dựng trên ổ đĩa; xong thì file được chép lên bucket, và
 
 Nên đặt quy tắc tự xoá (Object lifecycle) trên bucket: tiền tố `uploads/` xoá sau 7 ngày. Bất kỳ kho tương thích S3 nào cũng dùng được (đổi `STORAGE_ENDPOINT` và `STORAGE_REGION`).
 
+## 3c. Khách tự đăng ký và nạp credit qua Stripe
+
+Bật trong `deploy/.env` (cần `ACCOUNTS=1`):
+
+```
+SIGNUP=1
+TRIAL_CREDITS=20                          # credit tặng khi đăng ký
+CREDIT_PACKS=100:900,300:2400,1000:6900   # credit:giá (cent)
+STRIPE_SECRET_KEY=sk_test_...             # Stripe Dashboard → Developers → API keys
+STRIPE_WEBHOOK_SECRET=whsec_...
+PUBLIC_URL=https://content.example.com
+```
+
+- Chống tạo nhiều tài khoản lấy credit free: mỗi IP chỉ tạo được `SIGNUP_PER_IP` tài khoản (mặc định 2, lưu cùng tài khoản nên khởi động lại không mất), và tối đa 5 lần đăng ký mỗi giờ.
+  Nếu web chạy sau nginx, Cloudflare hay load balancer thì **bắt buộc** đặt `TRUST_PROXY=1`, không thì mọi khách đều mang IP của proxy và chỉ 2 người đầu đăng ký được.
+- Xác nhận email bằng mã 6 số: đặt `SMTP_USER` (địa chỉ Gmail) và `SMTP_PASS` (App Password 16 ký tự: Tài khoản Google → Bảo mật → Xác minh 2 bước → Mật khẩu ứng dụng). Tài khoản mới chỉ nhận credit dùng thử sau khi nhập đúng mã (hết hạn 10 phút, sai tối đa 5 lần, gửi lại mỗi phút một lần). Để trống thì bỏ qua bước này; chạy thử local có thể đặt `MAIL_LOG=1` để mã in ra log server. Gmail gửi được khoảng 500 mail/ngày.
+- Mỗi lượt chạy trừ credit theo loại (`CREDIT_COST` trong `web/server/billing.mjs`): bài viết 1, quét kênh 2, so sánh 3, cắt/lồng tiếng 4, video 5. Lượt lỗi hoặc bị huỷ được hoàn credit.
+- Tài khoản admin, và tài khoản admin tạo tay, không bị tính credit. Admin cộng credit tay ở trang Quản lý tài khoản.
+- Webhook: Stripe Dashboard → Developers → Webhooks → thêm endpoint `https://<PUBLIC_URL>/api/stripe/webhook`, sự kiện `checkout.session.completed`, rồi chép signing secret vào `STRIPE_WEBHOOK_SECRET`.
+  Chạy local thì không cần webhook: trang `/billing` tự hỏi Stripe sau khi thanh toán xong. Muốn thử webhook local: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+- Thử bằng key `sk_test_...` và thẻ `4242 4242 4242 4242` (ngày hết hạn bất kỳ trong tương lai, CVC bất kỳ). Khi công ty xác minh xong tài khoản Stripe thì đổi sang key `sk_live_...`.
+
 ## 4. Cấu hình GoClaw sau lần chạy đầu (một lần)
 
 1. Providers: `openai-codex` (chat) và một provider tên đúng **`gemini`** (cho `read_video`).
