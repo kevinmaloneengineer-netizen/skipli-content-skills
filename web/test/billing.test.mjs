@@ -45,15 +45,15 @@ test("sign-up with trial credits, runs take credits, failed runs give them back,
   };
   try {
     // Sign-up waits for the admin, then is open to anyone.
-    assert.equal((await req("POST", "/api/signup", { email: "early@shop.com", password: "password-1" })).status, 409);
+    assert.equal((await req("POST", "/api/signup", { email: "user0@shop.com", password: "password-1" })).status, 409);
     const admin = await req("POST", "/api/setup", { email: "boss@example.com", password: "admin-pass-1" });
     const session0 = (await req("GET", "/api/session")).body;
     assert.equal(session0.signup, true);
     assert.equal(session0.billing, true);
-    const me = await req("POST", "/api/signup", { email: "Cafe@Shop.com", password: "password-1", name: "Cà phê" });
+    const me = await req("POST", "/api/signup", { email: "user1@shop.com", password: "password-1", name: "Cà phê" });
     assert.equal(me.status, 201);
     assert.equal(me.body.user.credits, 6);
-    assert.equal((await req("POST", "/api/signup", { email: "cafe@shop.com", password: "password-2" })).status, 409);
+    assert.equal((await req("POST", "/api/signup", { email: "user1@shop.com", password: "password-2" })).status, 409);
     owner = me.body.user.id;
 
     // A written post takes 1 credit.
@@ -120,7 +120,7 @@ test("without SIGNUP=1 the sign-up route is closed", async () => {
   const root = `http://127.0.0.1:${s.address().port}`;
   try {
     await fetch(`${root}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "boss@example.com", password: "admin-pass-1" }) });
-    const r = await fetch(`${root}/api/signup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "a@b.com", password: "password-1" }) });
+    const r = await fetch(`${root}/api/signup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "user2@shop.com", password: "password-1" }) });
     assert.equal(r.status, 403);
     assert.equal((await (await fetch(`${root}/api/session`)).json()).signup, false);
   } finally {
@@ -145,9 +145,9 @@ test("one IP address only makes SIGNUP_PER_IP trial accounts, and the cap surviv
   let [s, root] = await listen(await boot());
   try {
     await post(root, "/api/setup", { email: "boss@example.com", password: "admin-pass-1" });
-    assert.equal((await post(root, "/api/signup", { email: "a@shop.com", password: "password-1" })).status, 201);
-    assert.equal((await post(root, "/api/signup", { email: "b@shop.com", password: "password-1" })).status, 201);
-    const third = await post(root, "/api/signup", { email: "c@shop.com", password: "password-1" });
+    assert.equal((await post(root, "/api/signup", { email: "user3@shop.com", password: "password-1" })).status, 201);
+    assert.equal((await post(root, "/api/signup", { email: "user4@shop.com", password: "password-1" })).status, 201);
+    const third = await post(root, "/api/signup", { email: "user5@shop.com", password: "password-1" });
     assert.equal(third.status, 429);
     assert.match((await third.json()).error, /đủ số tài khoản/);
   } finally {
@@ -155,7 +155,7 @@ test("one IP address only makes SIGNUP_PER_IP trial accounts, and the cap surviv
   }
   [s, root] = await listen(await boot()); // restarted server, same data
   try {
-    assert.equal((await post(root, "/api/signup", { email: "d@shop.com", password: "password-1" })).status, 429);
+    assert.equal((await post(root, "/api/signup", { email: "user6@shop.com", password: "password-1" })).status, 429);
     const users = await adapter.loadUsers();
     assert.ok(users.filter((u) => u.signupIp).every((u) => !u.signupIp.includes("127.0.0.1"))); // stored as a hash
   } finally {
@@ -179,13 +179,13 @@ test("admin deletes a customer account, which frees its network's sign-up slot; 
   };
   try {
     const admin = await req("POST", "/api/setup", { email: "boss@example.com", password: "admin-pass-1" });
-    const a = await req("POST", "/api/signup", { email: "a@shop.com", password: "password-1" });
-    assert.equal((await req("POST", "/api/signup", { email: "b@shop.com", password: "password-1" })).status, 429);
+    const a = await req("POST", "/api/signup", { email: "user3@shop.com", password: "password-1" });
+    assert.equal((await req("POST", "/api/signup", { email: "user4@shop.com", password: "password-1" })).status, 429);
     assert.equal((await req("DELETE", `/api/admin/users/${a.body.user.id}`, null, a.cookie)).status, 403); // customers cannot
     assert.equal((await req("DELETE", `/api/admin/users/${admin.body.user.id}`, null, admin.cookie)).status, 400);
     assert.equal((await req("DELETE", `/api/admin/users/${a.body.user.id}`, null, admin.cookie)).status, 200);
     assert.equal((await req("GET", "/api/jobs", null, a.cookie)).status, 401); // signed out
-    assert.equal((await req("POST", "/api/signup", { email: "b@shop.com", password: "password-1" })).status, 201);
+    assert.equal((await req("POST", "/api/signup", { email: "user4@shop.com", password: "password-1" })).status, 201);
   } finally {
     s.close();
   }

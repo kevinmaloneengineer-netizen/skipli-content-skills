@@ -18,18 +18,18 @@ export default function UserMenu() {
     };
   }, [open]);
   if (!user) return null;
-  const label = user.name || user.email;
+  const label = user.name || user.contact;
   const initials = label.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
   return (
     <div className="user-menu" ref={ref}>
-      <button type="button" className="user-chip" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((v) => !v)} title={user.email}>
+      <button type="button" className="user-chip" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((v) => !v)} title={user.contact}>
         <span className="user-avatar" aria-hidden="true">{initials}</span>
       </button>
       {open && (
         <div className="user-pop" role="menu">
           <div className="user-pop-head">
             <b>{label}</b>
-            <small>{user.email}{user.role === "admin" ? " · Quản trị" : ""}</small>
+            <small>{user.contact}{user.role === "admin" ? " · Quản trị" : ""}</small>
           </div>
           {user.role === "admin" && <Link role="menuitem" to="/admin" onClick={() => setOpen(false)}>Quản lý tài khoản</Link>}
           {typeof user.credits === "number" && <Link role="menuitem" to="/billing" onClick={() => setOpen(false)}>Credit và nạp tiền</Link>}

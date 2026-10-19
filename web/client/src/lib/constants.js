@@ -304,6 +304,28 @@ export const SKILLS = [
     eta: "dưới 1 phút",
     etaLong: "Thường dưới 1 phút.",
   },
+  {
+    id: "gbp-post",
+    type: "gbp-post",
+    path: "/gbp-post",
+    tone: "blue",
+    title: "Bài đăng Google Business",
+    short: "Google Business",
+    pitch: "3 bài cho hồ sơ Google Maps của quán, kèm nút bấm, gợi ý ảnh và 5 câu hỏi đáp.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút.",
+  },
+  {
+    id: "photo-fix",
+    type: "photo-fix",
+    path: "/photo-fix",
+    tone: "teal",
+    title: "Chỉnh ảnh món như studio",
+    short: "Chỉnh ảnh",
+    pitch: "Ảnh chụp điện thoại thành ảnh sáng, màu ngon, đúng khung Instagram, TikTok, Facebook. Món giữ nguyên.",
+    eta: "vài giây",
+    etaLong: "Thường vài giây, không cần GPU.",
+  },
 ];
 
 /** Home-page grouping by skill type: each type is one pinned, horizontally scrolling scene. */
@@ -325,7 +347,7 @@ export const CATEGORIES = [
     word: "SÁNG TẠO",
     dark: true,
     desc: "Biến những gì học được thành bài viết, hình ảnh và kịch bản của riêng bạn, không chép của ai.",
-    skills: ["campaign", "write", "clone", "video", "reel-cut", "dub", "dish-riddle", "story-behind", "weather-post", "post-score", "image", "livestream", "live-recap", "menu"],
+    skills: ["campaign", "write", "clone", "video", "photo-fix", "reel-cut", "dub", "dish-riddle", "story-behind", "weather-post", "post-score", "image", "livestream", "live-recap", "menu"],
     deco: ["pen", "spark", "image", "quote", "lines", "wand", "spark", "pen"],
   },
   {
@@ -334,7 +356,7 @@ export const CATEGORIES = [
     title: "Đăng bài & chăm khách",
     word: "CHĂM KHÁCH",
     desc: "Giữ lại mẫu hay, xếp lịch đăng đúng giờ, trả lời review và tin nhắn để khách quay lại.",
-    skills: ["library", "schedule", "hashtag", "review", "inbox"],
+    skills: ["library", "schedule", "gbp-post", "hashtag", "review", "inbox"],
     deco: ["calendar", "clock", "bookmark", "check", "folder", "bell", "check", "clock"],
   },
 ];

@@ -30,6 +30,7 @@ export async function openStore(adapter, { templates = [], cacheSize = 1000 } = 
   const schedule = await adapter.loadSchedule(); // small: one row per planned post
   const watch = (await adapter.loadWatch?.()) ?? []; // competitor channels to re-check
   const users = (await adapter.loadUsers?.()) ?? []; // customer accounts (ACCOUNTS=1)
+  let settings = (await adapter.loadSettings?.()) ?? {}; // what the admin changed on the web (sign-up, credits)
 
   function trim() {
     // Evict the oldest finished jobs; they stay readable through adapter.loadJob.
@@ -41,12 +42,30 @@ export async function openStore(adapter, { templates = [], cacheSize = 1000 } = 
   }
 
   return {
+    // ---- settings (admin page) ----
+    getSettings: () => ({ ...settings }),
+    async saveSettings(patch) {
+      settings = { ...settings, ...patch, updatedAt: now() };
+      await adapter.saveSettings(settings);
+      return { ...settings };
+    },
+    // ---- error log ----
+    async addError(e) {
+      const item = { id: randomUUID(), createdAt: now(), ...e };
+      await adapter.saveError?.(item);
+      return item;
+    },
+    listErrors: (limit = 50) => adapter.loadErrors?.(limit) ?? [],
+    clearErrors: () => adapter.deleteErrors?.(),
+    exportAll: () => adapter.exportAll(),
+
     // ---- accounts ----
     listUsers: () => [...users].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     getUser: (id) => users.find((u) => u.id === id),
-    userByEmail: (email) => users.find((u) => u.email === String(email ?? "").trim().toLowerCase()),
+    userByEmail: (email) => users.find((u) => u.email && u.email === String(email ?? "").trim().toLowerCase()),
+    userByPhone: (phone) => (phone ? users.find((u) => u.phone === phone) : undefined),
     async addUser(u) {
-      const user = { id: randomUUID(), createdAt: now(), disabled: false, ...u, email: u.email.trim().toLowerCase() };
+      const user = { id: randomUUID(), createdAt: now(), disabled: false, ...u, ...(u.email ? { email: u.email.trim().toLowerCase() } : {}) };
       await adapter.saveUser(user);
       users.push(user);
       return user;

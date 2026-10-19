@@ -122,6 +122,7 @@ export default function Footer() {
       </div>
       <div className="foot-bottom">
         <span>© {new Date().getFullYear()} Skipli. Nội dung AI chỉ để tham khảo, hãy kiểm tra trước khi đăng.</span>
+        <span className="foot-legal"><Link to="/terms">Điều khoản sử dụng</Link><Link to="/privacy">Chính sách bảo mật</Link></span>
         <span className="foot-made">Làm cho nhà bán hàng Việt</span>
       </div>
       <div className="foot-word" aria-hidden="true">Skipli</div>

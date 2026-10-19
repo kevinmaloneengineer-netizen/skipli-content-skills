@@ -84,6 +84,19 @@ IMAGE_SIZES = {"1:1": (1024, 1024), "4:5": (896, 1120), "9:16": (768, 1344), "16
 AD_NEGATIVE = "text, letters, words, watermark, logo, blurry, low quality, deformed, extra fingers"
 
 
+class EnhanceRequest(BaseModel):
+    image: str  # base64 PNG / JPEG of the dish photo
+    strength: float = Field(default=0.25, ge=0.08, le=0.45)  # how much the model may repaint (low keeps the dish)
+    prompt: str = Field(default="", max_length=400)  # extra words about the dish, optional
+    seed: Optional[int] = None
+
+
+class CutoutRequest(BaseModel):
+    image: str  # base64 PNG / JPEG of the dish photo
+    background: str = Field(min_length=3, max_length=600)  # what the new surface looks like (no food in it)
+    seed: Optional[int] = None
+
+
 class ImageRequest(BaseModel):
     prompts: List[str] = Field(min_length=1, max_length=6)
     size: str = "1:1"
@@ -583,6 +596,131 @@ def draw_images(req):
 
 
 images = {}
+
+ENHANCE_PROMPT = "professional food photography, appetizing, soft natural window light, rich true colors, fresh glossy textures, crisp focus on the dish, high dynamic range, magazine quality"
+ENHANCE_NEGATIVE = "blurry, dull, washed out, grey, underexposed, overexposed, plastic, cartoon, deformed food, extra objects, text, watermark"
+
+
+def enhance_image(req):
+    """The same photo, lightly repainted for light and color (img2img at low strength keeps the dish and layout)."""
+    img = decode_image(req.image).convert("RGB")
+    w0, h0 = img.size
+    # SDXL works best near 1024 px on the long side; multiples of 8.
+    k = 1024 / max(w0, h0)
+    w, h = max(512, int(w0 * k) // 8 * 8), max(512, int(h0 * k) // 8 * 8)
+    seed = req.seed if req.seed is not None else int(time.time()) % 100000
+    if MOCK:
+        from PIL import ImageEnhance
+        out = ImageEnhance.Color(ImageEnhance.Brightness(img).enhance(1.12)).enhance(1.15)
+    else:
+        m = models()
+        gen = m["torch"].Generator("cpu").manual_seed(seed)
+        prompt = f"{req.prompt[:300]}, {ENHANCE_PROMPT}" if req.prompt else ENHANCE_PROMPT
+        with _sd_lock:
+            out = sd(m, prompt, w, h, gen, image=img, strength=req.strength, negative=ENHANCE_NEGATIVE)
+        out = out.resize((w0, h0), Image.LANCZOS)
+    buf = io.BytesIO()
+    out.save(buf, "PNG")
+    return {"image": base64.b64encode(buf.getvalue()).decode(), "width": w0, "height": h0}
+
+
+@app.post("/enhance")
+def enhance_start(req: EnhanceRequest, authorization: str = Header(None)):
+    """Start an AI touch-up of a dish photo; poll GET /image/{id} (same store as /image)."""
+    check(authorization)
+    iid = uuid.uuid4().hex
+    images[iid] = {"status": "running", "error": None, "result": None, "created": time.time()}
+
+    def go():
+        try:
+            with _gpu_lock:
+                images[iid].update(status="done", result=enhance_image(req))
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            images[iid].update(status="failed", error=f"{type(e).__name__}: {e}"[:500])
+
+    threading.Thread(target=go, daemon=True).start()
+    return {"id": iid}
+
+
+CUTOUT_NEGATIVE = "food, dish, plate, bowl, cup, glass, cutlery, hands, people, text, logo, watermark"
+
+
+def segmenter():
+    """BiRefNet (MIT license): the dish (and its plate) as a soft mask. Loaded once, kept on the GPU."""
+    with _model_lock:
+        if "seg" not in _models:
+            import torch
+            from transformers import AutoModelForImageSegmentation
+            net = AutoModelForImageSegmentation.from_pretrained("ZhengPeng7/BiRefNet", trust_remote_code=True)
+            net.to("cuda:0" if torch.cuda.is_available() else "cpu").eval().half()
+            _models["seg"] = net
+        return _models["seg"]
+
+
+def cut_mask(img):
+    """Soft alpha mask (L) of the main subject, same size as img."""
+    import torch
+    from torchvision import transforms
+    net = segmenter()
+    tf = transforms.Compose([transforms.Resize((1024, 1024)), transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    x = tf(img.convert("RGB")).unsqueeze(0).to(next(net.parameters()).device).half()
+    with torch.no_grad():
+        pred = net(x)[-1].sigmoid().float().cpu()[0, 0]
+    return transforms.ToPILImage()(pred).resize(img.size, Image.LANCZOS)
+
+
+def cutout_image(req):
+    """The dish on a transparent layer (untouched pixels) + a new empty surface drawn for it, same size."""
+    img = decode_image(req.image).convert("RGB")
+    if max(img.size) > 1600:
+        img.thumbnail((1600, 1600), Image.LANCZOS)
+    w, h = img.size
+    seed = req.seed if req.seed is not None else int(time.time()) % 100000
+    if MOCK:
+        from PIL import ImageDraw, ImageFilter
+        mask = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(mask).ellipse((w * 0.2, h * 0.2, w * 0.8, h * 0.8), fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(4))
+        back = Image.linear_gradient("L").resize((w, h)).convert("RGB")
+    else:
+        mask = cut_mask(img)
+        m = models()
+        gen = m["torch"].Generator("cpu").manual_seed(seed)
+        # Draw at a size SDXL likes (long side 1024), then scale to the photo.
+        k = 1024 / max(w, h)
+        bw, bh = max(512, int(w * k) // 8 * 8), max(512, int(h * k) // 8 * 8)
+        prompt = f"{req.background[:500]}, empty surface, nothing on it, professional food photography backdrop, soft natural light, shallow depth of field, RAW photo"
+        with _sd_lock:
+            back = sd(m, prompt, bw, bh, gen, negative=CUTOUT_NEGATIVE)
+        back = fit(back, w, h)
+    cut = img.copy()
+    cut.putalpha(mask)
+    out = {}
+    for key, pic in (("cutout", cut), ("background", back)):
+        buf = io.BytesIO()
+        pic.save(buf, "PNG")
+        out[key] = base64.b64encode(buf.getvalue()).decode()
+    return {**out, "width": w, "height": h}
+
+
+@app.post("/cutout")
+def cutout_start(req: CutoutRequest, authorization: str = Header(None)):
+    """Start a cutout + new background; poll GET /image/{id} (same store as /image)."""
+    check(authorization)
+    iid = uuid.uuid4().hex
+    images[iid] = {"status": "running", "error": None, "result": None, "created": time.time()}
+
+    def go():
+        try:
+            with _gpu_lock:
+                images[iid].update(status="done", result=cutout_image(req))
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            images[iid].update(status="failed", error=f"{type(e).__name__}: {e}"[:500])
+
+    threading.Thread(target=go, daemon=True).start()
+    return {"id": iid}
 
 
 @app.post("/image")

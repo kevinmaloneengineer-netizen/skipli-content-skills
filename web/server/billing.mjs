@@ -25,6 +25,8 @@ export const CREDIT_COST = {
   compare: 3,
   clone: 2,
   campaign: 2,
+  "photo-fix": 1, // server-side photo grading, no model
+  "gbp-post": 1,
 };
 export const costOf = (type) => CREDIT_COST[type] ?? 1;
 
@@ -76,10 +78,14 @@ function form(obj, prefix = "", out = new URLSearchParams()) {
  * @param {{ store, env?: object, fetchFn?: typeof fetch }} opts
  */
 export function createBilling({ store, env = process.env, fetchFn = fetch }) {
+  // The admin can change the trial credits and the packs on the web (store settings); env is the default.
   const secret = env.STRIPE_SECRET_KEY ?? "";
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET ?? "";
-  const trial = Number.isFinite(Number(env.TRIAL_CREDITS)) && env.TRIAL_CREDITS !== "" && env.TRIAL_CREDITS !== undefined ? Number(env.TRIAL_CREDITS) : 20;
-  const packs = parsePacks(env.CREDIT_PACKS || "100:900,300:2400,1000:6900");
+  const defaultTrial = Number.isFinite(Number(env.TRIAL_CREDITS)) && env.TRIAL_CREDITS !== "" && env.TRIAL_CREDITS !== undefined ? Number(env.TRIAL_CREDITS) : 20;
+  const defaultPacks = env.CREDIT_PACKS || "100:900,300:2400,1000:6900";
+  const saved = () => store.getSettings?.() ?? {};
+  const trialNow = () => (typeof saved().trialCredits === "number" ? saved().trialCredits : defaultTrial);
+  const packsNow = () => parsePacks(saved().creditPacks || defaultPacks);
   const currency = (env.STRIPE_CURRENCY || "usd").toLowerCase();
 
   async function stripe(method, path, body) {
@@ -110,8 +116,13 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
 
   return {
     enabled: !!secret,
-    trial,
-    packs,
+    get trial() {
+      return trialNow();
+    },
+    get packs() {
+      return packsNow();
+    },
+    defaults: { trialCredits: defaultTrial, creditPacks: defaultPacks },
     currency,
     metered,
     costOf,
@@ -146,12 +157,12 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
     /** Stripe Checkout page for one pack; the page comes back to /billing. */
     async checkout(user, packId, origin) {
       if (!secret) throw new BillingError(503, "Chưa cấu hình thanh toán (STRIPE_SECRET_KEY).");
-      const pack = packs.find((p) => p.id === packId);
+      const pack = packsNow().find((p) => p.id === packId);
       if (!pack) throw new BillingError(400, "Gói credit không hợp lệ");
       const session = await stripe("POST", "/checkout/sessions", {
         mode: "payment",
         client_reference_id: user.id,
-        customer_email: user.email,
+        customer_email: user.email || undefined, // phone accounts: Stripe asks for the email on its page
         success_url: `${origin}/billing?paid={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/billing?canceled=1`,
         metadata: { credits: pack.credits, userId: user.id },
@@ -183,7 +194,7 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
         enabled: !!secret,
         metered: metered(user),
         credits: metered(user) ? user.credits : null,
-        packs,
+        packs: packsNow(),
         currency,
         costs: CREDIT_COST,
         payments: (user.payments ?? []).slice(0, 20),

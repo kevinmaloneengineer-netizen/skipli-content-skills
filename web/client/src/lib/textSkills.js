@@ -40,6 +40,23 @@ export const TEXT_SKILLS = {
     ],
     notes: ["Chỉ dùng những gì chủ quán kể làm sự thật, không thêm năm tháng hay giải thưởng.", "Có bài đăng, lời kể 25 giây cho video, và một dòng caption."],
   },
+  "gbp-post": {
+    type: "gbp-post",
+    label: "Viết bài Google Business",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Pho Cali, Milwaukee", required: true },
+      { name: "promote", kind: "area", label: "Muốn giới thiệu điều gì", hint: "Món mới, ưu đãi, sự kiện, hoặc chính quán. Viết tiếng Anh thì bài viết tiếng Anh.", placeholder: "New spicy beef pho this week, free iced tea with every bowl", required: true },
+      {
+        name: "button",
+        kind: "select",
+        label: "Nút bấm trên bài",
+        options: [["order", "Đặt món online (Order online)"], ["book", "Đặt bàn (Book)"], ["call", "Gọi ngay (Call now)"], ["offer", "Nhận ưu đãi (Offer)"], ["learn", "Xem thêm (Learn more)"]],
+      },
+      { name: "details", kind: "area", label: "Thông tin thật của quán (tuỳ chọn)", hint: "Giờ mở cửa, giá, điều kiện ưu đãi, chỗ đậu xe. AI chỉ dùng những gì bạn ghi, không tự bịa.", placeholder: "Open 11am to 9pm daily. Free parking behind the shop." },
+    ],
+    notes: ["3 bài theo 3 góc khác nhau, mỗi bài 60 đến 120 chữ, đúng giới hạn của Google.", "Kèm nút bấm, ảnh nên dùng và 5 câu hỏi đáp cho mục Hỏi đáp trên Google.", "Đăng: vào Google Business Profile của quán, Thêm cập nhật, dán bài và gắn ảnh."],
+  },
   "weather-post": {
     type: "weather-post",
     label: "Viết bài theo thời tiết",

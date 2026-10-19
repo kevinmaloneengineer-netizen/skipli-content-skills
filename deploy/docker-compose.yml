@@ -81,12 +81,17 @@ services:
       - TRIAL_CREDITS=${TRIAL_CREDITS:-20}
       - SIGNUP_PER_IP=${SIGNUP_PER_IP:-2}
       - TRUST_PROXY=${TRUST_PROXY:-}
-      # Sign-up email codes (Gmail SMTP with an App Password).
+      # Sign-up and password codes by email (Gmail SMTP with an App Password); MAIL_LOG=1 prints them instead.
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-465}
       - MAIL_FROM=${MAIL_FROM:-}
+      - MAIL_LOG=${MAIL_LOG:-}
+      # Errors to a Slack / Discord webhook; daily database backup to the bucket; shutdown wait for jobs.
+      - ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL:-}
+      - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-14}
+      - SHUTDOWN_WAIT_SEC=${SHUTDOWN_WAIT_SEC:-25}
       - CREDIT_PACKS=${CREDIT_PACKS:-}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}

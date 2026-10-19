@@ -18,10 +18,10 @@ const TILES = ["video", "write", "maps", "reel-cut", "review", "compare"];
 const SCENES = [
   { label: "Chọn công cụ", rect: [16, 128, 728, 352], hold: 2300, cursor: [380, 236], click: "write" },
   { label: "AI viết bài trong vài giây", rect: [16, 496, 728, 314], hold: 2300, cursor: [560, 760] },
-  { label: "Phóng to bài viết", rect: [32, 536, 352, 262], hold: 3200, cursor: [300, 770], click: "copy" },
+  { label: "Phóng to bài viết", rect: [32, 536, 352, 262], hold: 3200, cursor: [308, 726], click: "copy" },
   { label: "Phân tích review khách", rect: [16, 830, 728, 270], hold: 2300, cursor: [600, 930] },
   { label: "Điểm và cảm xúc của khách", rect: [32, 846, 316, 236], hold: 2300, cursor: [250, 1010] },
-  { label: "Dựng video từ ảnh món", rect: [16, 1118, 728, 296], hold: 3400, cursor: [134, 1262], click: "play" },
+  { label: "Dựng video từ ảnh món", rect: [16, 1118, 728, 296], hold: 3400, cursor: [101, 1258], click: "play" },
 ];
 
 const CAPTIONS = [

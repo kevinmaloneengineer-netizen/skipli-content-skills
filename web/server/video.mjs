@@ -14,11 +14,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { collage } from "./collage.mjs";
 import { transcribe } from "./clipper.mjs";
 import { checkFacts } from "./facts.mjs";
-import { slideRoles } from "./prompts.mjs";
+import { PHOTO_AI, PHOTO_BACKGROUNDS, slideRoles } from "./prompts.mjs";
 
 const run = promisify(execFile);
 const MUSIC_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "music", "make_music.py");
 const TITLE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "overlay", "make_title.py");
+const PHOTO_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "overlay", "photo_fix.py");
 const VOICE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "voice", "tts.py");
 // Same voices as the GPU worker (video-worker/worker.py VOICES).
 const VOICES = { female: "vi-VN-HoaiMyNeural", male: "vi-VN-NamMinhNeural", "en-female": "en-US-AriaNeural", "en-male": "en-US-GuyNeural" };
@@ -30,7 +31,7 @@ const MAX_UPLOAD = 6 * 1024 * 1024;
 export class VideoError extends Error {}
 
 export const IMAGE_SIZES = { "1:1": [1024, 1024], "4:5": [896, 1120], "9:16": [768, 1344], "16:9": [1344, 768] };
-const IMAGE_FILE = /^[0-9a-f-]{36}-[rs]?\d{1,2}\.(png|jpg|webp)$/; // "-r3": a slideshow's real photo, "-s3": a narrated video's still
+const IMAGE_FILE = /^[0-9a-f-]{36}-[rspo]?\d{1,2}\.(png|jpg|webp)$/; // "-r3": a slideshow's real photo, "-s3": a narrated video's still, "-p1" / "-o0": a fixed dish photo and its original
 const LAYOUTS = new Set(["top", "center", "bottom"]);
 
 /** Pull the image plan out of the agent's answer: { images: [{ prompt, headline, sub, cta, caption, layout }] }. */
@@ -684,8 +685,77 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
   async function remove(job) {
     if (job.type === "video") await rm(videoPath(job.id), { force: true });
     for (const x of job.images?.items ?? []) if (imagePath(x.file)) await rm(imagePath(x.file), { force: true });
+    for (const f of [job.photos?.original, job.photos?.fixed, ...(job.photos?.items ?? []).map((x) => x.file)]) if (f && imagePath(f)) await rm(imagePath(f), { force: true });
     for (const x of [...(job.video?.shots ?? []), ...(job.slides ?? [])]) if (x.image && imagePath(x.image)) await rm(imagePath(x.image), { force: true });
   }
 
-  return { init, status, setWorker, saveUpload, hasUpload, videoPath, imagePath, finish, remove, redrawSlide, replaceSlide, renderSlides };
+  /**
+   * "Chỉnh ảnh món": the uploaded photo, studio-graded on this server (no GPU, no model; the food is not
+   * redrawn), one file per ratio in the images folder. Result for the job: { result, fields: { photos } }.
+   */
+  async function fixPhoto(job, { setPhase, signal } = {}) {
+    const { photoId, look = "natural", ratios = ["1:1"], background = "original", ai = "off", label = "" } = job.input ?? {};
+    if (!hasUpload(photoId)) throw new VideoError("Ảnh đã hết hạn lưu (7 ngày), hãy tải lại ảnh.");
+    await mkdir(dirs.images, { recursive: true });
+    const extra = [];
+    /** Start a GPU job and wait for it (polled at /image/{id}, like the ad pictures). */
+    async function onGpu(route, body, what) {
+      if (!worker.url) throw new VideoError(`${what} cần GPU, mà GPU chưa được kết nối. Tắt lựa chọn này hoặc nhờ quản trị viên bật GPU.`);
+      const { id } = await call(route, { method: "POST", body, signal });
+      const deadline = Date.now() + 20 * 60_000; // the first call may wait for the models to load
+      for (;;) {
+        if (Date.now() > deadline) throw new VideoError(`${what} quá lâu, đã dừng chờ.`);
+        await sleep(2500, undefined, { signal });
+        let res;
+        try {
+          res = await call(`/image/${id}`, { signal });
+        } catch (e) {
+          if (signal?.aborted || /Token/.test(e.message)) throw e;
+          continue; // tunnel hiccup
+        }
+        if (res.status === "failed") throw new VideoError(`GPU lỗi: ${res.error}`);
+        if (res.status === "done") return res;
+      }
+    }
+    // "AI làm đẹp": the GPU lightly repaints the photo for light and color; the result is then framed.
+    if (PHOTO_AI[ai]) {
+      const tmp = path.join(dirs.images, `.${job.id}`);
+      await mkdir(tmp, { recursive: true });
+      const touched = path.join(tmp, "ai.png");
+      if (isMock()) {
+        await copyFile(path.join(dirs.uploads, photoId), touched);
+      } else {
+        await setPhase?.("AI đang làm đẹp ánh sáng và màu…");
+        const image = (await readFile(path.join(dirs.uploads, photoId))).toString("base64");
+        const res = await onGpu("/enhance", { image, strength: PHOTO_AI[ai], prompt: label }, "AI làm đẹp");
+        await writeFile(touched, Buffer.from(res.image, "base64"));
+      }
+      extra.push(`ai:${touched}`);
+    }
+    // A new surface: the GPU cuts the dish out (its pixels untouched) and draws the surface; then the
+    // two are put together here, with a shadow, before the color grade.
+    if (!extra.length && background !== "original" && PHOTO_BACKGROUNDS[background]) {
+      const tmp = path.join(dirs.images, `.${job.id}`);
+      await mkdir(tmp, { recursive: true });
+      const cutout = path.join(tmp, "cutout.png");
+      const back = path.join(tmp, "background.png");
+      if (isMock()) {
+        extra.push("mock", "mock");
+      } else {
+        await setPhase?.("AI đang tách món khỏi nền và vẽ nền mới…");
+        const image = (await readFile(path.join(dirs.uploads, photoId))).toString("base64");
+        const res = await onGpu("/cutout", { image, background: PHOTO_BACKGROUNDS[background] }, "Đổi nền");
+        await writeFile(cutout, Buffer.from(res.cutout, "base64"));
+        await writeFile(back, Buffer.from(res.background, "base64"));
+        extra.push(cutout, back);
+      }
+    }
+    await setPhase?.("Đang chỉnh sáng, màu và khung ảnh…");
+    const { stdout } = await run(process.env.PYTHON ?? "python3", [PHOTO_SCRIPT, path.join(dirs.uploads, photoId), dirs.images, job.id, look, ratios.join(","), ...extra], { timeout: 120_000 });
+    await rm(path.join(dirs.images, `.${job.id}`), { recursive: true, force: true });
+    const photos = JSON.parse(stdout.trim().split("\n").at(-1));
+    return { result: `Đã chỉnh ${photos.items.length} ảnh: ${photos.items.map((x) => x.ratio).join(", ")}.`, fields: { photos: { ...photos, look, background, ai } } };
+  }
+
+  return { init, status, setWorker, saveUpload, hasUpload, videoPath, imagePath, finish, remove, redrawSlide, replaceSlide, renderSlides, fixPhoto };
 }

@@ -11,6 +11,8 @@ export function memoryAdapter() {
   const schedule = new Map();
   const watch = new Map();
   const users = new Map();
+  const errors = [];
+  let settings = {};
   let seeded = false;
 
   return {
@@ -67,6 +69,26 @@ export function memoryAdapter() {
     },
     async saveFeedback(item) {
       feedback.push(clone(item));
+    },
+    async loadSettings() {
+      return clone(settings);
+    },
+    async saveSettings(next) {
+      settings = clone(next);
+    },
+    async saveError(item) {
+      errors.push(clone(item));
+    },
+    async loadErrors(limit) {
+      return [...errors].sort(newestFirst).slice(0, limit).map(clone);
+    },
+    async deleteErrors() {
+      errors.length = 0;
+    },
+    /** Everything, for a backup: { collection: [docs] }. */
+    async exportAll() {
+      const all = (m) => [...m.values()].map(clone);
+      return { jobs: all(jobs), library: all(library), schedule: all(schedule), watch: all(watch), users: all(users), feedback: feedback.map(clone), errors: errors.map(clone), meta: [{ id: "settings", ...clone(settings) }] };
     },
     /** Insert starter items exactly once per database. */
     async seedOnce(items) {

@@ -131,6 +131,7 @@ export function filesOf(job) {
   if (job?.video?.file) out.add(`videos/${job.video.file}`);
   for (const c of job?.clips ?? []) if (c.file) out.add(`videos/${c.file}`);
   for (const x of job?.images?.items ?? []) if (x.file) out.add(`images/${x.file}`);
+  for (const f of [job?.photos?.original, job?.photos?.fixed, ...(job?.photos?.items ?? []).map((x) => x.file)]) if (f) out.add(`images/${f}`);
   for (const x of [...(job?.slides ?? []), ...(job?.video?.shots ?? [])]) if (x.image) out.add(`images/${x.image}`);
   return [...out];
 }

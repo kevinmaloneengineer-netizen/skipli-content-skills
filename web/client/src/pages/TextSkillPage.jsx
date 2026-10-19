@@ -6,7 +6,7 @@ import FilePick from "../components/FilePick.jsx";
 
 /** A form with a few text fields that submits one job; the page is set by its config (lib/textSkills.js). */
 export default function TextSkillPage({ config }) {
-  const [values, setValues] = useState(() => Object.fromEntries(config.fields.map((f) => [f.name, ""])));
+  const [values, setValues] = useState(() => Object.fromEntries(config.fields.map((f) => [f.name, f.kind === "select" ? f.options[0][0] : ""])));
   const [submit, busy, error] = useSubmitJob(config.type);
   const set = (name) => (e) => setValues((v) => ({ ...v, [name]: e.target.value }));
   const [photo, setPhoto] = useState(null);
@@ -39,6 +39,10 @@ export default function TextSkillPage({ config }) {
           <Field key={f.name} label={f.label} hint={f.hint}>
             {f.kind === "area" ? (
               <textarea rows={4} value={values[f.name]} onChange={set(f.name)} placeholder={f.placeholder} required={f.required} autoFocus={i === 0} />
+            ) : f.kind === "select" ? (
+              <select value={values[f.name]} onChange={set(f.name)}>
+                {f.options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
             ) : (
               <input className={i === 0 ? "input-lg" : undefined} value={values[f.name]} onChange={set(f.name)} placeholder={f.placeholder} autoComplete="off" required={f.required} autoFocus={i === 0} />
             )}

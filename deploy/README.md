@@ -71,12 +71,24 @@ PUBLIC_URL=https://content.example.com
 
 - Chống tạo nhiều tài khoản lấy credit free: mỗi IP chỉ tạo được `SIGNUP_PER_IP` tài khoản (mặc định 2, lưu cùng tài khoản nên khởi động lại không mất), và tối đa 5 lần đăng ký mỗi giờ.
   Nếu web chạy sau nginx, Cloudflare hay load balancer thì **bắt buộc** đặt `TRUST_PROXY=1`, không thì mọi khách đều mang IP của proxy và chỉ 2 người đầu đăng ký được.
-- Xác nhận email bằng mã 6 số: đặt `SMTP_USER` (địa chỉ Gmail) và `SMTP_PASS` (App Password 16 ký tự: Tài khoản Google → Bảo mật → Xác minh 2 bước → Mật khẩu ứng dụng). Tài khoản mới chỉ nhận credit dùng thử sau khi nhập đúng mã (hết hạn 10 phút, sai tối đa 5 lần, gửi lại mỗi phút một lần). Để trống thì bỏ qua bước này; chạy thử local có thể đặt `MAIL_LOG=1` để mã in ra log server. Gmail gửi được khoảng 500 mail/ngày.
+- Xác nhận email bằng mã 6 số (khách đăng ký và đăng nhập bằng email). Đặt `SMTP_USER` (địa chỉ Gmail) và `SMTP_PASS` (App Password 16 ký tự: Tài khoản Google → Bảo mật → Xác minh 2 bước → Mật khẩu ứng dụng). Tài khoản chỉ được tạo, kèm credit dùng thử, sau khi nhập đúng mã (hết hạn 10 phút, sai tối đa 5 lần, gửi lại mỗi phút một lần, tối đa 5 lần mỗi giờ); chưa nhập mã thì không có gì trong danh sách tài khoản. Quên mật khẩu cũng gửi mã qua email. Để trống thì bỏ qua bước mã; chạy thử local đặt `MAIL_LOG=1` để mã in ra log server. Gmail gửi được khoảng 500 mail/ngày.
 - Mỗi lượt chạy trừ credit theo loại (`CREDIT_COST` trong `web/server/billing.mjs`): bài viết 1, quét kênh 2, so sánh 3, cắt/lồng tiếng 4, video 5. Lượt lỗi hoặc bị huỷ được hoàn credit.
 - Tài khoản admin, và tài khoản admin tạo tay, không bị tính credit. Admin cộng credit tay ở trang Quản lý tài khoản.
 - Webhook: Stripe Dashboard → Developers → Webhooks → thêm endpoint `https://<PUBLIC_URL>/api/stripe/webhook`, sự kiện `checkout.session.completed`, rồi chép signing secret vào `STRIPE_WEBHOOK_SECRET`.
   Chạy local thì không cần webhook: trang `/billing` tự hỏi Stripe sau khi thanh toán xong. Muốn thử webhook local: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
 - Thử bằng key `sk_test_...` và thẻ `4242 4242 4242 4242` (ngày hết hạn bất kỳ trong tương lai, CVC bất kỳ). Khi công ty xác minh xong tài khoản Stripe thì đổi sang key `sk_live_...`.
+
+## 3d. Vận hành: lỗi, sao lưu, tắt server
+
+- **Lỗi:** lỗi máy chủ, tác vụ lỗi và lỗi trên trình duyệt người dùng hiện ở trang Quản lý tài khoản (mục "Lỗi gần đây"). Muốn nhận về Slack hoặc Discord: tạo Incoming Webhook rồi đặt `ERROR_WEBHOOK_URL`.
+- **Sao lưu:** khi đã cấu hình bucket (mục 3b), server tự sao lưu toàn bộ Firestore mỗi ngày vào `backups/YYYY-MM-DD.json.gz`, giữ `BACKUP_KEEP_DAYS` ngày (mặc định 14). Trang admin có nút "Sao lưu ngay". Khôi phục (tắt server trước):
+  ```bash
+  cd web
+  node scripts/restore-backup.mjs backups/2026-10-18.json.gz            # xem trong file có gì
+  node scripts/restore-backup.mjs backups/2026-10-18.json.gz --confirm  # ghi lại vào Firestore
+  ```
+- **Tắt / khởi động lại:** server ngừng nhận việc mới và chờ tác vụ đang chạy xong (tối đa `SHUTDOWN_WAIT_SEC`, mặc định 25 giây). Tác vụ chưa xong được chạy lại từ đầu một lần khi server lên lại.
+- **Cài đặt đăng ký và credit** (số tài khoản mỗi IP, credit tặng, gói nạp) sửa trực tiếp ở trang admin, áp dụng ngay; giá trị trong `.env` chỉ là mặc định.
 
 ## 4. Cấu hình GoClaw sau lần chạy đầu (một lần)
 

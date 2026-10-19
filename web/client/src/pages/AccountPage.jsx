@@ -28,7 +28,7 @@ export default function AccountPage() {
       <BackLink />
       <header className="plain-head">
         <h1>Tài khoản</h1>
-        <p>{user.name ? `${user.name} · ` : ""}{user.email}</p>
+        <p>{user.name ? `${user.name} · ` : ""}{user.contact}</p>
       </header>
       <form className="form-card" onSubmit={submit}>
         <h2>Đổi mật khẩu</h2>

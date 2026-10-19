@@ -125,7 +125,24 @@ export function buildJob(type, raw, refs = {}) {
 }
 
 /** Job types whose result is copy for customers (scan reports stay in Vietnamese for the owner). */
-const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video"]);
+const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post"]);
+
+/** Google Business Profile post buttons (the "Add a button" choices in Google). */
+export const GBP_BUTTONS = { book: "Đặt bàn (Book)", order: "Đặt món online (Order online)", call: "Gọi ngay (Call now)", learn: "Xem thêm (Learn more)", offer: "Nhận ưu đãi (Offer)" };
+/** "Chỉnh ảnh món": looks and output frames. */
+export const PHOTO_LOOKS = ["natural", "warm", "bright", "moody"];
+export const PHOTO_RATIOS = ["1:1", "4:5", "9:16", "16:9"];
+/** "AI làm đẹp": how much the GPU may repaint the photo (img2img strength); low keeps the dish as it is. */
+export const PHOTO_AI = { off: 0, light: 0.2, medium: 0.3 };
+/** New surfaces for "Chỉnh ảnh món" (AI cuts the dish out on the GPU and draws one of these under it). */
+export const PHOTO_BACKGROUNDS = {
+  original: null, // keep the photo's own background (no GPU)
+  wood: "rustic warm wooden table top, natural oak grain",
+  marble: "white marble countertop with soft grey veins",
+  light: "clean bright seamless off-white backdrop, soft studio light",
+  dark: "dark slate stone surface, moody restaurant lighting, deep shadows",
+  linen: "beige linen tablecloth with soft folds, bright cafe by a window",
+};
 const ENGLISH_RULE = [
   "NGÔN NGỮ: thông tin được nhập bằng tiếng Anh, khách của quán nói tiếng Anh (thị trường Mỹ).",
   "Viết TOÀN BỘ nội dung dành cho khách (bài đăng, caption, câu trả lời, tin nhắn, mô tả món, lời thoại, chữ trên ảnh, hashtag) bằng tiếng Anh tự nhiên kiểu Mỹ. Tiền tệ là USD ($).",
@@ -680,6 +697,34 @@ function buildSpec(type, raw, refs) {
       const sections = ["Viết bài đố món ăn theo skill dish-riddle, bằng tiếng Việt.", `Quán: ${business}`, `Món cần đố: ${dish}`];
       if (seen) sections.push(`Trong ảnh chỉ thấy: ${seen}`);
       return { agent: "writer", direct: "dish-riddle", title: `Đoán món · ${dish.slice(0, 60)}`, input: { business, dish, seen, photoId }, prompt: sections.join("\n\n") };
+    }
+
+    case "gbp-post": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const promote = str(raw.promote, "điều muốn giới thiệu", { required: true, max: 600 });
+      const details = str(raw.details, "thông tin thêm", { max: 800 });
+      const button = GBP_BUTTONS[raw.button] ? raw.button : "learn";
+      const sections = [
+        "Viết bài đăng Google Business Profile theo skill gbp-post, bằng tiếng Việt.",
+        `Quán: ${business}`,
+        `Muốn giới thiệu: ${promote}`,
+        `Nút bấm trên bài: ${GBP_BUTTONS[button]}`,
+      ];
+      if (details) sections.push(`Thông tin có thật của quán (chỉ dùng những gì ở đây cho giá, giờ, địa chỉ, ưu đãi):\n${details}`);
+      return { agent: "writer", direct: "gbp-post", title: `Google Business · ${business.slice(0, 60)}`, input: { business, promote, details, button }, prompt: sections.join("\n\n") };
+    }
+
+    case "photo-fix": {
+      // Runs on the server only (server/overlay/photo_fix.py): no model, so no prompt.
+      const photoId = raw.photoId ? String(raw.photoId) : "";
+      if (!photoId || !refs.hasUpload?.(photoId)) throw new InputError("Chọn ảnh món cần chỉnh.");
+      const look = PHOTO_LOOKS.includes(raw.look) ? raw.look : "natural";
+      const ratios = [...new Set(list(raw.ratios, "khung ảnh", 4))].filter((r) => PHOTO_RATIOS.includes(r));
+      if (!ratios.length) throw new InputError("Chọn ít nhất một khung ảnh.");
+      const label = str(raw.label, "tên món", { max: 80 });
+      const background = raw.background in PHOTO_BACKGROUNDS ? raw.background : "original";
+      const ai = raw.ai in PHOTO_AI ? raw.ai : "off";
+      return { agent: "writer", title: `Chỉnh ảnh · ${label || "món ăn"}`, input: { photoId, look, ratios, label, background, ai }, prompt: "" };
     }
 
     case "story-behind": {

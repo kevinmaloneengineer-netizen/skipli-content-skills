@@ -174,18 +174,26 @@ test("library CRUD with validation", async () => {
   assert.equal((await call("PUT", `/api/library/${body.item.id}`, { title: "x" })).status, 404);
 });
 
-test("restart marks in-flight jobs as interrupted and resumes the queue", async () => {
+test("restart runs an interrupted job again once and resumes the queue; a second interruption fails it", async () => {
   const run = (await call("POST", "/api/jobs", { type: "write", input: { topic: "r1" } })).body.job;
   const queued = (await call("POST", "/api/jobs", { type: "write", input: { topic: "r2" } })).body.job;
   await waitFor(run.id, ["running"]);
 
-  // Second app instance on the same database simulates a restart.
+  // Second app instance on the same database simulates a restart: the running job starts over.
   const app2 = await createApp(config(), adapter);
-  assert.equal(app2.store.cachedJob(run.id).status, "failed");
-  assert.match(app2.store.cachedJob(run.id).error, /khởi động lại/);
-  for (let i = 0; i < 100 && app2.store.cachedJob(queued.id).status !== "done"; i++) await sleep(50);
+  assert.equal(app2.store.cachedJob(run.id).restarts, 1);
+  assert.notEqual(app2.store.cachedJob(run.id).status, "failed");
+  for (let i = 0; i < 150 && [run.id, queued.id].some((id) => app2.store.cachedJob(id).status !== "done"); i++) await sleep(50);
+  assert.equal(app2.store.cachedJob(run.id).status, "done");
   assert.equal(app2.store.cachedJob(queued.id).status, "done");
   await waitFor(run.id, ["done", "failed"]); // let the first instance settle too
+
+  // Interrupted again after its one restart: failed.
+  const job = await app2.store.getJob(run.id);
+  await adapter.saveJob({ ...job, status: "running", restarts: 1 });
+  const app3 = await createApp(config(), adapter);
+  assert.equal(app3.store.cachedJob(run.id).status, "failed");
+  assert.match(app3.store.cachedJob(run.id).error, /khởi động lại/);
 });
 
 test("APP_PASSWORD enables basic auth", async () => {

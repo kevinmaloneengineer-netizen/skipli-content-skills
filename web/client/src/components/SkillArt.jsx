@@ -501,6 +501,46 @@ function WeatherPost() {
   );
 }
 
+/** Google Business: a map pin card with a post and a button. */
+function GbpPost() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(46 22)">
+        <rect width="110" height="106" rx="12" className="art-card" />
+        <path d="M55 20 a20 20 0 0 1 20 20 c0 15 -20 34 -20 34 s-20 -19 -20 -34 a20 20 0 0 1 20 -20z" className="art-hi" />
+        <circle cx="55" cy="40" r="7" className="art-card" />
+        <rect x="16" y="84" width="78" height="8" rx="4" className="art-mid" />
+      </g>
+      <g transform="translate(170 30)">
+        <rect width="112" height="90" rx="12" className="art-card" />
+        <rect x="12" y="12" width="88" height="8" rx="4" className="art-mid" />
+        <rect x="12" y="28" width="70" height="8" rx="4" className="art-mid" />
+        <rect x="12" y="44" width="80" height="8" rx="4" className="art-mid" />
+        <rect x="12" y="62" width="52" height="18" rx="9" className="art-hi" />
+      </g>
+    </svg>
+  );
+}
+
+/** Chỉnh ảnh: a dull photo turning bright, with a slider between them. */
+function PhotoFix() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(60 20)">
+        <rect width="200" height="110" rx="14" className="art-card" />
+        <rect x="10" y="10" width="90" height="90" rx="9" className="art-mid" opacity=".55" />
+        <rect x="100" y="10" width="90" height="90" rx="9" className="art-hi" />
+        <circle cx="55" cy="58" r="26" className="art-card" opacity=".6" />
+        <circle cx="145" cy="58" r="26" className="art-card" />
+        <circle cx="145" cy="58" r="14" className="art-mid" />
+        <rect x="97" y="4" width="6" height="102" rx="3" className="art-card" />
+        <circle cx="100" cy="55" r="11" className="art-card" />
+        <path d="M95 55 l-3 0 M105 55 l3 0" strokeWidth="3" strokeLinecap="round" className="art-stroke" />
+      </g>
+    </svg>
+  );
+}
+
 /** Chấm điểm bài: a post with a score badge and ticks on its lines. */
 function PostScore() {
   return (
@@ -550,7 +590,7 @@ function LiveRecap() {
   );
 }
 
-const ART = { "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+const ART = { "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

@@ -28,6 +28,8 @@ export function connectFirestore({ projectId, serviceAccount, databaseId }) {
  *   <prefix>meta/app       { seeded: true }
  *   <prefix>watch/{id}     competitor channels checked on a schedule
  *   <prefix>users/{id}     customer accounts (ACCOUNTS=1)
+ *   <prefix>meta/settings  sign-up and credit settings the admin changes on the web
+ *   <prefix>errors/{id}    server, job and browser errors (the admin's "Lỗi gần đây")
  * Only single-field queries are used, so no composite index is needed.
  * Clients never touch Firestore directly - see deploy/firebase/firestore.rules.
  */
@@ -39,6 +41,8 @@ export function firestoreAdapter(db, prefix = "") {
   const schedule = db.collection(`${prefix}schedule`);
   const watch = db.collection(`${prefix}watch`);
   const users = db.collection(`${prefix}users`);
+  const errors = db.collection(`${prefix}errors`);
+  const settings = db.collection(`${prefix}meta`).doc("settings");
   const data = (snap) => snap.docs.map((d) => d.data());
 
   return {
@@ -96,6 +100,30 @@ export function firestoreAdapter(db, prefix = "") {
     },
     async saveFeedback(item) {
       await feedback.doc(item.id).set(item);
+    },
+    async loadSettings() {
+      const snap = await settings.get();
+      return snap.exists ? snap.data() : {};
+    },
+    async saveSettings(next) {
+      await settings.set(next);
+    },
+    async saveError(item) {
+      await errors.doc(item.id).set(item);
+    },
+    async loadErrors(limit) {
+      return data(await errors.orderBy("createdAt", "desc").limit(limit).get());
+    },
+    async deleteErrors() {
+      for (const doc of (await errors.limit(500).get()).docs) await doc.ref.delete();
+    },
+    /** Every collection of this app (its prefix), for a backup: { name: [docs with id] }. */
+    async exportAll() {
+      const out = {};
+      for (const name of ["jobs", "library", "meta", "feedback", "schedule", "watch", "users", "errors"]) {
+        out[name] = (await db.collection(`${prefix}${name}`).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+      }
+      return out;
     },
     async seedOnce(items) {
       return db.runTransaction(async (tx) => {

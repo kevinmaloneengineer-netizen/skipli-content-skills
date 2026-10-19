@@ -391,7 +391,38 @@ https://www.tiktok.com/@tn.170604/video/7680434571602709768
 ## Ý tưởng quay cho bạn
 1. **Một ngày làm chủ quán lẩu**: quay nhanh từ sáng nấu nước dùng đến tối đông khách.`;
 const COMPARE = `## Tổng quan\nKênh A đăng đều nhất, kênh B có tương tác trung vị cao gấp đôi.\n\n## Mỗi kênh mạnh ở đâu\n### @a\n- Đăng 3 reel mỗi tuần.\n- Điểm yếu: video dài, giữ chân kém.\n\n## Bài học cho bạn\n- Học kênh B: mở đầu bằng món ăn cận cảnh.`;
-const REPLIES = { yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const GBP = `## Bài 1: Món mới
+Phở bò cay vừa có mặt ở Phở Cali! Nước dùng hầm 12 tiếng, thêm sa tế nhà làm cay vừa đủ để ấm người những ngày trở lạnh.
+
+Ghé quán ăn trưa hoặc đặt mang về ngay hôm nay.
+
+**Nút:** Order online
+**Ảnh nên dùng:** Cận cảnh tô phở bốc khói, sa tế đỏ bên cạnh
+
+## Bài 2: Ưu đãi
+Tuần này, mỗi tô phở bò cay kèm một ly trà đá miễn phí. Áp dụng cả ăn tại quán và mang về.
+
+Bấm nhận ưu đãi và đưa màn hình cho nhân viên khi thanh toán.
+
+**Nút:** Offer
+**Ảnh nên dùng:** Tô phở và ly trà đá trên bàn gỗ, ánh sáng tự nhiên
+
+## Bài 3: Trải nghiệm
+Bàn ấm, phở nóng, nhạc nhẹ: Phở Cali là chỗ quen cho bữa tối cả nhà. Có ghế trẻ em và chỗ đậu xe ngay trước quán.
+
+Đặt bàn trước cho nhóm từ 6 người.
+
+**Nút:** Book
+**Ảnh nên dùng:** Góc quán buổi tối, vài bàn có khách
+
+## Hỏi đáp gợi ý
+- **Quán có chỗ đậu xe không?** Có, ngay trước quán.
+- **Có món chay không?** Có phở chay nước dùng rau củ.
+- **Có nhận đặt bàn không?** Có, bấm Đặt bàn trên Google hoặc gọi [PHONE].
+- **Quán mở cửa giờ nào?** [HOURS].
+- **Có giao hàng không?** Có, đặt qua nút Order online.`;
+
+const REPLIES = { "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 /** Canned report for the "Xem kết quả mẫu" page of a skill (null for skills whose result is media). */
 export const sampleReply = (type) => (type === "image" || type === "video" ? null : REPLIES[type] ?? null);

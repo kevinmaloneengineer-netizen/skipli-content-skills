@@ -5,9 +5,21 @@ import { useAuth } from "../components/AuthGate.jsx";
 import { useJobs } from "../context/JobsContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import { api } from "../lib/api.js";
-import { skillByType } from "../lib/constants.js";
+import { SKILLS, skillByType } from "../lib/constants.js";
+import SkillArt from "../components/SkillArt.jsx";
 import { ago } from "../lib/format.js";
 
+/** What a balance or a pack buys, in the two things people buy most. */
+const worth = (credits, costs) => [
+  [Math.floor(credits / 1), "bài viết"],
+  [Math.floor(credits / (costs.video ?? 5)), "video"],
+];
+const FAQ = [
+  ["Credit có hết hạn không?", "Không. Credit đã nạp hay được tặng dùng đến khi hết, không giới hạn thời gian."],
+  ["Lượt chạy bị lỗi có mất credit không?", "Không. Lượt lỗi hoặc bạn bấm huỷ được hoàn credit tự động ngay khi kết thúc."],
+  ["Thanh toán có an toàn không?", "Thẻ được nhập trên trang của Stripe, web không thấy và không lưu số thẻ của bạn."],
+  ["Nạp xong bao lâu thì có credit?", "Ngay khi quay lại trang này sau khi thanh toán. Nếu chưa thấy, tải lại trang sau vài giây."],
+];
 const money = (cents, currency) => new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 
 /**
@@ -17,7 +29,7 @@ const money = (cents, currency) => new Intl.NumberFormat("en-US", { style: "curr
  */
 export default function BillingPage() {
   const { user, reload } = useAuth();
-  const { refresh } = useJobs();
+  const { refresh, jobs } = useJobs();
   const toast = useToast();
   const navigate = useNavigate();
   const { search } = useLocation();
@@ -66,68 +78,119 @@ export default function BillingPage() {
   if (!user) return <div className="narrow"><BackLink /><p className="empty">Web chưa bật tài khoản riêng.</p></div>;
   if (!data) return <div className="narrow"><BackLink />{error ? <p className="form-error">{error}</p> : <p className="hint">Đang tải…</p>}</div>;
 
-  // Tools grouped by price: "1 credit: Viết bài, Hashtag…"
-  const tiers = Object.entries(data.costs).reduce((acc, [type, cost]) => ({ ...acc, [cost]: [...(acc[cost] ?? []), skillByType(type)?.short].filter(Boolean) }), {});
   const best = data.packs.length > 2 ? data.packs[1].id : null;
+  // Tools by price, with their art: 1 credit for every writing tool not in the table.
+  const priced = new Set(Object.keys(data.costs));
+  const tiers = Object.entries(data.costs).reduce((acc, [type, cost]) => {
+    const skill = skillByType(type);
+    if (skill) (acc[cost] ??= []).push(skill);
+    return acc;
+  }, {});
+  tiers[1] = [...(tiers[1] ?? []), ...SKILLS.filter((s) => s.type && !priced.has(s.type) && s.status !== "soon" && s.id !== "library" && s.id !== "schedule")];
+  // Credit activity: top-ups (+) and runs that took credits (−, or refunded), newest first.
+  const runs = (jobs ?? []).filter((j) => j.credits).map((j) => ({ id: j.id, at: j.createdAt, delta: j.refunded ? 0 : -j.credits, label: j.title, refunded: !!j.refunded, credits: j.credits }));
+  const tops = (data.payments ?? []).map((p) => ({ id: p.id, at: p.at, delta: p.credits, label: "Nạp credit", amount: p.amount != null ? money(p.amount, p.currency || data.currency) : "" }));
+  const activity = [...runs, ...tops].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 12);
+  const month = Date.now() - 30 * 86_400_000;
+  const spent = runs.filter((r) => Date.parse(r.at) > month).reduce((n, r) => n - r.delta, 0);
 
   return (
     <div className="billing">
       <BackLink />
       <section className="billing-hero">
-        <div>
+        <div className="billing-hero-text">
           <span className="dash-kicker">Credit</span>
           <h1>{data.metered ? <><b>{data.credits}</b> credit còn lại</> : "Tài khoản không tính credit"}</h1>
           <p>{data.metered ? "Mỗi lần chạy công cụ trừ credit theo loại việc. Lượt chạy lỗi hoặc bị huỷ được hoàn lại credit." : "Tài khoản quản trị (hoặc do quản trị viên tạo) dùng không giới hạn credit."}</p>
+          {data.metered && data.credits < 3 && <p className="billing-low">Sắp hết credit. Nạp thêm để chạy tiếp.</p>}
         </div>
-        {data.metered && data.credits < 3 && <p className="billing-low">Sắp hết credit. Nạp thêm để chạy tiếp.</p>}
+        {data.metered && (
+          <div className="billing-wallet" aria-hidden="true">
+            <div className="billing-card">
+              <span className="billing-card-brand">Skipli Content</span>
+              <span className="billing-card-chip" />
+              <b>{data.credits}</b>
+              <small>{user.contact}</small>
+            </div>
+            <div className="billing-stats">
+              {worth(data.credits, data.costs).map(([n, label]) => <div key={label}><b>≈ {n}</b><span>{label}</span></div>)}
+              <div><b>{spent}</b><span>đã dùng 30 ngày</span></div>
+            </div>
+          </div>
+        )}
       </section>
 
       {error && <p className="form-error" role="alert">{error}</p>}
 
       {data.metered && (
         <section className="billing-buy">
+          <h2 className="billing-title">Chọn gói nạp</h2>
           <div className="billing-packs">
-          {data.packs.map((p) => (
-            <article key={p.id} className={p.id === best ? "billing-pack is-best" : "billing-pack"}>
-              {p.id === best && <span className="billing-tag">Phổ biến</span>}
-              <h2><b>{p.credits}</b> credit</h2>
-              <p className="billing-price">{money(p.cents, data.currency)}</p>
-              <small>{money(p.cents / p.credits, data.currency)} mỗi credit</small>
-              <button type="button" className={p.id === best ? "btn primary" : "btn"} disabled={!data.enabled || !!buying} onClick={() => buy(p)}>
-                {buying === p.id ? "Đang mở Stripe…" : "Nạp gói này"}
-              </button>
-            </article>
-          ))}
+            {data.packs.map((p) => (
+              <article key={p.id} className={p.id === best ? "billing-pack is-best" : "billing-pack"}>
+                {p.id === best && <span className="billing-tag">Phổ biến</span>}
+                <h3><b>{p.credits}</b> credit</h3>
+                <p className="billing-price">{money(p.cents, data.currency)}</p>
+                <small>{money(p.cents / p.credits, data.currency)} mỗi credit</small>
+                <ul className="billing-gets">
+                  {worth(p.credits, data.costs).map(([n, label]) => <li key={label}>Khoảng {n} {label}</li>)}
+                  <li>Không hết hạn</li>
+                </ul>
+                <button type="button" className={p.id === best ? "btn primary" : "btn"} disabled={!data.enabled || !!buying} onClick={() => buy(p)}>
+                  {buying === p.id ? "Đang mở Stripe…" : "Nạp gói này"}
+                </button>
+              </article>
+            ))}
           </div>
           {!data.enabled && <p className="hint billing-off">Thanh toán chưa được bật trên máy chủ (thiếu STRIPE_SECRET_KEY).</p>}
-          <p className="billing-secure">Thanh toán bằng thẻ qua Stripe. Web không lưu số thẻ của bạn.</p>
+          <p className="billing-secure"><span aria-hidden="true">🔒</span> Thanh toán bằng thẻ qua Stripe. Web không lưu số thẻ của bạn.</p>
         </section>
       )}
 
       <section className="billing-grid">
-        <div className="dash-panel">
+        <div className="dash-panel billing-prices">
           <header><h3>Mỗi lượt chạy tốn bao nhiêu</h3></header>
-          <ul className="billing-costs">
-            <li><b>1</b><span>Các công cụ viết bài còn lại (bài đăng, trả lời review, hashtag, menu…)</span></li>
-            {Object.entries(tiers).sort(([a], [b]) => a - b).map(([cost, names]) => (
-              <li key={cost}><b>{cost}</b><span>{names.join(", ")}</span></li>
-            ))}
-          </ul>
+          {Object.entries(tiers).sort(([a], [b]) => a - b).map(([cost, skills]) => (
+            <div key={cost} className="billing-tier">
+              <span className="billing-tier-cost"><b>{cost}</b> credit</span>
+              <div className="billing-tier-tools">
+                {skills.map((s) => (
+                  <span key={s.id} className="billing-tool" data-tone={s.tone} title={s.title}>
+                    <i aria-hidden="true"><SkillArt id={s.id} /></i>
+                    {s.short}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
         {data.metered && (
-          <div className="dash-panel">
-            <header><h3>Lịch sử nạp</h3></header>
-            {data.payments.length === 0 && <p className="hint">Chưa nạp lần nào.</p>}
+          <div className="dash-panel billing-activity">
+            <header><h3>Hoạt động credit</h3></header>
+            {activity.length === 0 && <p className="hint">Chưa có hoạt động nào. Chạy một công cụ hoặc nạp credit, lịch sử sẽ hiện ở đây.</p>}
             <ul className="billing-history">
-              {data.payments.map((p) => (
-                <li key={p.id}>
-                  <span><b>+{p.credits} credit</b><small>{ago(p.at)}</small></span>
-                  <span>{p.amount != null ? money(p.amount, p.currency || data.currency) : ""}</span>
+              {activity.map((x) => (
+                <li key={x.id} className={x.delta > 0 ? "is-in" : x.refunded ? "is-refund" : "is-out"}>
+                  <span className="billing-dot" aria-hidden="true">{x.delta > 0 ? "+" : x.refunded ? "↺" : "−"}</span>
+                  <span className="billing-what"><b>{x.label}</b><small>{ago(x.at)}{x.amount ? ` · ${x.amount}` : ""}{x.refunded ? " · đã hoàn credit" : ""}</small></span>
+                  <span className="billing-delta">{x.delta > 0 ? `+${x.delta}` : x.refunded ? `±${x.credits}` : x.delta}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
+      </section>
+
+      <section className="billing-faq">
+        <h2 className="billing-title">Câu hỏi thường gặp</h2>
+        <div className="billing-faq-grid">
+          {FAQ.map(([q, a]) => (
+            <div key={q} className="billing-faq-item">
+              <b>{q}</b>
+              <p>{a}</p>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );

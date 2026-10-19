@@ -20,6 +20,8 @@ import { crop, loadImage, upload } from "../lib/image.js";
 import { ACTIVE, CLONE_PLATFORMS, PLATFORMS, skillByType } from "../lib/constants.js";
 import { ago, duration } from "../lib/format.js";
 import { PILLARS, splitLivestream, splitVariants, toPlainText } from "../lib/text.js";
+import PhotoResult from "../components/PhotoResult.jsx";
+import { accepts } from "../lib/drop.js";
 import { blanksOf, fillBlanks, useJobEdits } from "../lib/edits.js";
 
 function inputRows(job) {
@@ -218,6 +220,19 @@ function SlideReview({ job }) {
   const [slides, setSlides] = useState(job.slides);
   const [order, setOrder] = useState(() => job.slides.map((_, i) => i));
   const [busy, setBusy] = useState(null); // index being redrawn / replaced
+  const [dropOn, setDropOn] = useState(null); // slide a photo is being dragged over
+  // A photo dragged onto a slide replaces it, like "Thay ảnh".
+  const dropProps = (i) => (busy !== null ? {} : {
+    onDragOver: (e) => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); setDropOn(i); } },
+    onDragLeave: () => setDropOn((d) => (d === i ? null : d)),
+    onDrop: (e) => {
+      e.preventDefault();
+      setDropOn(null);
+      const f = [...e.dataTransfer.files].find((x) => accepts(x, "image/png,image/jpeg,image/webp"));
+      if (f) replace(i, f);
+      else toast("Chỉ nhận ảnh PNG, JPG hoặc WebP", { kind: "error" });
+    },
+  });
   const [editing, setEditing] = useState(null);
   const [prompt, setPrompt] = useState("");
   const [rendering, setRendering] = useState(false);
@@ -269,8 +284,9 @@ function SlideReview({ job }) {
           const s = slides[i];
           return (
             <li key={i} className={busy === i ? "is-busy" : undefined}>
-              <figure>
+              <figure className={dropOn === i ? "is-over" : undefined} {...dropProps(i)}>
                 <img src={`/media/images/${s.image}?v=${version}`} alt={s.prompt} />
+                {dropOn === i && <span className="slide-drop">Thả ảnh để thay</span>}
                 <span className="slide-num">{k + 1}</span>
                 <span className="slide-role">{s.real ? "Ảnh của bạn" : ROLE_NAMES[s.role] ?? "Ảnh"}</span>
                 {busy === i && <span className="slide-wait"><i className="wait-spin" />Đang vẽ…</span>}
@@ -476,6 +492,8 @@ export function Result({ job, onSave, edits, setEdits }) {
   if (job.type === "menu") return <Variants job={job} onSave={onSave} prefix="Món" edits={edits} setEdits={setEdits} />;
   if (job.type === "inbox") return <Variants job={job} onSave={onSave} prefix="Tình huống" edits={edits} setEdits={setEdits} />;
   if (job.type === "hashtag") return <Variants job={job} onSave={onSave} prefix="Bộ" edits={edits} setEdits={setEdits} />;
+  if (job.type === "gbp-post") return <Variants job={job} onSave={onSave} prefix="Bài" edits={edits} setEdits={setEdits} />;
+  if (job.type === "photo-fix" && job.photos) return <PhotoResult job={job} />;
   if (job.type === "maps" || job.type === "yelp") return <MapsResult job={job} />;
   if (job.type === "compare") return <CompareResult job={job} />;
   if (job.type === "clone") return <CloneBoard job={job} />;
@@ -600,8 +618,8 @@ export default function JobPage() {
         !["video", "review", "inbox", "hashtag"].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
       ].filter(Boolean)
     : [];
-  const full = job.type === "clone" || job.type === "image";
-  const canCopy = done && !["clone", "video", "image"].includes(job.type);
+  const full = job.type === "clone" || job.type === "image" || job.type === "photo-fix";
+  const canCopy = done && !["clone", "video", "image", "photo-fix"].includes(job.type);
 
   return (
     <div className={full ? "job-page full" : "job-page"} data-tone={skill?.tone}>

@@ -201,6 +201,24 @@ export const GUIDE = {
     ],
     output: ["Bài đăng nhắc thời tiết hôm nay", "Món hoặc đồ uống hợp trời", "Caption sẵn để dán"],
   },
+  "gbp-post": {
+    perks: ["Cho Google Maps", "Có nút bấm", "Kèm hỏi đáp"],
+    steps: [
+      ["Nhập quán và điều muốn giới thiệu", "Món mới, ưu đãi, sự kiện hoặc chính quán."],
+      ["Chọn nút bấm", "Đặt bàn, đặt món, gọi ngay, xem thêm hoặc nhận ưu đãi."],
+      ["Đăng lên Google", "Vào hồ sơ Google Business của quán, Thêm cập nhật, dán bài và gắn ảnh gợi ý."],
+    ],
+    output: ["3 bài đăng theo 3 góc khác nhau", "Nút bấm và ảnh nên dùng cho từng bài", "5 câu hỏi đáp cho mục Hỏi đáp"],
+  },
+  "photo-fix": {
+    perks: ["Giữ nguyên món", "Nhiều khung một lần", "Chỉ vài giây"],
+    steps: [
+      ["Tải ảnh món", "Ảnh chụp điện thoại, càng rõ món càng tốt."],
+      ["Chọn kiểu màu và khung", "Tự nhiên, ấm, tươi sáng hoặc sang trọng; vuông, 4:5, dọc 9:16, ngang 16:9."],
+      ["Tải về", "So sánh trước và sau, tải từng khung về máy."],
+    ],
+    output: ["Ảnh sáng và màu ngon hơn, món giữ nguyên", "Đúng khung từng mạng xã hội, không cắt mất món", "Ảnh gốc để so sánh"],
+  },
   dub: {
     perks: ["Giữ nhịp video", "Tiếng Anh hoặc Việt", "Có phụ đề"],
     steps: [

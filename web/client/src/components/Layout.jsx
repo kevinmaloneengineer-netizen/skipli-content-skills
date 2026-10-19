@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useJobs } from "../context/JobsContext.jsx";
 import { ACTIVE, CATEGORIES, skillById, skillByType, STATUS } from "../lib/constants.js";
@@ -6,7 +6,7 @@ import { ago } from "../lib/format.js";
 import { useParallax } from "../lib/motion.js";
 import { FLOWS } from "../lib/workflows.js";
 import Backdrop from "./Backdrop.jsx";
-import ChatWidget from "./ChatWidget.jsx";
+const ChatWidget = lazy(() => import("./ChatWidget.jsx")); // signed-in only: loads after the page
 import UserMenu from "./UserMenu.jsx";
 import { loginPath, useAuth } from "./AuthGate.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
@@ -276,10 +276,12 @@ export default function Layout() {
         )}
       </header>
       <main className="page">
-        <Outlet />
+        <Suspense fallback={<div className="page-loading" aria-label="Đang tải" />}>
+          <Outlet />
+        </Suspense>
       </main>
       <Footer />
-      {!guest && <ChatWidget />}
+      {!guest && <Suspense fallback={null}><ChatWidget /></Suspense>}
       <CommandPalette open={palette} onClose={closePalette} onToggleTheme={toggle} />
       {needCredits && (
         <ConfirmDialog title="Hết credit" body={needCredits} okLabel="Nạp credit" cancelLabel="Để sau" okClass="primary" onOk={() => navigate("/billing")} onClose={() => setNeedCredits(null)} />

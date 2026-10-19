@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useAuth } from "./AuthGate.jsx";
 import { api } from "../lib/api.js";
 import { crop, loadImage } from "../lib/image.js";
+import { useDrop } from "../lib/drop.js";
+
+const IMAGE_TYPES = "image/png,image/jpeg,image/webp";
 import { Field } from "./Form.jsx";
 
 /** GPU worker status + connect form (the Kaggle URL and token change every session). */
@@ -75,9 +78,14 @@ export function GpuCard({ status, onChange }) {
 /** Several photos in order (real photos of the restaurant for a slideshow). */
 export function PhotosPick({ label, hint, value, onChange, max = 6 }) {
   const [error, setError] = useState("");
+  const drop = useDrop({ accept: IMAGE_TYPES, multiple: true, onFiles: (files) => add(files), onReject: setError });
   async function pick(e) {
-    const files = [...(e.target.files ?? [])].slice(0, max - value.length);
+    const files = [...(e.target.files ?? [])];
     e.target.value = "";
+    await add(files);
+  }
+  async function add(picked) {
+    const files = picked.slice(0, max - value.length);
     setError("");
     try {
       const added = [];
@@ -111,7 +119,7 @@ export function PhotosPick({ label, hint, value, onChange, max = 6 }) {
           </figure>
         ))}
         {value.length < max && (
-          <label className="drop photos-add">
+          <label className={drop.over ? "drop photos-add is-over" : "drop photos-add"} {...drop.props}>
             <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={pick} />
             <span>+ Thêm ảnh</span>
           </label>
@@ -125,9 +133,13 @@ export function PhotosPick({ label, hint, value, onChange, max = 6 }) {
 
 export function PhotoPick({ label, hint, value, onChange, png = false }) {
   const [error, setError] = useState("");
+  const drop = useDrop({ accept: IMAGE_TYPES, onFiles: ([f]) => use(f), onReject: setError });
   async function pick(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
+    await use(file);
+  }
+  async function use(file) {
     if (!file) return;
     setError("");
     try {
@@ -146,9 +158,9 @@ export function PhotoPick({ label, hint, value, onChange, png = false }) {
           <button type="button" className="btn small" onClick={() => onChange(null)}>Bỏ ảnh</button>
         </div>
       ) : (
-        <label className="drop">
+        <label className={drop.over ? "drop is-over" : "drop"} {...drop.props}>
           <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pick} />
-          <span>Chọn ảnh</span>
+          <span>{drop.over ? "Thả ảnh vào đây" : "Chọn hoặc kéo thả ảnh"}</span>
         </label>
       )}
       {hint && <small>{hint}</small>}

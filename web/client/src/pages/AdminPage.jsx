@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { BackLink } from "../components/SkillShell.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import AdminOps from "../components/AdminOps.jsx";
 import { useAuth } from "../components/AuthGate.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import { api } from "../lib/api.js";
@@ -45,7 +46,7 @@ export default function AdminPage() {
   async function remove(u) {
     try {
       await api(`/admin/users/${u.id}`, { method: "DELETE" });
-      toast(`Đã xoá tài khoản ${u.email}`);
+      toast(`Đã xoá tài khoản ${u.contact}`);
       load();
     } catch (err) {
       toast(err.message, { kind: "error" });
@@ -87,12 +88,12 @@ export default function AdminPage() {
             <tbody>
               {data?.users.map((u) => (
                 <tr key={u.id} className={u.disabled ? "is-off" : undefined}>
-                  <td><b>{u.name || u.email}</b><small>{u.email}{u.role === "admin" ? " · Quản trị" : ""}{u.disabled ? " · Đã khoá" : ""}{u.emailVerified === false ? " · Chưa xác nhận email" : ""}</small></td>
+                  <td><b>{u.name || u.contact}</b><small>{u.contact}{u.role === "admin" ? " · Quản trị" : ""}{u.disabled ? " · Đã khoá" : ""}{u.verified === false ? " · Chưa xác nhận email" : ""}</small></td>
                   <td>{u.today}</td>
                   <td>{u.jobs}</td>
                   <td>
                     {u.role === "admin" ? "Không giới hạn" : (
-                      <input className="admin-limit" type="number" min="0" max="1000" defaultValue={u.dailyLimit ?? ""} placeholder={String(data.defaultLimit)} aria-label={`Giới hạn của ${u.email}`}
+                      <input className="admin-limit" type="number" min="0" max="1000" defaultValue={u.dailyLimit ?? ""} placeholder={String(data.defaultLimit)} aria-label={`Giới hạn của ${u.contact}`}
                         onBlur={(e) => String(u.dailyLimit ?? "") !== e.target.value && update(u, { dailyLimit: e.target.value === "" ? null : Number(e.target.value) }, "Đã lưu giới hạn")} />
                     )}
                   </td>
@@ -101,14 +102,14 @@ export default function AdminPage() {
                       <div className="admin-credits">
                         <b>{u.credits ?? "Không tính"}</b>
                         {u.paid > 0 && <small>Đã nạp ${(u.paid / 100).toFixed(2)}</small>}
-                        <input className="admin-limit" type="number" placeholder="+ credit" aria-label={`Thêm credit cho ${u.email}`}
+                        <input className="admin-limit" type="number" placeholder="+ credit" aria-label={`Thêm credit cho ${u.contact}`}
                           onKeyDown={(e) => { if (e.key === "Enter" && e.currentTarget.value) { update(u, { addCredits: Number(e.currentTarget.value) }, "Đã cập nhật credit"); e.currentTarget.value = ""; } }} />
                       </div>
                     )}
                   </td>
                   <td>{u.lastLoginAt ? ago(u.lastLoginAt) : "Chưa đăng nhập"}</td>
                   <td><div className="admin-actions">
-                    <button type="button" className="btn small" onClick={() => { const p = window.prompt(`Mật khẩu mới cho ${u.email} (ít nhất 8 ký tự):`); if (p) update(u, { password: p }, "Đã đặt lại mật khẩu"); }}>Đặt lại mật khẩu</button>
+                    <button type="button" className="btn small" onClick={() => { const p = window.prompt(`Mật khẩu mới cho ${u.contact} (ít nhất 8 ký tự):`); if (p) update(u, { password: p }, "Đã đặt lại mật khẩu"); }}>Đặt lại mật khẩu</button>
                     {u.role !== "admin" && <button type="button" className={u.disabled ? "btn small" : "btn small danger"} onClick={() => update(u, { disabled: !u.disabled }, u.disabled ? "Đã mở khoá" : "Đã khoá tài khoản")}>{u.disabled ? "Mở khoá" : "Khoá"}</button>}
                     {u.role !== "admin" && <button type="button" className="btn small danger" onClick={() => setRemoving(u)}>Xoá</button>}
                   </div></td>
@@ -118,10 +119,11 @@ export default function AdminPage() {
           </table>
         </div>
       </section>
+      <AdminOps />
       {removing && (
         <ConfirmDialog
           title="Xoá tài khoản này?"
-          body={`${removing.email} sẽ không đăng nhập được nữa và mất số credit còn lại. Các kết quả đã tạo vẫn nằm trong dữ liệu nhưng không ai xem được.`}
+          body={`${removing.contact} sẽ không đăng nhập được nữa và mất số credit còn lại. Các kết quả đã tạo vẫn nằm trong dữ liệu nhưng không ai xem được.`}
           okLabel="Xoá tài khoản"
           onOk={() => remove(removing)}
           onClose={() => setRemoving(null)}

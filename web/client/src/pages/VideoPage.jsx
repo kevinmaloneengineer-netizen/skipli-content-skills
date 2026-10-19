@@ -6,6 +6,7 @@ import { api } from "../lib/api.js";
 import { getLang } from "../lib/i18n.js";
 import { cutGrid, loadImage, upload } from "../lib/image.js";
 import { uploadAudio } from "../lib/api.js";
+import { useDrop } from "../lib/drop.js";
 import FilePick from "../components/FilePick.jsx";
 
 const MODES = { slideshow: "Trình chiếu ảnh", topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
@@ -72,9 +73,13 @@ function StoryboardPick({ panels, onChange }) {
     if (img) onChange(cutGrid(img, Number(grid.rows), Number(grid.cols), grid.trim ? 0.14 : 0));
   }, [img, grid]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const drop = useDrop({ accept: "image/png,image/jpeg,image/webp", onFiles: ([f]) => use(f), onReject: setError });
   async function pick(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
+    await use(file);
+  }
+  async function use(file) {
     if (!file) return;
     setError("");
     try {
@@ -87,9 +92,9 @@ function StoryboardPick({ panels, onChange }) {
   return (
     <div className="field">
       <span className="field-label">Ảnh storyboard</span>
-      <label className="drop">
+      <label className={drop.over ? "drop is-over" : "drop"} {...drop.props}>
         <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pick} />
-        <span>{img ? "Chọn ảnh khác" : "Chọn ảnh storyboard (một ảnh gồm nhiều ô)"}</span>
+        <span>{drop.over ? "Thả ảnh vào đây" : img ? "Chọn ảnh khác" : "Chọn hoặc kéo thả ảnh storyboard (một ảnh gồm nhiều ô)"}</span>
       </label>
       {error && <p className="form-error" role="alert">{error}</p>}
       {img && (

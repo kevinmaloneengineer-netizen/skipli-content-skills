@@ -25,6 +25,7 @@ export const laneOf = (job) => (job.type === "image" || job.type === "video" ? "
 export function createJobRunner({ store, goclaw, agents, concurrency, lanes = null, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, onEnd = async () => {}, log = console }) {
   const queue = [];
   const running = new Map(); // id -> AbortController
+  let stopping = false; // shutting down: no new job starts
   const lane = (job) => (lanes ? laneOf(job) : "all");
   const limit = (name) => (lanes ? lanes[name] ?? 1 : concurrency);
   const ended = async (id) => {
@@ -34,9 +35,15 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
   const busy = (name) => [...running.keys()].filter((id) => lane(store.cachedJob(id) ?? {}) === name).length;
 
   async function recover() {
-    // A restart kills in-flight HTTP calls to GoClaw; they cannot be resumed.
+    // A restart kills in-flight calls; such a job starts over from the beginning once (it keeps the
+    // credits it took). Interrupted a second time, it is marked failed and gives them back.
     for (const job of store.listJobs()) {
-      if (job.status === "running") {
+      if (job.status !== "running") continue;
+      const restarts = (job.restarts ?? 0) + 1;
+      if (restarts <= 1) {
+        await store.updateJob(job.id, { status: "queued", restarts, startedAt: null, phase: "Server vừa khởi động lại, đang chạy lại từ đầu…" });
+        log.warn?.(`job ${job.id}: interrupted by a restart, queued again`);
+      } else {
         await store.updateJob(job.id, { status: "failed", error: "Bị gián đoạn do server khởi động lại. Hãy chạy lại.", finishedAt: new Date().toISOString() });
         await ended(job.id);
       }
@@ -47,6 +54,7 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
   }
 
   function pump() {
+    if (stopping) return;
     // Oldest first within each lane; a full lane does not hold back the others.
     for (let i = 0; i < queue.length; ) {
       const job = store.cachedJob(queue[i]);
@@ -79,8 +87,14 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
         else phases.push(step);
         return store.updateJob(job.id, { phase, phases: phases.slice(-20) });
       };
-      let { prompt, notice, fields, direct } = await prepare(job, { setPhase, signal: ctrl.signal });
+      const prepared = await prepare(job, { setPhase, signal: ctrl.signal });
       if (ctrl.signal.aborted) throw new Error("canceled");
+      // Work done entirely on this server (e.g. a photo fix): no model call.
+      if (prepared.done) {
+        await store.updateJob(job.id, { status: "done", result: prepared.done.result, ...prepared.done.fields, phase: null, finishedAt: new Date().toISOString() });
+        return;
+      }
+      let { prompt, notice, fields, direct } = prepared;
       // English interface: reports in English, with the template's Vietnamese headings kept (the result
       // views read them; the interface shows them in English).
       if (job.input?.uiLang === "en" && REPORT_TYPES.has(job.type)) {
@@ -116,6 +130,14 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
 
   return {
     recover,
+
+    /** Shutdown: start nothing new and wait (up to timeoutMs) for the running jobs; returns how many are left. */
+    async drain(timeoutMs) {
+      stopping = true;
+      const end = Date.now() + timeoutMs;
+      while (running.size && Date.now() < end) await new Promise((r) => setTimeout(r, 500));
+      return running.size;
+    },
 
     async submit({ type, agent, direct = null, title, input, prompt, userId, credits = null }) {
       const job = {

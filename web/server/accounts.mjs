@@ -2,7 +2,8 @@
 // library, calendar and watched channels. The first account (created on the setup screen, or from
 // ADMIN_EMAIL / ADMIN_PASSWORD at start) is the admin: it creates the customers' accounts, sets their
 // daily limit, and owns the data made before accounts were turned on. With SIGNUP=1 customers also
-// create their own account on the login page and start with trial credits (see ./billing.mjs).
+// create their own account on the login page with their email (confirmed by a 6-digit code sent there,
+// ./mailer.mjs) and start with trial credits (see ./billing.mjs).
 
 import { createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,6 +12,8 @@ import { promisify } from "node:util";
 
 const scryptAsync = promisify(scrypt);
 const COOKIE = "skipli_user";
+const PENDING_COOKIE = "skipli_pending"; // a sign-up waiting for its email code (no account yet)
+const PENDING_MS = 30 * 60_000;
 const DAYS = 30;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i;
 
@@ -41,7 +44,21 @@ function sessionSecret(dataDir) {
 
 const cookieOf = (req, name) => (req.headers.cookie ?? "").split(";").map((c) => c.trim().split("=")).find(([k]) => k === name)?.[1] ?? "";
 /** What the client may see of a user. */
-export const publicUser = (u) => u && { id: u.id, email: u.email, name: u.name ?? "", role: u.role, dailyLimit: u.dailyLimit ?? null, credits: typeof u.credits === "number" ? u.credits : null, emailVerified: u.emailVerified !== false, disabled: !!u.disabled, createdAt: u.createdAt };
+export const publicUser = (u) =>
+  u && {
+    id: u.id,
+    email: u.email ?? null,
+    contact: u.email || "", // what the screens show for the account
+    name: u.name ?? "",
+    role: u.role,
+    dailyLimit: u.dailyLimit ?? null,
+    credits: typeof u.credits === "number" ? u.credits : null,
+    verified: u.verified !== false && u.emailVerified !== false,
+    disabled: !!u.disabled,
+    createdAt: u.createdAt,
+  };
+/** Not confirmed yet: an account made before sign-ups waited for their code (cleaned up after a day). */
+const unconfirmed = (u) => u?.verified === false || u?.emailVerified === false;
 
 export class AccountError extends Error {
   constructor(status, message) {
@@ -52,8 +69,8 @@ export class AccountError extends Error {
 
 /**
  * @param {{ store, dataDir: string, signup?: { credits: number, perIp?: number, mailer?: object } | null }} opts  signup:
- *   self sign-up is open; perIp = accounts one IP address may ever create (0 = no cap); with a mailer that is
- *   enabled, a new account confirms its email with a 6-digit code first, and gets the credits then
+ *   self sign-up is open; perIp = accounts one IP address may ever create (0 = no cap); with SMS set up, a new
+ *   account confirms its email with a 6-digit code first, and is only made (with its credits) then
  * @returns the same gate interface as the single-password mode (middleware, signedIn, login, logout)
  *   plus setup, admin helpers and `ownerId` for data written before accounts existed.
  */
@@ -73,40 +90,87 @@ export function createAccounts({ store, dataDir, signup = null }) {
     const got = Buffer.from(mac ?? "");
     return want.length === got.length && timingSafeEqual(want, got) ? user : null;
   }
-  const setCookie = (req, res, value, maxAge) => {
+  const setCookie = (req, res, value, maxAge, name = COOKIE) => {
     const secure = req.secure || req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
-    res.set("Set-Cookie", `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
+    res.append("Set-Cookie", `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
   };
+
+  // Sign-ups waiting for their email code live here, not in the user list: the account is only made
+  // once the code is right, so an unconfirmed email never shows up (or holds the address) anywhere.
+  // In memory: a restart drops them, and the person signs up again.
+  const pending = new Map(); // id -> { id, email, name, passHash, signupIp, createdAt, otp }
+  const pendingMac = (id) => createHmac("sha256", secret).update(`pending:${id}`).digest("hex");
+  function pendingOf(req) {
+    const now = Date.now();
+    for (const [id, p] of pending) if (now - p.createdAt > PENDING_MS) pending.delete(id);
+    const [id, mac] = cookieOf(req, PENDING_COOKIE).split(".");
+    const rec = id && pending.get(id);
+    if (!rec) return null;
+    const want = Buffer.from(pendingMac(id));
+    const got = Buffer.from(mac ?? "");
+    return want.length === got.length && timingSafeEqual(want, got) ? rec : null;
+  }
+  /** What the session shows for a pending sign-up (the login page asks for its code). */
+  const publicPending = (p) => p && { id: p.id, email: p.email, contact: p.email, name: p.name, role: "member", dailyLimit: null, credits: 0, verified: false, disabled: false, createdAt: new Date(p.createdAt).toISOString() };
   const attempts = new Map(); // ip → failed logins
   const signups = new Map(); // ip → sign-up timestamps
   // The sign-up IP is kept as a keyed hash: enough to count accounts per address, not to read it back.
-  // Email codes: 6 digits, kept only as a keyed hash on the user, valid 10 minutes, 5 tries, resent at most
-  // once a minute and 5 times an hour.
+  // Email codes: 6 digits, kept only as a keyed hash, valid 10 minutes, 5 tries, resent at most once a
+  // minute and 5 times an hour.
+  const mailer = signup?.mailer ?? { enabled: false };
   const codeHash = (userId, code) => createHmac("sha256", secret).update(`otp:${userId}:${code}`).digest("hex");
-  async function sendCode(user) {
+  const MAILS = {
+    otp: { subject: (c) => `${c} là mã xác nhận Skipli Content`, title: "Xác nhận email", lead: "Nhập mã này trên trang Skipli Content để kích hoạt tài khoản và nhận credit dùng thử:", tail: "Nếu bạn không tạo tài khoản Skipli Content, hãy bỏ qua email này." },
+    resetOtp: { subject: (c) => `${c} là mã đặt lại mật khẩu Skipli Content`, title: "Đặt lại mật khẩu", lead: "Nhập mã này trên trang Skipli Content để đặt mật khẩu mới:", tail: "Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này. Mật khẩu cũ vẫn dùng được." },
+  };
+  // field: "otp" confirms a new account, "resetOtp" sets a new password; each has its own limits.
+  async function sendCode(user, field = "otp", save = (patch) => store.updateUser(user.id, patch)) {
     const now = Date.now();
-    const sends = (user.otp?.sends ?? []).filter((t) => now - t < 3600_000);
-    if (user.otp?.sentAt && now - user.otp.sentAt < 60_000) throw new AccountError(429, `Đợi ${Math.ceil((60_000 - (now - user.otp.sentAt)) / 1000)} giây rồi gửi lại mã nhé.`);
+    const last = user[field];
+    const sends = (last?.sends ?? []).filter((t) => now - t < 3600_000);
+    if (last?.sentAt && now - last.sentAt < 60_000) throw new AccountError(429, `Đợi ${Math.ceil((60_000 - (now - last.sentAt)) / 1000)} giây rồi gửi lại mã nhé.`);
     if (sends.length >= 5) throw new AccountError(429, "Đã gửi mã 5 lần trong 1 giờ qua, thử lại sau nhé.");
     const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-    await store.updateUser(user.id, { otp: { hash: codeHash(user.id, code), exp: now + 10 * 60_000, tries: 0, sentAt: now, sends: [...sends, now] } });
-    await signup.mailer.send({
+    await save({ [field]: { exp: now + 10 * 60_000, tries: 0, sentAt: now, sends: [...sends, now], hash: codeHash(`${field}:${user.id}`, code) } });
+    const m = MAILS[field];
+    await mailer.send({
       to: user.email,
-      subject: `${code} là mã xác nhận Skipli Content`,
-      text: `Mã xác nhận email của bạn: ${code}\n\nMã có hiệu lực trong 10 phút. Nếu bạn không tạo tài khoản Skipli Content, hãy bỏ qua email này.`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:440px;margin:auto;padding:24px;color:#1c1a16"><h2 style="margin:0 0 12px">Xác nhận email</h2><p>Nhập mã này trên trang Skipli Content để kích hoạt tài khoản và nhận credit dùng thử:</p><p style="font-size:34px;font-weight:700;letter-spacing:8px;margin:18px 0;padding:14px;text-align:center;background:#f3efe6;border-radius:12px">${code}</p><p style="color:#6e685d;font-size:13px">Mã có hiệu lực trong 10 phút. Nếu bạn không tạo tài khoản, hãy bỏ qua email này.</p></div>`,
+      subject: m.subject(code),
+      text: `${m.lead} ${code}\n\nMã có hiệu lực trong 10 phút. ${m.tail}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:440px;margin:auto;padding:24px;color:#1c1a16"><h2 style="margin:0 0 12px">${m.title}</h2><p>${m.lead}</p><p style="font-size:34px;font-weight:700;letter-spacing:8px;margin:18px 0;padding:14px;text-align:center;background:#f3efe6;border-radius:12px">${code}</p><p style="color:#6e685d;font-size:13px">Mã có hiệu lực trong 10 phút. ${m.tail}</p></div>`,
     });
   }
-  const verifying = () => !!signup?.mailer?.enabled;
+  /** The code typed for `field`: right → true; wrong / expired / too many tries → an AccountError. */
+  async function checkCode(user, field, raw, save = (patch) => store.updateUser(user.id, patch)) {
+    const otp = user[field];
+    const code = String(raw ?? "").replace(/\D/g, "");
+    if (!otp || Date.now() > otp.exp) throw new AccountError(400, "Mã đã hết hạn, bấm Gửi lại mã để nhận mã mới.");
+    if (otp.tries >= 5) throw new AccountError(429, "Nhập sai quá 5 lần, bấm Gửi lại mã để nhận mã mới.");
+    let right = false;
+    if (code.length === 6 && otp.hash) {
+      const want = Buffer.from(otp.hash);
+      const got = Buffer.from(codeHash(`${field}:${user.id}`, code));
+      right = want.length === got.length && timingSafeEqual(want, got);
+    }
+    if (!right) {
+      await save({ [field]: { ...otp, tries: otp.tries + 1 } });
+      const left = 4 - otp.tries;
+      throw new AccountError(400, left > 0 ? `Mã chưa đúng, còn ${left} lần thử.` : "Mã chưa đúng. Bấm Gửi lại mã để nhận mã mới.");
+    }
+    return true;
+  }
+  const mailFailure = "Chưa gửi được email, thử lại sau ít phút.";
+  const resets = new Map(); // ip → password-reset requests
+  const verifying = () => !!mailer.enabled;
   const ipKey = (ip) => createHmac("sha256", secret).update(`signup-ip:${ip}`).digest("hex").slice(0, 32);
   const admin = () => store.listUsers().find((u) => u.role === "admin");
 
-  async function create({ email, password, name = "", role = "member", dailyLimit = null, credits, signupIp, emailVerified }) {
+  async function create({ email, password, name = "", role = "member", dailyLimit = null, credits, signupIp, verified }) {
     email = String(email ?? "").trim().toLowerCase();
     if (!EMAIL.test(email)) throw new AccountError(400, "Email không hợp lệ");
-    if (String(password ?? "").length < 8) throw new AccountError(400, "Mật khẩu cần ít nhất 8 ký tự");
     if (store.userByEmail(email)) throw new AccountError(409, "Email này đã có tài khoản");
-    return store.addUser({ email, name: String(name).trim().slice(0, 80), role, dailyLimit: dailyLimit ? Number(dailyLimit) : null, ...(typeof credits === "number" ? { credits } : {}), ...(signupIp ? { signupIp } : {}), ...(emailVerified === false ? { emailVerified } : {}), passHash: await hashPassword(password) });
+    if (String(password ?? "").length < 8) throw new AccountError(400, "Mật khẩu cần ít nhất 8 ký tự");
+    return store.addUser({ email, name: String(name).trim().slice(0, 80), role, dailyLimit: dailyLimit ? Number(dailyLimit) : null, ...(typeof credits === "number" ? { credits } : {}), ...(signupIp ? { signupIp } : {}), ...(verified === false ? { verified } : {}), passHash: await hashPassword(password) });
   }
 
   return {
@@ -116,6 +180,18 @@ export function createAccounts({ store, dataDir, signup = null }) {
     /** Owner of a record: data from before accounts belongs to the admin. */
     ownerId: (item) => item?.userId ?? admin()?.id ?? null,
     needsSetup: () => store.listUsers().length === 0,
+
+    /** Accounts left unconfirmed from before (when sign-up made the account first), older than a day. */
+    async removeStale(maxAgeMs = 86_400_000) {
+      let n = 0;
+      for (const u of store.listUsers()) {
+        if (unconfirmed(u) && u.role !== "admin" && Date.now() - Date.parse(u.createdAt) > maxAgeMs) {
+          await store.deleteUser(u.id);
+          n++;
+        }
+      }
+      return n;
+    },
 
     /** First admin from ADMIN_EMAIL / ADMIN_PASSWORD when the user list is empty. */
     async bootstrap(log = console) {
@@ -130,8 +206,8 @@ export function createAccounts({ store, dataDir, signup = null }) {
 
     middleware(req, res, next) {
       req.user = userOf(req);
-      // Signed up but the email is not confirmed yet: only the confirm calls (and the public pages).
-      if (req.user?.emailVerified === false) {
+      // An old account not confirmed yet: only the confirm calls (and the public pages).
+      if (unconfirmed(req.user)) {
         const allowed = ["/api/session", "/api/logout", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
         if (allowed) return next();
         return res.status(403).set("Cache-Control", "no-store").json({ error: "Xác nhận email trước khi dùng công cụ", verify: true });
@@ -139,7 +215,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (req.user) return next();
       // Open without a login: the session and login calls, the page itself, and the canned sample results
       // shown on the home page (no customer data in them).
-      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook"].includes(req.path) || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -150,7 +226,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       const ip = req.ip ?? "?";
       const recent = (attempts.get(ip) ?? []).filter((t) => Date.now() - t < 15 * 60_000);
       if (recent.length >= 10) return res.status(429).json({ error: "Sai mật khẩu nhiều lần, thử lại sau 15 phút." });
-      const user = store.userByEmail(req.body?.email);
+      const user = store.userByEmail(req.body?.login ?? req.body?.email);
       const ok = user && (await checkPassword(req.body?.password ?? "", user.passHash));
       if (!ok) {
         attempts.set(ip, [...recent, Date.now()]);
@@ -163,9 +239,13 @@ export function createAccounts({ store, dataDir, signup = null }) {
       res.json({ ok: true, user: publicUser(user) });
     },
     logout(req, res) {
+      const p = pendingOf(req);
+      if (p) pending.delete(p.id);
       setCookie(req, res, "", 0);
+      setCookie(req, res, "", 0, PENDING_COOKIE);
       res.json({ ok: true });
     },
+    pendingOf: (req) => publicPending(pendingOf(req)),
 
     /** Self sign-up (SIGNUP=1): a customer account with the trial credits, signed in right away. */
     async signup(req, res) {
@@ -180,54 +260,110 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (perIp && store.listUsers().filter((u) => u.signupIp === key).length >= perIp) {
         throw new AccountError(429, "Mạng này đã tạo đủ số tài khoản dùng thử. Đăng nhập tài khoản cũ hoặc liên hệ quản trị viên.");
       }
-      // With mail set up the account starts unconfirmed and without credits; the code brings them.
-      const verify = verifying();
-      const user = await create({ email: req.body?.email, password: req.body?.password, name: req.body?.name ?? "", credits: verify ? 0 : signup.credits, signupIp: key, ...(verify ? { emailVerified: false } : {}) });
-      signups.set(ip, [...recent, Date.now()]);
-      await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
-      setCookie(req, res, token(user), DAYS * 86_400);
-      let mailError = null;
-      if (verify) {
-        await sendCode(user).catch((e) => {
-          console.error(`signup: code mail to ${user.email} failed: ${e.message}`);
-          mailError = "Chưa gửi được mã xác nhận. Bấm Gửi lại mã sau ít phút.";
-        });
+      // Without mail set up: the account is made at once, with the trial credits.
+      if (!verifying()) {
+        const user = await create({ email: req.body?.email, password: req.body?.password, name: req.body?.name ?? "", credits: signup.credits, signupIp: key });
+        signups.set(ip, [...recent, Date.now()]);
+        await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
+        setCookie(req, res, token(user), DAYS * 86_400);
+        return res.status(201).json({ ok: true, user: publicUser(user), sendError: null });
       }
-      res.status(201).json({ ok: true, user: publicUser(store.getUser(user.id)), mailError });
+      // With mail: checked like a real account, but only held here until the code comes back.
+      const email = String(req.body?.email ?? "").trim().toLowerCase();
+      if (!EMAIL.test(email)) throw new AccountError(400, "Email không hợp lệ");
+      if (store.userByEmail(email)) throw new AccountError(409, "Email này đã có tài khoản");
+      if (String(req.body?.password ?? "").length < 8) throw new AccountError(400, "Mật khẩu cần ít nhất 8 ký tự");
+      for (const [pid, p] of pending) if (p.email === email) pending.delete(pid); // signing up again replaces the old attempt
+      const rec = { id: randomBytes(12).toString("hex"), email, name: String(req.body?.name ?? "").trim().slice(0, 80), passHash: await hashPassword(req.body.password), signupIp: key, createdAt: Date.now() };
+      pending.set(rec.id, rec);
+      signups.set(ip, [...recent, Date.now()]);
+      setCookie(req, res, `${rec.id}.${pendingMac(rec.id)}`, PENDING_MS / 1000, PENDING_COOKIE);
+      if (cookieOf(req, COOKIE)) setCookie(req, res, "", 0); // a session of another account on this browser ends
+      let sendError = null;
+      await sendCode(rec, "otp", (patch) => Object.assign(rec, patch)).catch((e) => {
+        console.error(`signup: code mail to ${email} failed: ${e.message}`);
+        sendError = "Chưa gửi được mã xác nhận. Bấm Gửi lại mã sau ít phút.";
+      });
+      res.status(201).json({ ok: true, user: publicPending(rec), sendError });
     },
 
-    /** POST /api/verify { code }: the 6 digits from the email confirm the account and add the trial credits. */
+    /** POST /api/verify { code }: the 6 digits from the email make the account, with the trial credits. */
     async verify(req, res) {
-      const user = req.user;
-      if (user.emailVerified !== false) return res.json({ ok: true, user: publicUser(user) });
-      const otp = user.otp;
-      const code = String(req.body?.code ?? "").replace(/\D/g, "");
-      if (!otp || Date.now() > otp.exp) throw new AccountError(400, "Mã đã hết hạn, bấm Gửi lại mã để nhận mã mới.");
-      if (otp.tries >= 5) throw new AccountError(429, "Nhập sai quá 5 lần, bấm Gửi lại mã để nhận mã mới.");
-      const want = Buffer.from(otp.hash);
-      const got = Buffer.from(codeHash(user.id, code));
-      if (code.length !== 6 || want.length !== got.length || !timingSafeEqual(want, got)) {
-        await store.updateUser(user.id, { otp: { ...otp, tries: otp.tries + 1 } });
-        const left = 4 - otp.tries;
-        throw new AccountError(400, left > 0 ? `Mã chưa đúng, còn ${left} lần thử.` : "Mã chưa đúng. Bấm Gửi lại mã để nhận mã mới.");
+      const rec = !req.user && pendingOf(req);
+      if (rec) {
+        await checkCode(rec, "otp", req.body?.code, (patch) => Object.assign(rec, patch));
+        // The code is right: now the account exists (unless the email was taken meanwhile).
+        if (store.userByEmail(rec.email)) {
+          pending.delete(rec.id);
+          throw new AccountError(409, "Email này đã có tài khoản");
+        }
+        const user = await store.addUser({ email: rec.email, name: rec.name, role: "member", dailyLimit: null, credits: signup?.credits ?? 0, signupIp: rec.signupIp, passHash: rec.passHash, verifiedAt: new Date().toISOString(), lastLoginAt: new Date().toISOString() });
+        pending.delete(rec.id);
+        setCookie(req, res, token(user), DAYS * 86_400);
+        setCookie(req, res, "", 0, PENDING_COOKIE);
+        return res.json({ ok: true, user: publicUser(user) });
       }
-      const done = await store.updateUser(user.id, { emailVerified: true, otp: null, verifiedAt: new Date().toISOString(), credits: (user.credits ?? 0) + (signup?.credits ?? 0) });
+      const user = req.user;
+      if (!user) throw new AccountError(400, "Phiên đăng ký đã hết hạn (30 phút). Đăng ký lại nhé.");
+      if (!unconfirmed(user)) return res.json({ ok: true, user: publicUser(user) });
+      await checkCode(user, "otp", req.body?.code);
+      const done = await store.updateUser(user.id, { verified: true, emailVerified: null, otp: null, verifiedAt: new Date().toISOString(), credits: (user.credits ?? 0) + (signup?.credits ?? 0) });
       res.json({ ok: true, user: publicUser(done) });
     },
 
     /** POST /api/verify/resend: a new code (once a minute, 5 an hour). */
     async resend(req, res) {
-      const user = req.user;
-      if (user.emailVerified !== false) return res.json({ ok: true });
-      if (!verifying()) throw new AccountError(503, "Chưa cấu hình gửi mail");
+      const rec = !req.user && pendingOf(req);
+      const user = rec || req.user;
+      if (!user) throw new AccountError(400, "Phiên đăng ký đã hết hạn (30 phút). Đăng ký lại nhé.");
+      if (!rec && !unconfirmed(user)) return res.json({ ok: true });
+      if (!verifying()) throw new AccountError(503, "Chưa cấu hình gửi email");
       try {
-        await sendCode(user);
+        await sendCode(user, "otp", rec ? (patch) => Object.assign(rec, patch) : undefined);
       } catch (e) {
         if (e instanceof AccountError) throw e;
         console.error(`verify: code mail to ${user.email} failed: ${e.message}`);
-        throw new AccountError(502, "Chưa gửi được mail, thử lại sau ít phút.");
+        throw new AccountError(502, mailFailure);
       }
       res.json({ ok: true });
+    },
+
+    /**
+     * Forgot password, step 1: POST /api/password/forgot { email } mails a code. The answer is the same
+     * whether or not the email has an account (no way to probe who is signed up).
+     */
+    async forgot(req, res) {
+      if (!verifying()) throw new AccountError(503, "Web chưa bật gửi email. Liên hệ quản trị viên để đặt lại mật khẩu.");
+      const ip = req.ip ?? "?";
+      const recent = (resets.get(ip) ?? []).filter((t) => Date.now() - t < 3600_000);
+      if (recent.length >= 10) throw new AccountError(429, "Bạn đã yêu cầu nhiều lần, thử lại sau 1 giờ nhé.");
+      resets.set(ip, [...recent, Date.now()]);
+      const email = String(req.body?.email ?? "").trim().toLowerCase();
+      if (!EMAIL.test(email)) throw new AccountError(400, "Email không hợp lệ");
+      const user = store.userByEmail(email);
+      if (user && !user.disabled) {
+        try {
+          await sendCode(user, "resetOtp");
+        } catch (e) {
+          if (e instanceof AccountError) throw e; // wait a minute / too many today
+          console.error(`forgot: code mail to ${email} failed: ${e.message}`);
+          throw new AccountError(502, mailFailure);
+        }
+      }
+      res.json({ ok: true, email });
+    },
+
+    /** Step 2: POST /api/password/reset { email, code, password } sets the password and signs in. */
+    async reset(req, res) {
+      const user = store.userByEmail(req.body?.email);
+      if (!user || user.disabled || !user.resetOtp) throw new AccountError(400, "Mã đã hết hạn, bấm Gửi lại mã để nhận mã mới.");
+      if (String(req.body?.password ?? "").length < 8) throw new AccountError(400, "Mật khẩu mới cần ít nhất 8 ký tự");
+      await checkCode(user, "resetOtp", req.body?.code);
+      // The code proves the email, so an old account still waiting for its sign-up code is confirmed too.
+      const confirm = unconfirmed(user) ? { verified: true, emailVerified: null, otp: null, verifiedAt: new Date().toISOString(), credits: (user.credits ?? 0) + (signup?.credits ?? 0) } : {};
+      const done = await store.updateUser(user.id, { passHash: await hashPassword(req.body.password), resetOtp: null, lastLoginAt: new Date().toISOString(), ...confirm });
+      setCookie(req, res, token(done), DAYS * 86_400); // the new password signs out every other device
+      res.json({ ok: true, user: publicUser(done) });
     },
 
     /** Setup screen: only while there is no account yet; the first account is the admin. */

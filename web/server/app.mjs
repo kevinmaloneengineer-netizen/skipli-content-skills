@@ -21,6 +21,9 @@ import { openStore } from "./store/index.mjs";
 import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
 import { BillingError, createBilling } from "./billing.mjs";
 import { createMailer } from "./mailer.mjs";
+import { createErrorLog } from "./errors.mjs";
+import { runBackup } from "./backup.mjs";
+import { parsePacks } from "./billing.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { ClipError, createClipper } from "./clipper.mjs";
@@ -70,7 +73,7 @@ function passwordGate(password) {
     signedIn,
     middleware(req, res, next) {
       if (signedIn(req)) return next();
-      const open = req.path === "/api/login" || req.path === "/api/session" || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -166,10 +169,27 @@ export async function createApp(config, adapter) {
   // ACCOUNTS=1: one login per customer, each sees only their own data (see ./accounts.mjs).
   // SIGNUP=1: customers make their own account with trial credits and top up through Stripe (./billing.mjs).
   const billing = createBilling({ store, env: config.billingEnv ?? process.env, fetchFn: config.fetchFn });
-  const mailer = config.mailer ?? createMailer(config.mailEnv ?? process.env); // sign-up codes
-  const accounts = config.accounts ? createAccounts({ store, dataDir: config.video?.dataDir ?? path.join(tmpdir(), `skipli-accounts-${process.pid}`), signup: config.signup ? { credits: billing.trial, perIp: config.signupPerIp, mailer } : null }) : null;
-  if (config.signup && accounts && !mailer.enabled) console.warn("signup: SMTP_USER / SMTP_PASS not set, new accounts skip the email code.");
-  if (accounts) await accounts.bootstrap();
+  const mailer = config.mailer ?? createMailer(config.mailEnv ?? process.env); // sign-up and password codes
+  // Sign-up rules read live, so the admin's settings page applies without a restart.
+  const signupRules = {
+    mailer,
+    get credits() {
+      return billing.trial;
+    },
+    get perIp() {
+      return store.getSettings().signupPerIp ?? config.signupPerIp ?? 2;
+    },
+  };
+  const errors = createErrorLog({ store, env: config.errorEnv ?? process.env, fetchFn: config.fetchFn });
+  const accounts = config.accounts ? createAccounts({ store, dataDir: config.video?.dataDir ?? path.join(tmpdir(), `skipli-accounts-${process.pid}`), signup: config.signup ? signupRules : null }) : null;
+  if (config.signup && accounts && !mailer.enabled) console.warn("signup: SMTP_USER / SMTP_PASS not set (and no MAIL_LOG=1), new accounts skip the email code.");
+  if (accounts) {
+    await accounts.bootstrap();
+    // Unconfirmed accounts from before sign-ups waited for the code: removed after a day.
+    const stale = () => accounts.removeStale().then((n) => n && console.log(`accounts: removed ${n} unconfirmed sign-up(s)`)).catch(() => {});
+    stale();
+    setInterval(stale, 3600_000).unref();
+  }
   /** Is this record the signed-in customer's? (always true without accounts) */
   const own = (req, item) => !accounts || accounts.ownerId(item) === req.user?.id;
   const userId = (req) => (accounts ? req.user?.id ?? null : undefined);
@@ -222,6 +242,19 @@ export async function createApp(config, adapter) {
     sweep();
     setInterval(sweep, 24 * 3600_000).unref();
   }
+  // Daily database backup to the bucket (BACKUP_KEEP_DAYS, 14): first one a minute after start, then every 24 h.
+  const backupKeep = Number(process.env.BACKUP_KEEP_DAYS) || 14;
+  const backupNow = () => runBackup({ store, storage, dir: path.join(videoRoot, "backups"), keepDays: backupKeep });
+  if (storage.remote && !config.goclaw?.mock && process.env.BACKUP_DISABLED !== "1") {
+    const daily = () => backupNow()
+      .then((b) => console.log(`backup: ${b.key} (${Math.round(b.bytes / 1024)} KB), removed ${b.removed} old`))
+      .catch((e) => {
+        console.error(`backup failed: ${e.message}`);
+        errors.record({ source: "backup", message: e.message });
+      });
+    setTimeout(daily, 60_000).unref();
+    setInterval(daily, 24 * 3600_000).unref();
+  }
   /** Send the viewer to the stored copy when this server does not have the file. */
   const fromStorage = (res, key) => (storage.remote ? res.redirect(302, storage.url(key)) : res.status(404).send("Không tìm thấy file"));
 
@@ -246,9 +279,16 @@ export async function createApp(config, adapter) {
     return (await video.finish(job, content, ctx)) ?? { result: content }; // content may have been edited above
   }
 
-  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs, prepare: createPreparer({ facebook, mock: goclaw.mock, clipsDir, clipper, uploadsDir: path.join(videoRoot, "uploads") }),
+  const prepareJob = createPreparer({ facebook, mock: goclaw.mock, clipsDir, clipper, uploadsDir: path.join(videoRoot, "uploads") });
+  const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs,
+    // A photo fix runs on this server only (no model); its files go to storage like a video's.
+    prepare: async (job, ctx) => (job.type === "photo-fix" ? { done: await publishAfter(job, await video.fixPhoto(job, ctx)) } : prepareJob(job, ctx)),
     finish: async (job, content, ctx) => publishAfter(job, await finishContent(job, content, ctx)),
-    onEnd: (job) => billing.refund(job), // a failed or canceled run gives its credits back
+    // A failed or canceled run gives its credits back; a failure also goes to the error log.
+    onEnd: async (job) => {
+      await billing.refund(job);
+      if (job.status === "failed") await errors.record({ source: "job", type: job.type, message: job.error ?? "Tác vụ lỗi", jobId: job.id, userId: job.userId });
+    },
   });
   await runner.recover();
 
@@ -320,7 +360,8 @@ export async function createApp(config, adapter) {
   api.get("/session", (req, res) => {
     if (!accounts) return res.json({ mode: config.appPassword ? "password" : "open", required: !!config.appPassword, signedIn: gate.signedIn(req) });
     const user = accounts.userOf(req);
-    res.json({ mode: "accounts", required: true, signedIn: !!user, user: publicUser(user), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled });
+    const waiting = !user && accounts.pendingOf(req); // signed up, code not entered yet
+    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled });
   });
   api.post("/login", (req, res) => gate.login(req, res));
   api.post("/logout", (req, res) => gate.logout(req, res));
@@ -338,6 +379,20 @@ export async function createApp(config, adapter) {
     if (req.user?.role !== "admin") throw new HttpError(403, "Chỉ quản trị viên mới làm được việc này");
   };
   api.post("/setup", accountRoute((req, res) => accounts.setup(req, res)));
+  api.post("/password/forgot", accountRoute((req, res) => accounts.forgot(req, res)));
+  api.post("/password/reset", accountRoute((req, res) => accounts.reset(req, res)));
+  // Browser errors (window.onerror) from the page, guests included; a few per minute per visitor.
+  const clientErrors = new Map();
+  api.post("/client-error", async (req, res) => {
+    const ip = req.ip ?? "?";
+    const recent = (clientErrors.get(ip) ?? []).filter((t) => Date.now() - t < 60_000);
+    if (recent.length < 5) {
+      clientErrors.set(ip, [...recent, Date.now()]);
+      const b = req.body ?? {};
+      await errors.record({ source: "browser", message: String(b.message ?? ""), stack: b.stack, path: String(b.path ?? ""), userId: req.user?.id });
+    }
+    res.status(204).end();
+  });
   api.post("/signup", accountRoute((req, res) => accounts.signup(req, res)));
   api.post("/verify", accountRoute((req, res) => accounts.verify(req, res)));
   api.post("/verify/resend", accountRoute((req, res) => accounts.resend(req, res)));
@@ -361,6 +416,60 @@ export async function createApp(config, adapter) {
     res.json({ paid: out.paid, added: out.added, credits: store.getUser(req.user.id).credits ?? null });
   }));
   api.put("/me/password", accountRoute((req, res) => accounts.changePassword(req, res)));
+  // ---- admin: errors, backups, settings ----
+  api.get("/admin/errors", accountRoute(async (req, res) => {
+    adminOnly(req);
+    res.json({ errors: await store.listErrors(100), webhook: !!(config.errorEnv ?? process.env).ERROR_WEBHOOK_URL });
+  }));
+  api.delete("/admin/errors", accountRoute(async (req, res) => {
+    adminOnly(req);
+    await store.clearErrors();
+    res.json({ ok: true });
+  }));
+  api.get("/admin/backups", accountRoute(async (req, res) => {
+    adminOnly(req);
+    const items = storage.remote ? (await storage.list("backups/")).sort((a, b) => b.key.localeCompare(a.key)) : [];
+    res.json({ enabled: storage.remote, keepDays: backupKeep, backups: items.map((x) => ({ key: x.key, size: x.size, at: x.modified ? new Date(x.modified).toISOString() : null })) });
+  }));
+  api.post("/admin/backups", accountRoute(async (req, res) => {
+    adminOnly(req);
+    try {
+      res.json(await backupNow());
+    } catch (e) {
+      throw new HttpError(storage.remote ? 502 : 400, e.message);
+    }
+  }));
+  api.get("/admin/settings", accountRoute((req, res) => {
+    adminOnly(req);
+    const saved = store.getSettings();
+    res.json({
+      settings: { signupPerIp: signupRules.perIp, trialCredits: billing.trial, creditPacks: saved.creditPacks || billing.defaults.creditPacks },
+      defaults: { signupPerIp: config.signupPerIp ?? 2, ...billing.defaults },
+      signupOpen: !!config.signup,
+      updatedAt: saved.updatedAt ?? null,
+    });
+  }));
+  api.put("/admin/settings", accountRoute(async (req, res) => {
+    adminOnly(req);
+    const body = req.body ?? {};
+    const patch = {};
+    const whole = (v, max, name) => {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > max) throw new HttpError(400, `${name} phải là số nguyên từ 0 đến ${max}`);
+      return n;
+    };
+    if (body.signupPerIp !== undefined) patch.signupPerIp = whole(body.signupPerIp, 1000, "Số tài khoản mỗi IP");
+    if (body.trialCredits !== undefined) patch.trialCredits = whole(body.trialCredits, 10_000, "Credit dùng thử");
+    if (body.creditPacks !== undefined) {
+      const text = String(body.creditPacks).trim();
+      const packs = parsePacks(text);
+      if (!packs.length || packs.length > 6) throw new HttpError(400, "Gói nạp không hợp lệ: ghi dạng credit:giá-cent, ví dụ 100:900,300:2400 (1 đến 6 gói, giá từ 50 cent)");
+      patch.creditPacks = packs.map((p) => `${p.credits}:${p.cents}`).join(",");
+    }
+    await store.saveSettings(patch);
+    res.json({ ok: true });
+  }));
+
   api.get("/admin/users", accountRoute((req, res) => {
     adminOnly(req);
     const today = vnDay(new Date().toISOString());
@@ -754,7 +863,10 @@ export async function createApp(config, adapter) {
   // eslint-disable-next-line no-unused-vars
   api.use((err, req, res, next) => {
     const status = err instanceof HttpError ? err.status : err.type === "entity.too.large" ? 413 : err.type === "entity.parse.failed" ? 400 : 500;
-    if (status === 500) console.error(err);
+    if (status === 500) {
+      console.error(err);
+      errors.record({ source: "server", message: err.message, stack: err.stack, path: `${req.method} ${req.baseUrl}${req.path}`, userId: req.user?.id });
+    }
     const message = { 413: "Dữ liệu gửi lên quá lớn", 400: "JSON không hợp lệ" }[status];
     res.status(status).set("Cache-Control", "no-store").json({ error: err instanceof HttpError ? err.message : message ?? "Lỗi máy chủ" });
   });
@@ -810,5 +922,5 @@ export async function createApp(config, adapter) {
     });
   }
 
-  return { app, store, runner, goclaw };
+  return { app, store, runner, goclaw, errors };
 }
