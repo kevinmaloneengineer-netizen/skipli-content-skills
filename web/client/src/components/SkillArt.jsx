@@ -522,6 +522,42 @@ function GbpPost() {
   );
 }
 
+/** Gói chạy liền: three tool cards joined by arrows. */
+function CombosArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <g key={i} transform={`translate(${28 + i * 98} ${i === 1 ? 30 : 44})`}>
+          <rect width="72" height="72" rx="14" className={i === 1 ? "art-hi" : "art-card"} />
+          <rect x="14" y="16" width="44" height="8" rx="4" className="art-mid" />
+          <rect x="14" y="32" width="32" height="8" rx="4" className="art-mid" />
+          <circle cx="50" cy="54" r="8" className={i === 1 ? "art-card" : "art-hi"} />
+        </g>
+      ))}
+      <path d="M104 80 h18 m-6 -6 l6 6 -6 6 M202 80 h18 m-6 -6 l6 6 -6 6" fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="art-stroke" />
+    </svg>
+  );
+}
+
+/** Mã QR: a QR code with a logo square and a phone scanning it. */
+function QrArt() {
+  const cells = [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2],[4,0],[5,1],[4,2],[6,0],[6,2],[0,4],[1,5],[2,4],[0,6],[2,6],[4,4],[6,4],[5,5],[4,6],[6,6]];
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(70 18)">
+        <rect width="114" height="114" rx="12" className="art-card" />
+        {cells.map(([x, y]) => <rect key={`${x}-${y}`} x={12 + x * 13} y={12 + y * 13} width="11" height="11" rx="2" className="art-mid" />)}
+        <rect x="44" y="44" width="26" height="26" rx="6" className="art-hi" />
+      </g>
+      <g transform="translate(206 30)">
+        <rect width="54" height="96" rx="10" className="art-card" />
+        <rect x="8" y="12" width="38" height="56" rx="4" className="art-hi" />
+        <path d="M14 30 v-8 h8 M40 30 v-8 h-8 M14 50 v8 h8 M40 50 v8 h-8" fill="none" strokeWidth="3" strokeLinecap="round" className="art-stroke" />
+      </g>
+    </svg>
+  );
+}
+
 /** Chỉnh ảnh: a dull photo turning bright, with a slider between them. */
 function PhotoFix() {
   return (
@@ -590,7 +626,7 @@ function LiveRecap() {
   );
 }
 
-const ART = { "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+const ART = { combos: CombosArt, qr: QrArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

@@ -210,6 +210,24 @@ export const GUIDE = {
     ],
     output: ["3 bài đăng theo 3 góc khác nhau", "Nút bấm và ảnh nên dùng cho từng bài", "5 câu hỏi đáp cho mục Hỏi đáp"],
   },
+  combos: {
+    perks: ["Bấm một lần", "Nhiều công cụ nối nhau", "Credit theo từng bước"],
+    steps: [
+      ["Chọn gói", "Ra mắt món mới, hoặc Chăm khách tuần này."],
+      ["Điền một form", "Ảnh và tên món, hoặc quán trên Google Maps."],
+      ["Xem từng bước", "Mỗi bước là một kết quả riêng, mở ra xem và dùng ngay."],
+    ],
+    output: ["Kết quả của mọi bước trong một trang", "Bước sau dùng kết quả bước trước", "Bước lỗi được hoàn credit"],
+  },
+  qr: {
+    perks: ["Miễn phí", "Có logo quán", "Không hết hạn"],
+    steps: [
+      ["Chọn nội dung", "Link menu, Google Maps, fanpage, Wi-Fi hoặc một dòng chữ."],
+      ["Chọn màu và logo", "Kéo thả logo quán vào để đặt ở giữa mã."],
+      ["Tải PNG", "Chỉ mã QR, hoặc thẻ dựng bàn có tên quán để in."],
+    ],
+    output: ["Mã QR PNG sắc nét 1024px", "Thẻ dựng bàn có tên quán và lời nhắc", "Mã Wi-Fi khách quét là vào mạng"],
+  },
   "photo-fix": {
     perks: ["Giữ nguyên món", "Nhiều khung một lần", "Chỉ vài giây"],
     steps: [

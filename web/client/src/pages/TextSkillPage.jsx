@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import FromBanner from "../components/FromBanner.jsx";
+import { businessOf, fileFromImage, firstPost, points, section, useFromJob } from "../lib/handoff.js";
 import { Field, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { crop, loadImage, upload } from "../lib/image.js";
@@ -12,6 +14,14 @@ export default function TextSkillPage({ config }) {
   const [photo, setPhoto] = useState(null);
   const [photoError, setPhotoError] = useState("");
   const [uploading, setUploading] = useState(false);
+  // "Làm tiếp": fill this tool's form from a finished run (see prefill below).
+  const from = useFromJob();
+  useEffect(() => {
+    if (!from) return;
+    const fill = prefill(config.type, from);
+    if (fill.values) setValues((v) => ({ ...v, ...Object.fromEntries(Object.entries(fill.values).filter(([, x]) => x)) }));
+    if (fill.photo) fileFromImage(fill.photo).then(setPhoto, () => {});
+  }, [from, config.type]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -35,6 +45,7 @@ export default function TextSkillPage({ config }) {
   return (
     <SkillShell id={config.type}>
       <form className="form-card" onSubmit={onSubmit} noValidate>
+        <FromBanner job={from} />
         {config.fields.map((f, i) => (
           <Field key={f.name} label={f.label} hint={f.hint}>
             {f.kind === "area" ? (
@@ -60,4 +71,21 @@ export default function TextSkillPage({ config }) {
       </form>
     </SkillShell>
   );
+}
+
+/** What a finished run gives each text tool's form: { values, photo } (photo = a picture the app made). */
+function prefill(type, job) {
+  const business = businessOf(job);
+  const fixed = job.type === "photo-fix" ? job.photos?.fixed : null;
+  if (type === "post-score") return { values: { post: firstPost(job), business, platform: job.input?.platform } };
+  if (type === "dish-riddle") return { values: { business, dish: job.input?.label || job.input?.dish }, photo: fixed };
+  if (type === "gbp-post") {
+    if (job.type === "maps" || job.type === "yelp") {
+      const good = points(section(job.result, "Khách khen gì"));
+      return { values: { business, promote: good.length ? `Những điều khách khen nhiều nhất: ${good.join("; ")}` : "" } };
+    }
+    if (job.type === "photo-fix") return { values: { promote: job.input?.label ? `Món: ${job.input.label}` : "" } };
+    return { values: { business, promote: firstPost(job).slice(0, 600) } };
+  }
+  return {};
 }

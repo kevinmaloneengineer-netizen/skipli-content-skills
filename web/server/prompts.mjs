@@ -67,9 +67,9 @@ function facebookUrl(raw) {
   return u.toString();
 }
 
-export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold"]);
+export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee"]);
 const BASE_ROLES = ["ext", "int", "table", "medium", "close", "side"];
-const TEMPLATE_ROLES = { top3: ["dish1", "dish2", "dish3", "ext", "int", "table"], menu: ["dish1", "dish2", "dish3", "dish4", "ext", "int"] };
+const TEMPLATE_ROLES = { top3: ["dish1", "dish2", "dish3", "ext", "int", "table"], spotlight: ["dish1", "dish2", "dish3", "ext", "int", "table"], menu: ["dish1", "dish2", "dish3", "dish4", "ext", "int"] };
 /**
  * Role of every slide of a slideshow template: real photos take the template's first roles (the dishes,
  * in the order the user listed them), the image model draws the rest in order.
@@ -335,7 +335,7 @@ function buildSpec(type, raw, refs) {
         const topic = str(raw.topic, "quán / món ăn", { required: true, max: 300 });
         const seconds = Number(raw.seconds) === 30 ? 30 : 15;
         // Templates: "collage" (Canva-like layouts), "single" (one photo per scene) and the marketing ones
-        // (top3, menu, promo, polaroid, bold). All but "single" use 6 photos.
+        // (top3, menu, promo, polaroid, bold, film, magazine, grid, story, receipt, neon, postcard, spotlight, marquee). All but "single" use 6 photos.
         const layout = SLIDE_TEMPLATES.has(raw.layout) ? raw.layout : "collage";
         const count = layout !== "single" || seconds === 30 ? 6 : 5;
         const dishes = parseDishes(raw.dishes);

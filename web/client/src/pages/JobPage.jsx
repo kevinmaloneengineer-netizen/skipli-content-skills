@@ -22,7 +22,12 @@ import { ago, duration } from "../lib/format.js";
 import { PILLARS, splitLivestream, splitVariants, toPlainText } from "../lib/text.js";
 import PhotoResult from "../components/PhotoResult.jsx";
 import { accepts } from "../lib/drop.js";
+import ComboResult from "../components/ComboResult.jsx";
+
 import { blanksOf, fillBlanks, useJobEdits } from "../lib/edits.js";
+
+/** Results that are a post, which the next tools can take on ("Làm tiếp với…"). */
+const WRITTEN = new Set(["write", "gbp-post", "weather-post", "story-behind", "dish-riddle", "post-score", "menu"]);
 
 function inputRows(job) {
   const i = job.input ?? {};
@@ -477,6 +482,7 @@ function FactCheck({ check }) {
 }
 
 export function Result({ job, onSave, edits, setEdits }) {
+  if (job.type === "combo") return <ComboResult job={job} />; // its steps show their own progress
   if (ACTIVE.has(job.status)) return <Waiting job={job} />;
   if (job.status === "review" && job.slides) return <SlideReview job={job} />;
   if (job.status === "failed") {
@@ -611,15 +617,25 @@ export default function JobPage() {
         ["fb-reels", "threads", "fanpage", "tiktok", "maps", "yelp", "instagram", "compare", "watch"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
         channel && { to: `/clone?url=${url}`, label: "Nhân bản kênh này", hint: "Viết hàng loạt bài mới học từ kênh này" },
         job.type === "fb-reels" && job.input?.mode === "channel" && { to: `/fanpage?url=${url}`, label: "Phân tích fanpage này", hint: "Ngày giờ đăng, độ dài video, chủ đề ăn khách" },
-        (job.type === "maps" || job.type === "yelp") && { to: "/review", label: "Trả lời review của quán bạn", hint: "Xử lý khéo những điểm khách hay chê" },
+        (job.type === "maps" || job.type === "yelp") && { to: `/review?from=${job.id}`, label: "Trả lời các điểm khách chê", hint: "Điền sẵn những điểm khách hay chê trong báo cáo" },
+        (job.type === "maps" || job.type === "yelp") && { to: `/gbp-post?from=${job.id}`, label: "Bài Google Business từ điểm được khen", hint: "Khoe đúng những gì khách khen nhiều nhất" },
+        // Writing results: carry the post on to a video, pictures, a score, the Google profile.
+        WRITTEN.has(job.type) && { to: `/video?from=${job.id}`, label: "Dựng video từ bài này", hint: "Bài viết thành kịch bản có giọng đọc và phụ đề" },
+        WRITTEN.has(job.type) && { to: `/image?from=${job.id}`, label: "Vẽ ảnh cho bài này", hint: "Ảnh quảng cáo theo đúng nội dung bài" },
+        WRITTEN.has(job.type) && job.type !== "post-score" && { to: `/post-score?from=${job.id}`, label: "Chấm điểm bài này", hint: "Xem chỗ cần sửa trước khi đăng" },
+        WRITTEN.has(job.type) && job.type !== "gbp-post" && { to: `/gbp-post?from=${job.id}`, label: "Đăng lên Google Business", hint: "Viết lại cho hồ sơ Google Maps của quán" },
+        // A fixed dish photo: straight into a slideshow, a riddle, a Google post.
+        job.type === "photo-fix" && { to: `/video?from=${job.id}`, label: "Làm video trình chiếu với ảnh này", hint: "Ảnh đã chỉnh vào thẳng video", primary: true },
+        job.type === "photo-fix" && { to: `/dish-riddle?from=${job.id}`, label: "Làm bài đố đoán món", hint: "Dùng ảnh đã chỉnh, khách bình luận đoán món" },
+        job.type === "photo-fix" && { to: `/gbp-post?from=${job.id}`, label: "Bài Google Business cho món này", hint: "Gắn kèm ảnh vừa chỉnh khi đăng" },
         job.type === "instagram" && { to: "/hashtag", label: "Gợi ý hashtag cho kênh của bạn", hint: "Bộ hashtag theo khu vực và giờ đăng" },
         job.type === "menu" && { to: "/hashtag", label: "Gợi ý hashtag cho các món", hint: "Bộ hashtag theo khu vực và giờ đăng" },
         job.type === "inbox" && { to: "/review", label: "Trả lời review khách", hint: "Giữ chân khách sau khi mua" },
-        !["video", "review", "inbox", "hashtag"].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
+        !["video", "review", "inbox", "hashtag", "photo-fix", "combo", ...WRITTEN].includes(job.type) && { to: "/video", label: "Làm video từ ý tưởng này", hint: "Video ngắn có giọng đọc và phụ đề" },
       ].filter(Boolean)
     : [];
   const full = job.type === "clone" || job.type === "image" || job.type === "photo-fix";
-  const canCopy = done && !["clone", "video", "image", "photo-fix"].includes(job.type);
+  const canCopy = done && !["clone", "video", "image", "photo-fix", "combo"].includes(job.type);
 
   return (
     <div className={full ? "job-page full" : "job-page"} data-tone={skill?.tone}>
@@ -653,7 +669,7 @@ export default function JobPage() {
             <div className="job-actions actions">
               {canCopy && <button className="btn" onClick={() => copy(toPlainText(shown.result))}><CopyIcon />Sao chép</button>}
               {canCopy && <button className="btn" onClick={() => saveToLibrary(job.title, shown.result)} title="Lưu vào thư viện"><SaveIcon />Lưu</button>}
-              {done && <button className="btn" onClick={() => window.print()} title="Lưu báo cáo thành PDF hoặc in ra">⤓ Tải PDF</button>}
+              {done && job.type !== "combo" && <button className="btn" onClick={() => window.print()} title="Lưu báo cáo thành PDF hoặc in ra">⤓ Tải PDF</button>}
               {ACTIVE.has(job.status) ? (
                 <button className="btn danger" onClick={cancel}>Huỷ</button>
               ) : (

@@ -4,6 +4,8 @@ import { GpuCard, PhotoPick } from "../components/GpuCard.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
 import { upload } from "../lib/image.js";
+import FromBanner from "../components/FromBanner.jsx";
+import { dataUrlFromImage, firstPost, useFromJob } from "../lib/handoff.js";
 
 const SIZES = { "1:1": "Vuông 1:1", "4:5": "Dọc 4:5", "9:16": "Story 9:16", "16:9": "Ngang 16:9" };
 const STYLES = { real: "Chân thực", cinematic: "Điện ảnh", pixar: "Hoạt hình 3D", anime: "Anime", clay: "Đất sét", cyberpunk: "Cyberpunk" };
@@ -15,6 +17,15 @@ export default function ImagePage() {
   const [photo, setPhoto] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [localError, setLocalError] = useState("");
+  // "Làm tiếp": a written post → pictures for it; a fixed dish photo → the reference photo.
+  const from = useFromJob();
+  useEffect(() => {
+    if (!from) return;
+    if (from.type === "photo-fix" && from.photos?.fixed) {
+      setForm((f) => ({ ...f, topic: from.input?.label || f.topic }));
+      dataUrlFromImage(from.photos.fixed).then(setPhoto, () => {});
+    } else setForm((f) => ({ ...f, topic: (from.input?.topic || from.input?.dish || from.input?.promote || from.title).slice(0, 300), brief: firstPost(from).slice(0, 1500) }));
+  }, [from]);
   const [submit, busy, error] = useSubmitJob("image");
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e?.target ? (e.target.type === "checkbox" ? e.target.checked : e.target.value) : e }));
 
@@ -41,6 +52,7 @@ export default function ImagePage() {
     <SkillShell id="image">
       <GpuCard status={gpu} onChange={setGpu} />
       <form className="form-card" onSubmit={onSubmit} noValidate>
+        <FromBanner job={from} />
         <Field label="Sản phẩm hoặc chủ đề ảnh" hint="Càng cụ thể càng đẹp: món gì, màu gì, dùng ở đâu.">
           <input className="input-lg" value={form.topic} onChange={set("topic")} placeholder="Cà phê muối, ly nhựa trong, quán phong cách vintage" autoComplete="off" required autoFocus />
         </Field>

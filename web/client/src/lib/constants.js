@@ -71,6 +71,26 @@ export const SKILLS = [
     pitch: "Cấu trúc bài viết (PAS, AIDA, kể chuyện…) để AI viết theo, và những bài bạn đã lưu.",
     eta: "Tức thì",
   },
+  {
+    id: "combos",
+    type: "combo",
+    path: "/combos",
+    tone: "coral",
+    title: "Gói chạy liền",
+    short: "Gói chạy liền",
+    pitch: "Bấm một lần, nhiều công cụ chạy nối nhau: ra mắt món mới, chăm khách tuần này.",
+    eta: "vài phút",
+    etaLong: "Tuỳ gói, thường 2 đến 6 phút.",
+  },
+  {
+    id: "qr",
+    path: "/qr",
+    tone: "plum",
+    title: "Mã QR cho quán",
+    short: "Mã QR",
+    pitch: "Mã QR dẫn tới menu, Google Maps, fanpage hay Wi-Fi của quán, có logo, tải về in ngay. Miễn phí.",
+    eta: "Tức thì",
+  },
 
   // ---- Đang phát triển: card hiện trên trang chủ, bấm vào là trang "Đang phát triển" ----
   {
@@ -347,7 +367,7 @@ export const CATEGORIES = [
     word: "SÁNG TẠO",
     dark: true,
     desc: "Biến những gì học được thành bài viết, hình ảnh và kịch bản của riêng bạn, không chép của ai.",
-    skills: ["campaign", "write", "clone", "video", "photo-fix", "reel-cut", "dub", "dish-riddle", "story-behind", "weather-post", "post-score", "image", "livestream", "live-recap", "menu"],
+    skills: ["combos", "campaign", "write", "clone", "video", "photo-fix", "reel-cut", "dub", "dish-riddle", "story-behind", "weather-post", "post-score", "image", "livestream", "live-recap", "menu"],
     deco: ["pen", "spark", "image", "quote", "lines", "wand", "spark", "pen"],
   },
   {
@@ -356,7 +376,7 @@ export const CATEGORIES = [
     title: "Đăng bài & chăm khách",
     word: "CHĂM KHÁCH",
     desc: "Giữ lại mẫu hay, xếp lịch đăng đúng giờ, trả lời review và tin nhắn để khách quay lại.",
-    skills: ["library", "schedule", "gbp-post", "hashtag", "review", "inbox"],
+    skills: ["library", "schedule", "gbp-post", "qr", "hashtag", "review", "inbox"],
     deco: ["calendar", "clock", "bookmark", "check", "folder", "bell", "check", "clock"],
   },
 ];

@@ -55,6 +55,7 @@ export const publicUser = (u) =>
     credits: typeof u.credits === "number" ? u.credits : null,
     verified: u.verified !== false && u.emailVerified !== false,
     disabled: !!u.disabled,
+    disabledReason: u.disabledReason ?? null, // "dispute": locked by a chargeback (server/billing.mjs)
     createdAt: u.createdAt,
   };
 /** Not confirmed yet: an account made before sign-ups waited for their code (cleaned up after a day). */
@@ -232,7 +233,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
         attempts.set(ip, [...recent, Date.now()]);
         return res.status(401).json({ error: "Sai email hoặc mật khẩu" });
       }
-      if (user.disabled) return res.status(403).json({ error: "Tài khoản đã bị khoá, liên hệ quản trị viên." });
+      if (user.disabled) return res.status(403).json({ error: user.disabledReason === "dispute" ? "Tài khoản tạm khoá vì có yêu cầu hoàn tiền qua ngân hàng cho một lần nạp. Liên hệ hỗ trợ để mở lại." : "Tài khoản đã bị khoá, liên hệ quản trị viên." });
       attempts.delete(ip);
       await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
       setCookie(req, res, token(user), DAYS * 86_400);
@@ -400,6 +401,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (body.disabled !== undefined) {
         if (user.role === "admin" && body.disabled) throw new AccountError(400, "Không khoá được tài khoản quản trị");
         patch.disabled = !!body.disabled;
+        if (!body.disabled) patch.disabledReason = null;
       }
       if (body.dailyLimit !== undefined) patch.dailyLimit = body.dailyLimit === null || body.dailyLimit === "" ? null : Math.max(0, Math.min(1000, Number(body.dailyLimit) || 0));
       // The admin tops up (or takes back) credits by hand; turning metering on gives the account a balance.

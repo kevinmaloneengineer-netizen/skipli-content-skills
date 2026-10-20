@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import FromBanner from "../components/FromBanner.jsx";
+import { businessOf, points, section, useFromJob } from "../lib/handoff.js";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 
@@ -10,6 +12,13 @@ export default function ReviewPage() {
   const [params] = useSearchParams(); // ?review=&stars=&business= from the Google Maps report
   const [form, setForm] = useState(() => ({ review: params.get("review") ?? "", stars: /^[1-5]$/.test(params.get("stars") ?? "") ? params.get("stars") : "0", business: params.get("business") ?? "", style: "", facts: "" }));
   const [submit, busy, error] = useSubmitJob("review");
+  // "Làm tiếp" from a Google Maps / Yelp report: one reply that answers the complaints it found.
+  const from = useFromJob();
+  useEffect(() => {
+    const bad = from && points(section(from.result, "Khách chê gì"));
+    if (!bad?.length) return;
+    setForm((f) => ({ ...f, review: `Tổng hợp những điểm khách chê gần đây: ${bad.join("; ")}.`, stars: "2", business: f.business || businessOf(from) }));
+  }, [from]);
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e?.target ? e.target.value : e }));
 
   function onSubmit(e) {
@@ -20,6 +29,7 @@ export default function ReviewPage() {
   return (
     <SkillShell id="review">
       <form className="form-card" onSubmit={onSubmit} noValidate>
+        <FromBanner job={from} />
         <Field label="Đánh giá của khách" hint="Dán nguyên văn từ Google Maps, Facebook, Foody…">
           <textarea className="input-lg" rows={5} value={form.review} onChange={set("review")} placeholder="Nước lẩu ngon nhưng chờ món hơn 30 phút, nhân viên không xin lỗi câu nào." required autoFocus />
         </Field>

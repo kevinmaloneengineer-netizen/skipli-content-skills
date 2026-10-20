@@ -81,15 +81,15 @@ export default function BillingPage() {
   const best = data.packs.length > 2 ? data.packs[1].id : null;
   // Tools by price, with their art: 1 credit for every writing tool not in the table.
   const priced = new Set(Object.keys(data.costs));
-  const tiers = Object.entries(data.costs).reduce((acc, [type, cost]) => {
+  const tiers = Object.entries(data.costs).filter(([, cost]) => cost > 0).reduce((acc, [type, cost]) => {
     const skill = skillByType(type);
     if (skill) (acc[cost] ??= []).push(skill);
     return acc;
   }, {});
-  tiers[1] = [...(tiers[1] ?? []), ...SKILLS.filter((s) => s.type && !priced.has(s.type) && s.status !== "soon" && s.id !== "library" && s.id !== "schedule")];
+  tiers[1] = [...(tiers[1] ?? []), ...SKILLS.filter((s) => s.type && !priced.has(s.type) && s.status !== "soon" && !["library", "schedule", "qr", "combos"].includes(s.id))];
   // Credit activity: top-ups (+) and runs that took credits (−, or refunded), newest first.
   const runs = (jobs ?? []).filter((j) => j.credits).map((j) => ({ id: j.id, at: j.createdAt, delta: j.refunded ? 0 : -j.credits, label: j.title, refunded: !!j.refunded, credits: j.credits }));
-  const tops = (data.payments ?? []).map((p) => ({ id: p.id, at: p.at, delta: p.credits, label: "Nạp credit", amount: p.amount != null ? money(p.amount, p.currency || data.currency) : "" }));
+  const tops = (data.payments ?? []).map((p) => ({ id: p.id, at: p.at, delta: p.credits, label: p.disputed ? "Nạp credit · đang hoàn tiền qua ngân hàng" : "Nạp credit", amount: p.amount != null ? money(p.amount, p.currency || data.currency) : "" }));
   const activity = [...runs, ...tops].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 12);
   const month = Date.now() - 30 * 86_400_000;
   const spent = runs.filter((r) => Date.parse(r.at) > month).reduce((n, r) => n - r.delta, 0);

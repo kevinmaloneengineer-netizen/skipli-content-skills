@@ -118,7 +118,7 @@ async function fullScene({ photo, card, w, h, seconds, out }) {
  */
 async function layerScene({ spec, w, h, seconds, out, dir, name }) {
   const layerDir = path.join(dir, name);
-  await png({ ...spec, width: w, height: h }, layerDir, dir);
+  await png({ ...spec, width: w, height: h, seconds }, layerDir, dir);
   const items = JSON.parse(await readFile(path.join(layerDir, "layers.json"), "utf8"));
   const inputs = [];
   const parts = [`color=c=white:s=${w}x${h}:d=${seconds}:r=${FPS}[c0]`];
@@ -134,7 +134,13 @@ async function layerScene({ spec, w, h, seconds, out, dir, name }) {
     else if (it.anim === "right") x = `${it.x}+(${w - it.x + 40})*${ease}`;
     else if (it.anim === "up") y = `${it.y}+(${Math.round(h * 0.08)})*${ease}`;
     else if (it.anim === "down") y = `${it.y}-(${Math.round(h * 0.05)})*${ease}`;
-    if (it.anim !== "none") src += `,fade=in:st=${d}:d=0.45:alpha=1`;
+    else if (it.anim === "rise") y = `${it.y}+(${h - it.y + 40})*${ease}`; // up from below the frame
+    else if (it.anim === "pan") {
+      // Moves steadily the whole scene (film strip, running words): it.vx / it.vy px per second.
+      x = `${it.x}+(${it.vx ?? 0})*t`;
+      y = `${it.y}+(${it.vy ?? 0})*t`;
+    }
+    if (it.anim !== "none" && it.anim !== "pan") src += `,fade=in:st=${d}:d=0.45:alpha=1`;
     parts.push(`${src}[l${i}]`, `[${last}][l${i}]overlay=x='${x}':y='${y}':shortest=1[o${i}]`);
     last = `o${i}`;
   });
@@ -169,6 +175,10 @@ const LABELS = {
   en: { top3: "Top 3 must-try", at: "at", menu: "Our menu", deal: "DEAL", onlyAt: "Only at", seeMore: "See More >" },
   vi: { top3: "Top 3 món phải thử", at: "tại", menu: "Thực đơn", deal: "ƯU ĐÃI", onlyAt: "Chỉ có tại", seeMore: "Xem thêm >" },
 };
+Object.assign(LABELS.en, { showing: "Now showing", issue: "Special issue", from: "Greetings from", receipt: "Receipt", thanks: "Thank you!", now: "now", spotlight: "Signature dishes" });
+Object.assign(LABELS.vi, { showing: "Đang chiếu", issue: "Số đặc biệt", from: "Gửi từ", receipt: "Hoá đơn", thanks: "Cảm ơn quý khách!", now: "vừa xong", spotlight: "Món nổi bật" });
+/** Templates that open on their own hook instead of the search bar (all but the Canva-like collage). */
+const OWN_HOOK = new Set(["top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee"]);
 
 /**
  * Scene list of a template (durations are rough; they are scaled to the requested length).
@@ -178,9 +188,10 @@ function planFor(template, { seconds, hasCard, portrait, top, name, city, dishes
   const long = seconds >= 30;
   const plan = [];
   // Only the Canva-like collage opens on the search bar; the marketing templates open on their own hook.
-  if (hasCard && !["top3", "menu", "promo", "polaroid", "bold"].includes(template)) plan.push({ kind: "search", d: 2.4 });
+  if (hasCard && !OWN_HOOK.has(template)) plan.push({ kind: "search", d: 2.4 });
   const place = [name, city].filter(Boolean).join(", ");
   const dish = (k) => dishes[k] ?? { name: "", price: "" };
+  const dishNames = dishes.map((x) => x.name).filter(Boolean);
   if (template === "top3") {
     plan.push({ kind: "layers", spec: { kind: "title", style: "photo", kicker: name ? `${L.at} ${name}` : "", headline: L.top3, sub: city }, roles: ["table"], d: 2.4 });
     for (const k of [2, 1, 0]) plan.push({ kind: "layers", spec: { kind: "countdown", number: k + 1, dish: dish(k).name, price: dish(k).price }, roles: [`dish${k + 1}`], d: long ? 5 : 3 });
@@ -213,6 +224,68 @@ function planFor(template, { seconds, hasCard, portrait, top, name, city, dishes
       plan.push({ kind: "full", role: shots[k] ?? "table", d: long ? 4 : 2.2 });
     });
     if (long) plan.push({ kind: "layout", layout: "hero", roles: ["close", "side", "table"], d: 4 });
+  } else if (template === "film") {
+    plan.push({ kind: "layers", spec: { kind: "film", label: L.showing, title: name || tagline }, roles: ["medium", "close", "side", "table"], d: long ? 7 : 5.6 });
+    plan.push({ kind: "full", role: "ext", card: top, d: 3.4 });
+    if (long) {
+      plan.push({ kind: "layers", spec: { kind: "film", label: city, title: tagline || name }, roles: ["int", "table", "close", "medium"], d: 6 });
+      plan.push({ kind: "layout", layout: "split", roles: ["int", "medium"], d: 4 });
+    }
+  } else if (template === "magazine") {
+    const issue = [L.issue, city].filter(Boolean).join(" · ");
+    const masthead = name || tagline;
+    plan.push({ kind: "layers", spec: { kind: "cover", masthead, issue, headline: name ? tagline : "", items: dishNames.slice(0, 3) }, roles: ["medium"], d: 4.6 });
+    plan.push({ kind: "layers", spec: { kind: "cover", masthead, issue, blurb }, roles: ["int"], d: 4.2 });
+    plan.push({ kind: "layout", layout: "trio", roles: ["close", "table", "side"], d: 4 });
+    if (long) {
+      plan.push({ kind: "full", role: "ext", card: top, d: 4 });
+      plan.push({ kind: "layers", spec: { kind: "cover", masthead, issue, headline: words.join(" ") }, roles: ["table"], d: 4.4 });
+    }
+  } else if (template === "grid") {
+    plan.push({ kind: "layers", spec: { kind: "grid9", title: name || tagline, sub: name ? tagline : city }, roles: ["medium", "close", "side", "table", "int", "ext"], d: long ? 6.5 : 5.6 });
+    plan.push({ kind: "full", role: "medium", card: top, d: 3.2 });
+    if (long) {
+      plan.push({ kind: "layout", layout: "hero", roles: ["close", "side", "table"], d: 4.4 });
+      plan.push({ kind: "layers", spec: { kind: "grid9", title: name || tagline, sub: blurb ? "" : city }, roles: ["int", "table", "close", "medium", "ext", "side"], d: 5.6 });
+    }
+  } else if (template === "story") {
+    const n = long ? 6 : 4;
+    const stickers = [tagline || name, ...dishNames, ...words].filter(Boolean);
+    const shots = ["int", "medium", "close", "table", "side", "ext"];
+    for (let k = 0; k < n; k++) plan.push({ kind: "layers", spec: { kind: "story", index: k, total: n, name, now: L.now, sticker: stickers[k] ?? "" }, roles: [shots[k]], d: long ? 4.2 : 3 });
+  } else if (template === "receipt") {
+    const rows = dishes.length ? dishes : words.map((x) => ({ name: x, price: "" }));
+    plan.push({ kind: "layers", spec: { kind: "receipt", name, city, label: L.receipt, thanks: L.thanks, rows }, roles: [], d: long ? 5.4 : 4.6 });
+    plan.push({ kind: "full", role: "close", d: 3 });
+    plan.push({ kind: "layout", layout: "trio", roles: ["medium", "table", "side"], d: 3.8 });
+    if (long) {
+      plan.push({ kind: "full", role: "ext", card: top, d: 4 });
+      plan.push({ kind: "layout", layout: "split", roles: ["int", "medium"], d: 4 });
+    }
+  } else if (template === "neon") {
+    plan.push({ kind: "layers", spec: { kind: "neon", mode: "title", title: name || tagline, sub: name ? tagline : city }, roles: [], d: 3.4 });
+    plan.push({ kind: "layers", spec: { kind: "neon", mode: "photo", caption: dishNames[0] ?? words[0] ?? "" }, roles: ["medium"], d: long ? 4.6 : 3.6 });
+    plan.push({ kind: "layers", spec: { kind: "neon", mode: "photo", caption: dishNames[1] ?? words[1] ?? "" }, roles: ["close"], d: long ? 4.6 : 3.6 });
+    if (long) {
+      plan.push({ kind: "layers", spec: { kind: "neon", mode: "photo", caption: dishNames[2] ?? words[2] ?? "" }, roles: ["side"], d: 4.6 });
+      plan.push({ kind: "full", role: "ext", card: top, d: 4 });
+    }
+  } else if (template === "postcard") {
+    plan.push({ kind: "layers", spec: { kind: "postcard", from: L.from, name: name || tagline, city }, roles: ["ext"], d: 4.6 });
+    plan.push({ kind: "layers", spec: { kind: "postcard", from: L.from, name: name || tagline, city, note: blurb }, roles: ["medium"], d: 4.4 });
+    plan.push({ kind: "layout", layout: "split", roles: ["close", "table"], d: 3.6 });
+    if (long) {
+      plan.push({ kind: "layers", spec: { kind: "postcard", from: L.from, name: name || tagline, city }, roles: ["int"], d: 4.6 });
+      plan.push({ kind: "layout", layout: "trio", roles: ["side", "close", "table"], d: 4.4 });
+    }
+  } else if (template === "spotlight") {
+    plan.push({ kind: "layers", spec: { kind: "title", style: "light", kicker: name, headline: L.spotlight, sub: city }, roles: [], d: 2.4 });
+    for (const k of [0, 1, 2]) plan.push({ kind: "layers", spec: { kind: "circle", index: k + 1, total: 3, dish: dish(k).name, price: dish(k).price }, roles: [`dish${k + 1}`], d: long ? 5 : 3 });
+    plan.push({ kind: long ? "tilted" : "full", roles: ["ext", "table"], role: "ext", card: top, d: 3 });
+    if (long) plan.push({ kind: "layout", layout: "split", roles: ["int", "table"], d: 4 });
+  } else if (template === "marquee") {
+    const items = [name, tagline, ...words].filter(Boolean);
+    for (const role of long ? ["medium", "close", "table", "int", "side"] : ["medium", "close", "table"]) plan.push({ kind: "layers", spec: { kind: "marquee", items }, roles: [role], d: 4.4 });
   } else {
     // "collage": the Canva-like layouts.
     if (hasCard && portrait) plan.push({ kind: "landing", roles: ["close", "int", "medium", "table"], d: 4.8 });

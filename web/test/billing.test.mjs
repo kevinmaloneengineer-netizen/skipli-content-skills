@@ -190,3 +190,82 @@ test("admin deletes a customer account, which frees its network's sign-up slot; 
     s.close();
   }
 });
+
+test("chargeback: the bank takes the money back, the credits go too; spent already → locked; dispute won → back", async () => {
+  const PI = "pi_test_dispute1";
+  const sessions = new Map(); // id → session
+  const fetchFn = async (url) => {
+    const u = new URL(url);
+    if (u.pathname === "/v1/checkout/sessions" && u.searchParams.get("payment_intent")) {
+      const hit = [...sessions.values()].find((x) => x.payment_intent === u.searchParams.get("payment_intent"));
+      return new Response(JSON.stringify({ data: hit ? [hit] : [] }));
+    }
+    return new Response(JSON.stringify(sessions.get(u.pathname.split("/").pop()) ?? {}));
+  };
+  const app = await createApp({
+    port: 0, host: "127.0.0.1", store: "memory", appPassword: "", accounts: true, signup: true, signupPerIp: 0, mailEnv: {}, errorEnv: {}, fetchFn,
+    billingEnv: { STRIPE_SECRET_KEY: "sk_test_x", STRIPE_WEBHOOK_SECRET: SECRET, TRIAL_CREDITS: "20", CREDIT_PACKS: "100:900" },
+    goclaw: { url: "http://127.0.0.1:1", token: "", userId: "system", mock: true, mockDelayMs: 10 },
+    agents: { scout: "content-scout", writer: "content-writer" },
+    jobs: { concurrency: 1, timeoutMs: 60_000 },
+  }, memoryAdapter());
+  const s = app.app.listen(0, "127.0.0.1");
+  await new Promise((r) => s.once("listening", r));
+  const root = `http://127.0.0.1:${s.address().port}`;
+  const req = async (method, p, body, headers = {}) => {
+    const raw = typeof body === "string";
+    const r = await fetch(root + p, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers }, body: body ? (raw ? body : JSON.stringify(body)) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null), cookie: r.headers.get("set-cookie")?.split(";")[0] };
+  };
+  const hook = (type, object) => {
+    const raw = JSON.stringify({ type, data: { object } });
+    return req("POST", "/api/stripe/webhook", raw, { "stripe-signature": sign(raw) });
+  };
+  try {
+    const admin = await req("POST", "/api/setup", { email: "boss@example.com", password: "admin-pass-1" });
+    const me = await req("POST", "/api/signup", { email: "cafe@shop.com", password: "password-1" });
+    const uid = me.body.user.id;
+    const paid = (id, pi) => ({ id, payment_status: "paid", client_reference_id: uid, metadata: { credits: "100" }, amount_total: 900, currency: "usd", payment_intent: pi });
+    sessions.set("cs_test_aaaaaaaaaaaa", paid("cs_test_aaaaaaaaaaaa", PI));
+    await hook("checkout.session.completed", paid("cs_test_aaaaaaaaaaaa", PI));
+    assert.equal(app.store.getUser(uid).credits, 120);
+
+    // Dispute while the credits are still there: they are taken back, the account stays open.
+    await hook("charge.dispute.created", { id: "dp_1", payment_intent: PI, status: "needs_response" });
+    assert.equal(app.store.getUser(uid).credits, 20);
+    assert.equal(app.store.getUser(uid).disabled, false);
+    await hook("charge.dispute.created", { id: "dp_1", payment_intent: PI }); // repeated event: nothing more
+    assert.equal(app.store.getUser(uid).credits, 20);
+    // The shop wins: the credits come back.
+    await hook("charge.dispute.closed", { id: "dp_1", payment_intent: PI, status: "won" });
+    assert.equal(app.store.getUser(uid).credits, 120);
+
+    // A second top-up, spent, then disputed: balance to 0 and the account is locked.
+    const PI2 = "pi_test_dispute2";
+    sessions.set("cs_test_bbbbbbbbbbbb", paid("cs_test_bbbbbbbbbbbb", PI2));
+    await hook("checkout.session.completed", paid("cs_test_bbbbbbbbbbbb", PI2));
+    await app.store.updateUser(uid, { credits: 30 });
+    const opened = await hook("charge.dispute.created", { id: "dp_2", payment_intent: PI2 });
+    assert.deepEqual([opened.body.dispute.taken, opened.body.dispute.locked], [30, true]);
+    assert.equal(app.store.getUser(uid).credits, 0);
+    const login = await req("POST", "/api/login", { login: "cafe@shop.com", password: "password-1" });
+    assert.equal(login.status, 403);
+    assert.match(login.body.error, /hoàn tiền qua ngân hàng/);
+    // Lost: the money went back to the customer; the account stays locked, the admin sees it.
+    await hook("charge.dispute.closed", { id: "dp_2", payment_intent: PI2, status: "lost" });
+    assert.equal(app.store.getUser(uid).disabled, true);
+    const errs = (await req("GET", "/api/admin/errors", null, { cookie: admin.cookie })).body.errors;
+    assert.ok(errs.some((e) => e.source === "billing" && /hoàn tiền/.test(e.message)));
+
+    // A payment recorded before the intent was kept: found through Stripe's session lookup.
+    const u = app.store.getUser(uid);
+    await app.store.updateUser(uid, { disabled: false, disabledReason: null, credits: 100, payments: u.payments.map((p) => (p.id === "cs_test_aaaaaaaaaaaa" ? { id: p.id, credits: p.credits, amount: p.amount, currency: p.currency, at: p.at } : p)) });
+    const PI3 = "pi_test_dispute3";
+    sessions.set("cs_test_aaaaaaaaaaaa", { ...paid("cs_test_aaaaaaaaaaaa", PI3) });
+    const old = await hook("charge.dispute.created", { id: "dp_3", payment_intent: PI3 });
+    assert.equal(old.body.dispute.handled, true);
+    assert.equal(app.store.getUser(uid).credits, 0);
+  } finally {
+    s.close();
+  }
+});

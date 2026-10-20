@@ -757,5 +757,15 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     return { result: `Đã chỉnh ${photos.items.length} ảnh: ${photos.items.map((x) => x.ratio).join(", ")}.`, fields: { photos: { ...photos, look, background, ai } } };
   }
 
-  return { init, status, setWorker, saveUpload, hasUpload, videoPath, imagePath, finish, remove, redrawSlide, replaceSlide, renderSlides, fixPhoto };
+  /** A picture the app made (a fixed dish photo) as an upload, so another tool (a slideshow) can use it. */
+  async function importImage(file) {
+    const src = imagePath(file);
+    if (!src || !existsSync(src)) throw new VideoError("Ảnh không còn trên máy chủ");
+    const id = `${randomUUID()}${path.extname(file).toLowerCase()}`;
+    await mkdir(dirs.uploads, { recursive: true });
+    await copyFile(src, path.join(dirs.uploads, id));
+    return id;
+  }
+
+  return { init, status, setWorker, saveUpload, hasUpload, videoPath, imagePath, finish, remove, redrawSlide, replaceSlide, renderSlides, fixPhoto, importImage };
 }

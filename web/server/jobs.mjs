@@ -26,8 +26,9 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
   const queue = [];
   const running = new Map(); // id -> AbortController
   let stopping = false; // shutting down: no new job starts
-  const lane = (job) => (lanes ? laneOf(job) : "all");
-  const limit = (name) => (lanes ? lanes[name] ?? 1 : concurrency);
+  // A combo only waits for the jobs it starts: it has its own lane, so it never takes their place.
+  const lane = (job) => (job.type === "combo" ? "combo" : lanes ? laneOf(job) : "all");
+  const limit = (name) => (name === "combo" ? 20 : lanes ? lanes[name] ?? 1 : concurrency);
   const ended = async (id) => {
     const job = store.cachedJob(id);
     if (job) await onEnd(job).catch((e) => log.error(`job ${id}: onEnd:`, e.message));

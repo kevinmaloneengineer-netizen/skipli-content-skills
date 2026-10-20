@@ -88,7 +88,7 @@ export default function AdminPage() {
             <tbody>
               {data?.users.map((u) => (
                 <tr key={u.id} className={u.disabled ? "is-off" : undefined}>
-                  <td><b>{u.name || u.contact}</b><small>{u.contact}{u.role === "admin" ? " · Quản trị" : ""}{u.disabled ? " · Đã khoá" : ""}{u.verified === false ? " · Chưa xác nhận email" : ""}</small></td>
+                  <td><b>{u.name || u.contact}</b><small>{u.contact}{u.role === "admin" ? " · Quản trị" : ""}{u.disabled ? (u.disabledReason === "dispute" ? " · Khoá do tranh chấp thanh toán" : " · Đã khoá") : ""}{u.verified === false ? " · Chưa xác nhận email" : ""}</small></td>
                   <td>{u.today}</td>
                   <td>{u.jobs}</td>
                   <td>

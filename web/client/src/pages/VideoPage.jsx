@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import { GpuCard, PhotoPick, PhotosPick } from "../components/GpuCard.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
@@ -8,6 +8,8 @@ import { cutGrid, loadImage, upload } from "../lib/image.js";
 import { uploadAudio } from "../lib/api.js";
 import { useDrop } from "../lib/drop.js";
 import FilePick from "../components/FilePick.jsx";
+import FromBanner from "../components/FromBanner.jsx";
+import { dataUrlFromImage, firstPost, useFromJob } from "../lib/handoff.js";
 
 const MODES = { slideshow: "Trình chiếu ảnh", topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
 const SLIDE_SECONDS = { 15: "15 giây", 30: "30 giây" };
@@ -19,35 +21,66 @@ const TEMPLATES = [
   ["promo", "Khuyến mãi", "Câu ưu đãi chữ to, ruy băng ưu đãi trên ảnh món"],
   ["polaroid", "Tường ảnh Polaroid", "Ảnh polaroid rơi xuống xếp nghiêng trên nền màu"],
   ["bold", "Chữ to kiểu tạp chí", "3 chữ thật to xen kẽ ảnh toàn khung"],
+  ["film", "Cuộn phim", "Ảnh chạy dọc trên dải phim, chữ Đang chiếu và tên quán"],
+  ["magazine", "Bìa tạp chí", "Ảnh làm bìa, tên quán là tên tạp chí, các dòng giới thiệu món"],
+  ["grid", "Lưới 9 ô", "Ảnh hiện dần từng ô như trang cá nhân, ô giữa là logo"],
+  ["story", "Story Instagram", "Thanh tiến trình, tên quán ở góc, nhãn dán chữ trên từng ảnh"],
+  ["receipt", "Hoá đơn", "Tờ hoá đơn in ra danh sách món và giá, rồi tới ảnh món"],
+  ["neon", "Đèn neon", "Nền tối, tên quán và tên món phát sáng như bảng đèn"],
+  ["postcard", "Bưu thiếp", "Ảnh in trên bưu thiếp có tem, dấu bưu điện và lời giới thiệu"],
+  ["spotlight", "Món nổi bật", "Từng món trong khung tròn trên nền màu, tên món và giá"],
+  ["marquee", "Chữ chạy", "Hai dải chữ chạy ngược chiều trên ảnh toàn khung"],
   ["single", "Từng ảnh", "Mỗi cảnh một ảnh, chuyển cảnh mờ dần"],
 ];
+// Templates that take the dish list (names, prices only when typed).
+const DISH_TEMPLATES = { top3: "3 món phải thử (mỗi dòng một món, giá tuỳ chọn)", spotlight: "3 món nổi bật (mỗi dòng một món, giá tuỳ chọn)", menu: "Món và giá (tối đa 4 món, mỗi dòng một món)", receipt: "Món trên hoá đơn (tối đa 4 món, mỗi dòng một món, giá tuỳ chọn)" };
 // Sample clip of a template (client/public/samples, rendered from the same code with stock photos).
-const SAMPLE_VERSION = 3; // bump after re-rendering the samples so browsers fetch the new files
+const SAMPLE_VERSION = 4; // bump after re-rendering the samples so browsers fetch the new files
 const sampleOf = (id) => `/samples/${id === "single" ? "single" : `${id}-${getLang()}`}`;
 const calm = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-/** Templates as a list on the left, a large sample player on the right that plays the picked template. */
+/** One template: its sample as a 9:16 thumbnail that plays on hover (the picked one plays on the big screen). */
+function TemplateCard({ id, title, on, onPick }) {
+  const ref = useRef(null);
+  const [hover, setHover] = useState(false);
+  const live = hover && !on && !calm();
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (live) v.play().catch(() => {});
+    else {
+      v.pause();
+      v.currentTime = 0;
+    }
+  }, [live]);
+  return (
+    <button type="button" role="radio" aria-checked={on} className={on ? "tpl-card on" : "tpl-card"} onClick={onPick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)}>
+      <span className="tpl-thumb">
+        <video ref={ref} src={`${sampleOf(id)}.mp4?v=${SAMPLE_VERSION}`} poster={`${sampleOf(id)}.jpg?v=${SAMPLE_VERSION}`} muted loop playsInline preload="none" aria-hidden="true" />
+        {on && <i className="tpl-check" aria-hidden="true">✓</i>}
+      </span>
+      <b>{title}</b>
+    </button>
+  );
+}
+
+/** All templates as a gallery on the left; the picked one plays on a big screen beside it. */
 function TemplatePicker({ value, onChange }) {
   const shown = TEMPLATES.find(([id]) => id === value) ?? TEMPLATES[0];
   const still = calm();
   return (
     <div className="tpl-pick">
-      <div className="tpl-list" role="radiogroup" aria-label="Mẫu video">
-        {TEMPLATES.map(([id, title, desc]) => (
-          <button key={id} type="button" role="radio" aria-checked={value === id} className={value === id ? "tpl-item on" : "tpl-item"} onClick={() => onChange(id)}>
-            <img src={`${sampleOf(id)}.jpg?v=${SAMPLE_VERSION}`} alt="" loading="lazy" />
-            <span>
-              <b>{title}</b>
-              <small>{desc}</small>
-            </span>
-          </button>
+      <div className="tpl-grid" role="radiogroup" aria-label="Mẫu video">
+        {TEMPLATES.map(([id, title]) => (
+          <TemplateCard key={id} id={id} title={title} on={value === id} onPick={() => onChange(id)} />
         ))}
       </div>
-      <figure className="tpl-preview">
-        <video key={shown[0]} src={`${sampleOf(shown[0])}.mp4?v=${SAMPLE_VERSION}`} poster={`${sampleOf(shown[0])}.jpg?v=${SAMPLE_VERSION}`} muted loop playsInline autoPlay={!still} controls={still} aria-label={`Video mẫu: ${shown[1]}`} />
+      <figure className="tpl-screen">
+        <video key={shown[0]} src={`${sampleOf(shown[0])}-hd.mp4?v=${SAMPLE_VERSION}`} poster={`${sampleOf(shown[0])}-hd.jpg?v=${SAMPLE_VERSION}`} muted loop playsInline autoPlay={!still} controls={still} aria-label={`Video mẫu: ${shown[1]}`} />
         <figcaption>
           <span className="tpl-badge">Video mẫu</span>
           <b>{shown[1]}</b>
+          <small>{shown[2]}</small>
         </figcaption>
       </figure>
     </div>
@@ -136,6 +169,19 @@ export default function VideoPage() {
   const [uploading, setUploading] = useState(false);
   const [localError, setLocalError] = useState("");
   const [submit, busy, error] = useSubmitJob("video");
+  // "Làm tiếp": a fixed dish photo opens a slideshow with it; a written post becomes the script's idea.
+  const from = useFromJob();
+  useEffect(() => {
+    if (!from) return;
+    if (from.type === "photo-fix" && from.photos?.fixed) {
+      setMode("slideshow");
+      setForm((f) => ({ ...f, topic: from.input?.label || f.topic, seconds: "15" }));
+      dataUrlFromImage(from.photos.fixed).then((d) => setPhotos([d]), () => {});
+    } else if (["write", "gbp-post", "weather-post", "story-behind", "dish-riddle", "menu", "livestream"].includes(from.type)) {
+      setMode("topic");
+      setForm((f) => ({ ...f, topic: (from.input?.topic || from.input?.dish || from.input?.promote || from.title).slice(0, 300), brief: firstPost(from).slice(0, 2000) }));
+    }
+  }, [from]);
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e?.target ? e.target.value : e }));
   const words = form.narration.split(/\s+/).filter(Boolean).length;
 
@@ -173,6 +219,7 @@ export default function VideoPage() {
     <SkillShell id="video">
       <GpuCard status={gpu} onChange={setGpu} />
       <form className="form-card" onSubmit={onSubmit} noValidate>
+        <FromBanner job={from} />
         <div className="field">
           <span className="field-label">Cách làm video</span>
           <Segmented name="mode" label="Cách làm video" options={MODES} value={mode} onChange={setMode} />
@@ -224,10 +271,10 @@ export default function VideoPage() {
             <div className="field">
               <span className="field-label">Mẫu video</span>
               <TemplatePicker value={form.layout} onChange={set("layout")} />
-              <small>Bấm vào từng mẫu để xem video mẫu bên phải. Ảnh đứng yên, chỉ có hiệu ứng trượt và chuyển cảnh. Điền tên quán để có tên và địa chỉ ở cảnh cuối; mẫu Ghép ảnh còn mở đầu bằng ô tìm kiếm.</small>
+              <small>Bấm vào mẫu để xem video mẫu trên màn hình lớn và chọn mẫu đó. Ảnh đứng yên, chỉ có hiệu ứng trượt và chuyển cảnh. Điền tên quán để có tên và địa chỉ ở cảnh cuối; mẫu Ghép ảnh còn mở đầu bằng ô tìm kiếm.</small>
             </div>
-            {(form.layout === "top3" || form.layout === "menu") && (
-              <Field label={form.layout === "menu" ? "Món và giá (tối đa 4 món, mỗi dòng một món)" : "3 món phải thử (mỗi dòng một món, giá tuỳ chọn)"} hint="Viết dạng: Tên món - giá. Không ghi giá thì video không hiện giá. Để trống thì AI tự chọn món, không ghi giá.">
+            {DISH_TEMPLATES[form.layout] && (
+              <Field label={DISH_TEMPLATES[form.layout]} hint="Viết dạng: Tên món - giá. Không ghi giá thì video không hiện giá. Để trống thì AI tự chọn món, không ghi giá.">
                 <textarea rows={4} value={form.dishes} onChange={set("dishes")} placeholder={"Beef pho - $14.95\nBanh mi - $9.50\nSpring rolls - $7"} />
               </Field>
             )}
@@ -245,7 +292,7 @@ export default function VideoPage() {
               <FilePick accept="audio/*,video/mp4" file={ownVoice} onChange={setOwnVoice} placeholder="Chọn nhạc hoặc giọng đọc (MP3, M4A, WAV)" kind="audio" clearLabel="Bỏ file, dùng nhạc nền tự tạo" />
               <small>Bài dài cũng được: video dùng đoạn đầu, cắt vừa độ dài video và nhỏ dần ở cuối. Ngắn hơn video thì phát lặp lại. Chỉ dùng nhạc bạn có quyền sử dụng.</small>
             </div>
-            <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint={form.layout === "top3" || form.layout === "menu" ? "Ảnh món ăn xếp đúng thứ tự các món đã nhập ở trên. AI chỉ vẽ phần còn thiếu." : "Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ."} value={photos} onChange={setPhotos} max={form.layout !== "single" || Number(form.seconds) === 30 ? 6 : 5} />
+            <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint={["top3", "menu", "spotlight"].includes(form.layout) ? "Ảnh món ăn xếp đúng thứ tự các món đã nhập ở trên. AI chỉ vẽ phần còn thiếu." : "Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ."} value={photos} onChange={setPhotos} max={form.layout !== "single" || Number(form.seconds) === 30 ? 6 : 5} />
             <fieldset className="slide-card-fields">
               <legend>Thông tin quán ở ảnh đầu (tuỳ chọn)</legend>
               <p className="hint">Hiện trên ảnh đầu tiên như bìa video. Để trống tên quán thì video chỉ có ảnh.</p>

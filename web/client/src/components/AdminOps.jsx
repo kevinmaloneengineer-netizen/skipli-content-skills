@@ -4,7 +4,7 @@ import { ago } from "../lib/format.js";
 import { useToast } from "../context/ToastContext.jsx";
 
 const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-const SOURCE = { server: "Máy chủ", job: "Tác vụ", browser: "Trình duyệt", backup: "Sao lưu" };
+const SOURCE = { server: "Máy chủ", job: "Tác vụ", browser: "Trình duyệt", backup: "Sao lưu", billing: "Thanh toán" };
 
 /** Sign-up and credit settings, saved in the database: they apply at once, no restart. */
 function Settings() {

@@ -29,6 +29,8 @@ const HashtagPage = lazy(() => import("./pages/HashtagPage.jsx"));
 const CutReelsPage = lazy(() => import("./pages/CutReelsPage.jsx"));
 const LiveRecapPage = lazy(() => import("./pages/LiveRecapPage.jsx"));
 const DubPage = lazy(() => import("./pages/DubPage.jsx"));
+const CombosPage = lazy(() => import("./pages/CombosPage.jsx"));
+const QrPage = lazy(() => import("./pages/QrPage.jsx"));
 const PhotoFixPage = lazy(() => import("./pages/PhotoFixPage.jsx"));
 const LegalPage = lazy(() => import("./pages/LegalPage.jsx"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage.jsx"));
@@ -92,6 +94,8 @@ export default function App() {
                 <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />
                 <Route path="gbp-post" element={<TextSkillPage config={TEXT_SKILLS["gbp-post"]} />} />
                 <Route path="photo-fix" element={<PhotoFixPage />} />
+                <Route path="qr" element={<QrPage />} />
+                <Route path="combos" element={<CombosPage />} />
                 <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
                 <Route path="library" element={<LibraryPage />} />
                 <Route path="history" element={<HistoryPage />} />

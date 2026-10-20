@@ -2,6 +2,7 @@ import express from "express";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { WEB_ROOT } from "./config.mjs";
 import { createGoclawClient } from "./goclaw.mjs";
@@ -24,6 +25,7 @@ import { createMailer } from "./mailer.mjs";
 import { createErrorLog } from "./errors.mjs";
 import { runBackup } from "./backup.mjs";
 import { parsePacks } from "./billing.mjs";
+import { RECIPES, buildCombo, comboCost } from "./combos.mjs";
 import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { ClipError, createClipper } from "./clipper.mjs";
@@ -282,7 +284,11 @@ export async function createApp(config, adapter) {
   const prepareJob = createPreparer({ facebook, mock: goclaw.mock, clipsDir, clipper, uploadsDir: path.join(videoRoot, "uploads") });
   const runner = createJobRunner({ store, goclaw, agents: config.agents, ...config.jobs,
     // A photo fix runs on this server only (no model); its files go to storage like a video's.
-    prepare: async (job, ctx) => (job.type === "photo-fix" ? { done: await publishAfter(job, await video.fixPhoto(job, ctx)) } : prepareJob(job, ctx)),
+    prepare: async (job, ctx) => {
+      if (job.type === "photo-fix") return { done: await publishAfter(job, await video.fixPhoto(job, ctx)) };
+      if (job.type === "combo") return { done: await runCombo(job, ctx) };
+      return prepareJob(job, ctx);
+    },
     finish: async (job, content, ctx) => publishAfter(job, await finishContent(job, content, ctx)),
     // A failed or canceled run gives its credits back; a failure also goes to the error log.
     onEnd: async (job) => {
@@ -292,8 +298,89 @@ export async function createApp(config, adapter) {
   });
   await runner.recover();
 
+  /**
+   * A combo ("Gói chạy liền"): its steps, one after another, as ordinary jobs of the same owner. Each step
+   * takes its credits when it starts; a step whose input needs a failed step is skipped. After a restart
+   * it carries on from the steps it already started (their ids are kept on the combo job).
+   */
+  async function runCombo(job, { setPhase, signal }) {
+    const recipe = RECIPES[job.input?.recipe];
+    if (!recipe) throw new Error("Gói không hợp lệ");
+    const steps = recipe.steps.map((def, i) => ({ type: def.type, title: def.title, status: "waiting", ...(job.steps?.[i] ?? {}) }));
+    const save = () => store.updateJob(job.id, { steps: steps.map((s) => ({ ...s })) });
+    const over = (s) => ["done", "failed", "canceled"].includes(s);
+    const ctx = { input: job.input, steps: [], photoIds: [] };
+    const jobOf = async (id) => (id ? store.cachedJob(id) ?? (await store.getJob(id)) : null);
+    for (let i = 0; i < recipe.steps.length; i++) {
+      if (signal.aborted) throw new Error("canceled");
+      const def = recipe.steps[i];
+      const st = steps[i];
+      if (["done", "failed", "skipped"].includes(st.status)) continue; // finished before a restart
+      await setPhase(`Bước ${i + 1}/${steps.length}: ${def.title}…`);
+      if (!st.jobId) {
+        ctx.steps = await Promise.all(steps.map(async (s) => ({ status: s.status, job: await jobOf(s.jobId) })));
+        if ((def.needs ?? []).some((k) => steps[k].status !== "done")) {
+          Object.assign(st, { status: "skipped", error: "Bước trước chưa xong nên bỏ qua bước này" });
+          await save();
+          continue;
+        }
+        try {
+          if (def.type === "video" && ctx.steps[0].job?.photos?.fixed) {
+            const id = await video.importImage(ctx.steps[0].job.photos.fixed);
+            await publish([`uploads/${id}`]);
+            ctx.photoIds = [id];
+          }
+          const input = def.input(ctx);
+          if (!input) {
+            Object.assign(st, { status: "skipped", error: "Không có gì để làm ở bước này" });
+            await save();
+            continue;
+          }
+          const spec = await jobSpec(def.type, input);
+          if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
+          const owner = job.userId ? store.getUser(job.userId) : null;
+          const credits = await billingCall(() => billing.charge(owner, def.type));
+          const child = await runner.submit({ type: def.type, ...spec, userId: job.userId, credits });
+          Object.assign(st, { jobId: child.id, status: child.status, credits: credits ?? 0 });
+          await save();
+        } catch (e) {
+          Object.assign(st, { status: "failed", error: e.message });
+          await save();
+          continue;
+        }
+      }
+      // Wait for the step, mirroring its status on the combo for the page.
+      for (;;) {
+        const child = await jobOf(st.jobId);
+        const status = child?.status ?? "failed";
+        if (status !== st.status) {
+          Object.assign(st, { status: over(status) ? (status === "done" ? "done" : "failed") : status, ...(child?.error ? { error: child.error } : {}) });
+          await save();
+        }
+        if (over(status) || !child) break;
+        try {
+          await sleep(1500, undefined, { signal });
+        } catch {
+          await runner.cancel(st.jobId).catch(() => {});
+          throw new Error("canceled");
+        }
+      }
+    }
+    const ok = steps.filter((s) => s.status === "done").length;
+    if (!ok) throw new Error(steps.find((s) => s.error)?.error ?? "Không bước nào chạy được");
+    return { result: `Xong ${ok}/${steps.length} bước.`, fields: { steps: steps.map((s) => ({ ...s })) } };
+  }
+
   async function jobSpec(type, input = {}) {
     await ensureUploads(input);
+    if (type === "combo") {
+      try {
+        return buildCombo(input, { hasUpload: video.hasUpload });
+      } catch (e) {
+        if (e instanceof InputError) throw new HttpError(400, e.message);
+        throw e;
+      }
+    }
     const refs = {
       template: input.templateId ? store.getItem(input.templateId) : undefined,
       refJob: input.referenceJobId ? await store.getJob(String(input.referenceJobId)) : undefined,
@@ -317,7 +404,13 @@ export async function createApp(config, adapter) {
   const api = express.Router();
   // Stripe calls this after a payment; it needs the raw body for the signature, and no login.
   api.post("/stripe/webhook", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
-    res.json(await billingCall(() => billing.webhook(req.body.toString("utf8"), req.headers["stripe-signature"])));
+    const out = await billingCall(() => billing.webhook(req.body.toString("utf8"), req.headers["stripe-signature"]));
+    // A chargeback is something the admin should know about: it goes to "Lỗi gần đây" (and the webhook alert).
+    if (out.dispute?.handled) {
+      const who = store.getUser(out.dispute.userId ?? "")?.email ?? out.dispute.userId ?? "";
+      await errors.record({ source: "billing", userId: out.dispute.userId, message: out.dispute.won === undefined ? `Khách ${who} yêu cầu ngân hàng hoàn tiền: đã thu lại ${out.dispute.taken} credit${out.dispute.locked ? ", tài khoản bị khoá vì đã dùng hết credit" : ""}` : `Tranh chấp thanh toán đã kết thúc: ${out.dispute.won ? "công ty thắng, đã trả lại credit và mở khoá" : "khách được hoàn tiền"}` });
+    }
+    res.json(out);
   });
   // Reference images for videos arrive as data URLs; only this route accepts a large body.
   api.post("/uploads", express.json({ limit: "9mb" }), async (req, res) => {
@@ -699,11 +792,20 @@ export async function createApp(config, adapter) {
       throw e;
     }
   }
-  const enoughCredits = (req, type) => billingCall(async () => billing.check(req.user, type));
+  const enoughCredits = (req, type, input) =>
+    billingCall(async () => {
+      // A combo needs, up front, what all its steps will take.
+      if (type === "combo" && billing.metered(req.user)) {
+        const need = comboCost(input?.recipe, billing.costOf);
+        if (req.user.credits < need) throw new BillingError(402, `Hết credit: gói này cần ${need} credit, bạn còn ${req.user.credits}. Nạp thêm ở trang Credit nhé.`);
+        return;
+      }
+      billing.check(req.user, type);
+    });
 
   api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
-    await enoughCredits(req, type);
+    await enoughCredits(req, type, input);
     const spec = await jobSpec(type, input);
     if (input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" }; // English interface: English reports
     const job = await submitPaid(req, type, spec);
@@ -724,7 +826,7 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
-    await enoughCredits(req, job.type);
+    await enoughCredits(req, job.type, job.input);
     const spec = await jobSpec(job.type, job.input);
     if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
     const fresh = await submitPaid(req, job.type, spec);

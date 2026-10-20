@@ -5,6 +5,8 @@
 //
 // Stripe is called over plain HTTPS (no SDK): one Checkout Session per top-up, then the
 // checkout.session.completed webhook (or the success page asking /billing/confirm) adds the credits once.
+// Chargebacks: charge.dispute.created takes the payment's credits back (an account that already spent
+// them is locked); charge.dispute.closed with the dispute won gives them back and unlocks it.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -25,6 +27,7 @@ export const CREDIT_COST = {
   compare: 3,
   clone: 2,
   campaign: 2,
+  combo: 0, // its steps take their own credits
   "photo-fix": 1, // server-side photo grading, no model
   "gbp-post": 1,
 };
@@ -109,9 +112,57 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
     if (!user || !(credits > 0)) return { added: 0 };
     const payments = user.payments ?? [];
     if (payments.some((p) => p.id === session.id)) return { added: 0, user };
-    const entry = { id: session.id, credits, amount: session.amount_total ?? null, currency: session.currency ?? currency, at: new Date().toISOString() };
+    const entry = { id: session.id, credits, amount: session.amount_total ?? null, currency: session.currency ?? currency, at: new Date().toISOString(), ...(session.payment_intent ? { paymentIntent: session.payment_intent } : {}) };
     const updated = await store.updateUser(user.id, { credits: (user.credits ?? 0) + credits, payments: [entry, ...payments].slice(0, 100) });
     return { added: credits, user: updated };
+  }
+
+  /** The account and payment a dispute is about: by payment intent, else asking Stripe which session it was. */
+  async function paymentOf(dispute) {
+    const pi = typeof dispute?.payment_intent === "string" ? dispute.payment_intent : dispute?.payment_intent?.id;
+    if (!pi) return null;
+    for (const u of store.listUsers()) {
+      const p = (u.payments ?? []).find((x) => x.paymentIntent === pi);
+      if (p) return { user: u, payment: p };
+    }
+    // Payments recorded before the intent was kept: Stripe knows the Checkout Session of that intent.
+    if (!secret) return null;
+    const found = await stripe("GET", `/checkout/sessions?payment_intent=${encodeURIComponent(pi)}&limit=1`).catch(() => null);
+    const session = found?.data?.[0];
+    const user = session && store.getUser(session.client_reference_id ?? "");
+    const payment = user && (user.payments ?? []).find((x) => x.id === session.id);
+    return payment ? { user, payment: { ...payment, paymentIntent: pi } } : null;
+  }
+
+  /** A customer asked their bank for the money back: take back the credits of that top-up, once. */
+  async function disputeOpened(dispute) {
+    const hit = await paymentOf(dispute);
+    if (!hit || hit.payment.disputed) return { handled: false };
+    const { user, payment } = hit;
+    const balance = user.credits ?? 0;
+    const left = balance - payment.credits;
+    const taken = Math.min(balance, payment.credits); // what actually comes off the balance
+    const payments = (user.payments ?? []).map((p) => (p.id === payment.id ? { ...p, paymentIntent: payment.paymentIntent, disputed: dispute.id, disputedAt: new Date().toISOString(), takenBack: taken } : p));
+    // Already spent: the balance cannot go below zero, so the account is locked until the dispute ends.
+    await store.updateUser(user.id, { credits: Math.max(0, left), payments, ...(left < 0 ? { disabled: true, disabledReason: "dispute" } : {}) });
+    return { handled: true, userId: user.id, taken, locked: left < 0 };
+  }
+
+  /** The dispute ended. Won (the money stays with the shop): the credits and the account come back. */
+  async function disputeClosed(dispute) {
+    const hit = await paymentOf(dispute);
+    if (!hit || hit.payment.disputed !== dispute.id || hit.payment.disputeClosed) return { handled: false };
+    const { user, payment } = hit;
+    const won = dispute.status === "won";
+    const payments = (user.payments ?? []).map((p) => (p.id === payment.id ? { ...p, disputeClosed: dispute.status, disputeClosedAt: new Date().toISOString() } : p));
+    const patch = { payments };
+    if (won) {
+      patch.credits = (user.credits ?? 0) + (payment.takenBack ?? 0); // what was taken off the balance
+
+      if (user.disabledReason === "dispute") Object.assign(patch, { disabled: false, disabledReason: null });
+    }
+    await store.updateUser(user.id, patch);
+    return { handled: true, won };
   }
 
   return {
@@ -184,7 +235,10 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
     async webhook(raw, signature) {
       if (!webhookSecret || !verifySignature(raw, signature, webhookSecret)) throw new BillingError(400, "Chữ ký webhook không hợp lệ");
       const event = JSON.parse(raw);
-      if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") await credit(event.data?.object);
+      const obj = event.data?.object;
+      if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") await credit(obj);
+      if (event.type === "charge.dispute.created") return { received: true, dispute: await disputeOpened(obj) };
+      if (event.type === "charge.dispute.closed") return { received: true, dispute: await disputeClosed(obj) };
       return { received: true };
     },
 
