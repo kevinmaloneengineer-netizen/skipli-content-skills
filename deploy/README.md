@@ -1,9 +1,34 @@
 # Deploy GoClaw cho Skipli
 
+## 0. Lên server cho nhóm dùng thử (20–60 người)
+
+Máy: VPS Ubuntu 4 vCPU / 8 GB RAM / 80 GB ổ, đã cài Docker. Video GPU vẫn chạy trên worker GPU riêng.
+
+1. Trỏ DNS: bản ghi A của tên miền (vd. `content.example.com`) về IP server. Mở cổng 80 và 443, đóng các cổng còn lại (3000, 18790, 5432, 9222 chỉ nghe trên localhost).
+2. Chép code lên server, rồi build image GoClaw có patch: `bash deploy/build-goclaw.sh` (mục 1).
+3. Tạo `deploy/.env` từ `.env.example`, điền thêm:
+   ```
+   DOMAIN=content.example.com
+   PUBLIC_URL=https://content.example.com
+   TRUST_PROXY=loopback,uniquelocal   # 2 nếu bật proxy (mây cam) của Cloudflare
+   GOCLAW_ENCRYPTION_KEY=<openssl rand -hex 32, giữ cố định>
+   GOCLAW_GATEWAY_TOKEN=<openssl rand -hex 32>
+   POSTGRES_PASSWORD=<mật khẩu riêng>
+   ACCOUNTS=1  SIGNUP=1  ADMIN_EMAIL=...  ADMIN_PASSWORD=...
+   ```
+   Cùng các khoá đang dùng ở máy dev: Firebase, `STORAGE_*`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `SMTP_*`, Stripe, `VIDEO_WORKER_*`.
+4. Chạy: `cd deploy && docker compose --profile https up -d --build`. Caddy tự lấy chứng chỉ HTTPS.
+5. Cấu hình GoClaw một lần (mục 4). Lúc đó mở GoClaw qua SSH tunnel: `ssh -L 18790:localhost:18790 <server>` rồi vào `http://localhost:18790`.
+6. Vào `https://<DOMAIN>`, đăng nhập admin, kiểm tra trang admin: "Tài khoản dùng thử mỗi IP" = 0, bấm "Sao lưu ngay" để thử bucket.
+
+Cập nhật code: `git pull && docker compose --profile https up -d --build web`. Xem log: `docker compose logs -f web`.
+
+Mặc định cho nhóm dùng thử: không giới hạn đăng ký và lượt chạy theo IP (cả văn phòng chung một mạng vẫn dùng được), mỗi tài khoản 30 lượt mỗi ngày, toàn web 500 lượt mỗi ngày (`DAILY_JOB_LIMIT`), 2 lượt quét chạy cùng lúc (`JOB_CONCURRENCY`).
+
 ## 1. Build image GoClaw có patch
 
 Bản upstream chưa có fix browser (Facebook bị đóng tab, extension sync 0 cookie). Xem `docs/HANDOFF.md` mục 6.
-Cho tới khi PR được merge, phải build image từ source có patch:
+Cho tới khi PR được merge, phải build image từ source có patch. Cách nhanh: `bash deploy/build-goclaw.sh`. Làm tay:
 
 ```bash
 git clone https://github.com/nextlevelbuilder/goclaw.git && cd goclaw
@@ -69,8 +94,8 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 PUBLIC_URL=https://content.example.com
 ```
 
-- Chống tạo nhiều tài khoản lấy credit free: mỗi IP chỉ tạo được `SIGNUP_PER_IP` tài khoản (mặc định 2, lưu cùng tài khoản nên khởi động lại không mất), và tối đa 5 lần đăng ký mỗi giờ.
-  Nếu web chạy sau nginx, Cloudflare hay load balancer thì **bắt buộc** đặt `TRUST_PROXY=1`, không thì mọi khách đều mang IP của proxy và chỉ 2 người đầu đăng ký được.
+- Chống tạo nhiều tài khoản lấy credit free: mỗi tài khoản phải xác nhận email bằng mã. Có thể giới hạn thêm số tài khoản mỗi IP bằng `SIGNUP_PER_IP` hoặc ở trang admin (mặc định 0 = không giới hạn, vì cả văn phòng thường chung một IP).
+  Nếu web chạy sau nginx, Cloudflare hay load balancer thì **bắt buộc** đặt `TRUST_PROXY` (docker compose đặt sẵn `loopback,uniquelocal` cho Caddy; thêm Cloudflare proxy thì đặt `2`), không thì mọi khách đều mang IP của proxy và các giới hạn còn lại theo IP (khách chưa đăng nhập hỏi trợ lý, sai mật khẩu) dồn chung cho mọi người.
 - Xác nhận email bằng mã 6 số (khách đăng ký và đăng nhập bằng email). Đặt `SMTP_USER` (địa chỉ Gmail) và `SMTP_PASS` (App Password 16 ký tự: Tài khoản Google → Bảo mật → Xác minh 2 bước → Mật khẩu ứng dụng). Tài khoản chỉ được tạo, kèm credit dùng thử, sau khi nhập đúng mã (hết hạn 10 phút, sai tối đa 5 lần, gửi lại mỗi phút một lần, tối đa 5 lần mỗi giờ); chưa nhập mã thì không có gì trong danh sách tài khoản. Quên mật khẩu cũng gửi mã qua email. Để trống thì bỏ qua bước mã; chạy thử local đặt `MAIL_LOG=1` để mã in ra log server. Gmail gửi được khoảng 500 mail/ngày.
 - Mỗi lượt chạy trừ credit theo loại (`CREDIT_COST` trong `web/server/billing.mjs`): bài viết 1, quét kênh 2, so sánh 3, cắt/lồng tiếng 4, video 5. Lượt lỗi hoặc bị huỷ được hoàn credit.
 - Tài khoản admin, và tài khoản admin tạo tay, không bị tính credit. Admin cộng credit tay ở trang Quản lý tài khoản.
@@ -89,7 +114,10 @@ PUBLIC_URL=https://content.example.com
   node scripts/restore-backup.mjs backups/2026-10-18.json.gz --confirm  # ghi lại vào Firestore
   ```
 - **Tắt / khởi động lại:** server ngừng nhận việc mới và chờ tác vụ đang chạy xong (tối đa `SHUTDOWN_WAIT_SEC`, mặc định 25 giây). Tác vụ chưa xong được chạy lại từ đầu một lần khi server lên lại.
-- **Cài đặt đăng ký và credit** (số tài khoản mỗi IP, credit tặng, gói nạp) sửa trực tiếp ở trang admin, áp dụng ngay; giá trị trong `.env` chỉ là mặc định.
+- **Cài đặt đăng ký và credit** (số tài khoản mỗi IP, credit tặng, gói nạp, số tác vụ nặng cùng lúc) sửa trực tiếp ở trang admin, áp dụng ngay; giá trị trong `.env` chỉ là mặc định.
+- **Tác vụ nặng cùng lúc:** mỗi tài khoản chỉ chạy tối đa `HEAVY_PER_USER` việc nặng một lúc (video, ảnh AI, chỉnh ảnh, cắt reels, lồng tiếng; mặc định 2) để một quán không chiếm hết GPU.
+- **Doanh thu và chi phí:** trang admin cộng tiền nạp Stripe (trừ các lần khách đòi lại mà quán thua), credit đã trừ theo từng công cụ và chi phí ước tính (giá model `COST_TOKEN_USD_PER_M` mỗi 1 triệu token, cộng GPU). Đây là ước tính, số thật xem trên hoá đơn Groq và GPU.
+- **Menu điện tử:** link `/m/<id>` mở công khai, không cần đăng nhập. Menu lưu trong Firestore (cùng chỗ với thư viện), nên có trong bản sao lưu hằng ngày.
 
 ## 4. Cấu hình GoClaw sau lần chạy đầu (một lần)
 

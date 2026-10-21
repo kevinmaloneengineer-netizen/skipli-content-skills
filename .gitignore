@@ -13,3 +13,4 @@ deploy/firebase-key.json
 docs/
 web/.data/
 video-worker/__pycache__/
+deploy/.goclaw-src/

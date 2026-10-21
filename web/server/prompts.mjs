@@ -1,6 +1,8 @@
 // Validate job input from the UI and turn it into the agent prompt.
 // Prompts are written so the right skill triggers; the skill owns the method.
 
+import { cleanTexts } from "../shared/templateTexts.js";
+import { isMapsLink } from "./sources/osm.mjs";
 import { instagramUser, yelpUrl } from "./sources/socialApify.mjs";
 
 export class InputError extends Error {}
@@ -67,9 +69,11 @@ function facebookUrl(raw) {
   return u.toString();
 }
 
-export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee"]);
+export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee", "news", "chalk", "map", "coupon"]);
+// Templates built around the user's deal: they need the offer line (a real one, never made up).
+export const OFFER_TEMPLATES = new Set(["promo", "coupon"]);
 const BASE_ROLES = ["ext", "int", "table", "medium", "close", "side"];
-const TEMPLATE_ROLES = { top3: ["dish1", "dish2", "dish3", "ext", "int", "table"], spotlight: ["dish1", "dish2", "dish3", "ext", "int", "table"], menu: ["dish1", "dish2", "dish3", "dish4", "ext", "int"] };
+const TEMPLATE_ROLES = { top3: ["dish1", "dish2", "dish3", "ext", "int", "table"], spotlight: ["dish1", "dish2", "dish3", "ext", "int", "table"], chalk: ["dish1", "dish2", "dish3", "ext", "int", "table"], menu: ["dish1", "dish2", "dish3", "dish4", "ext", "int"] };
 /**
  * Role of every slide of a slideshow template: real photos take the template's first roles (the dishes,
  * in the order the user listed them), the image model draws the rest in order.
@@ -335,12 +339,16 @@ function buildSpec(type, raw, refs) {
         const topic = str(raw.topic, "quán / món ăn", { required: true, max: 300 });
         const seconds = Number(raw.seconds) === 30 ? 30 : 15;
         // Templates: "collage" (Canva-like layouts), "single" (one photo per scene) and the marketing ones
-        // (top3, menu, promo, polaroid, bold, film, magazine, grid, story, receipt, neon, postcard, spotlight, marquee). All but "single" use 6 photos.
+        // (top3, menu, promo, polaroid, bold, film, magazine, grid, story, receipt, neon, postcard, spotlight, marquee,
+        // news, chalk, map, coupon). All but "single" use 6 photos.
         const layout = SLIDE_TEMPLATES.has(raw.layout) ? raw.layout : "collage";
         const count = layout !== "single" || seconds === 30 ? 6 : 5;
         const dishes = parseDishes(raw.dishes);
         const offer = str(raw.offer, "ưu đãi", { max: 120 });
-        if (layout === "promo" && !offer) throw new InputError("Mẫu Khuyến mãi cần câu ưu đãi (chỉ ghi ưu đãi có thật)");
+        if (OFFER_TEMPLATES.has(layout) && !offer) throw new InputError("Mẫu này cần câu ưu đãi (chỉ ghi ưu đãi có thật)");
+        // "Chỉ đường": the pin comes from the restaurant's own Google Maps link, never from a guess.
+        const mapLink = layout === "map" ? String(raw.mapLink ?? "").trim().slice(0, 1000) : "";
+        if (layout === "map" && !isMapsLink(mapLink)) throw new InputError("Mẫu Chỉ đường cần link Google Maps của quán");
         // Title card on the first photo (drawn by the server, not by the image model).
         const card = { name: str(raw.name, "tên quán", { max: 60 }), city: str(raw.city, "thành phố", { max: 60 }), address: str(raw.address, "địa chỉ", { max: 160 }), phone: str(raw.phone, "số điện thoại", { max: 30 }), logoId: upload(raw.logoId, "Logo") };
         // Real photos of the restaurant come first; the image model only fills the remaining slots.
@@ -377,7 +385,7 @@ function buildSpec(type, raw, refs) {
           agent: "writer",
           direct: "image-prompter",
           title: `Video trình chiếu ${seconds}s · ${topic.slice(0, 60)}`,
-          input: { mode, ratio, style, brief, seconds, count, layout, topic, audio: "music", audioId: raw.audioId ? upload(raw.audioId, "Âm thanh của bạn") : null, review: raw.review !== false, ...card, photoIds, ai, dishes, offer },
+          input: { mode, ratio, style, brief, seconds, count, layout, topic, audio: "music", audioId: raw.audioId ? upload(raw.audioId, "Âm thanh của bạn") : null, review: raw.review !== false, ...card, photoIds, ai, dishes, offer, texts: cleanTexts(layout, raw.texts), tagline: str(raw.tagline, "slogan", { max: 60 }), ...(mapLink ? { mapLink } : {}) },
           prompt: [
             ...plan,
             "Mỗi \"prompt\" (tiếng Anh, dưới 60 từ) mở đầu bằng cỡ cảnh (wide shot / overhead / medium shot / close-up) rồi tả một bức ảnh TĨNH chụp thật như của nhiếp ảnh gia: ánh sáng tự nhiên ấm, đồng bộ màu giữa các ảnh, nội thất, bát đĩa và trang trí đúng phong cách của CHÍNH loại quán này (quán BBQ Texas thì gỗ mộc, gạch, đèn công nghiệp; quán phở thì kiểu quán Việt; quán pizza Ý thì kiểu Ý), không mượn phong cách của loại quán khác. TUYỆT ĐỐI không có người, mặt, tay, xe cộ, động vật, chữ, logo; ảnh bên ngoài ghi rõ \"empty street, no cars, no people, blank sign\". KHÔNG ghi tên quán hay bất kỳ chữ nào trong prompt (model vẽ ảnh sẽ cố viết chữ đó lên ảnh và bị méo).",

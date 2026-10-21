@@ -23,6 +23,9 @@ import { PILLARS, splitLivestream, splitVariants, toPlainText } from "../lib/tex
 import PhotoResult from "../components/PhotoResult.jsx";
 import { accepts } from "../lib/drop.js";
 import ComboResult from "../components/ComboResult.jsx";
+import MapLinkField, { MapPreview } from "../components/MapLinkField.jsx";
+import TemplateTexts from "../components/TemplateTexts.jsx";
+import { DISH_TEMPLATES, FEATURED, OFFER_TEMPLATES, SAMPLE_VERSION, TEMPLATES, sampleOf } from "../lib/videoTemplates.js";
 
 import { blanksOf, fillBlanks, useJobEdits } from "../lib/edits.js";
 
@@ -77,7 +80,8 @@ function inputRows(job) {
     ],
     video: i.mode === "slideshow" ? [
       ["Cách làm", "Trình chiếu ảnh"],
-      ["Kiểu", i.layout === "single" ? "Từng ảnh" : "Ghép ảnh kiểu Canva"],
+      ["Mẫu", TEMPLATES.find(([id]) => id === (i.layout ?? "collage"))?.[1] ?? i.layout],
+      ["Đổi mẫu từ video", i.restyledFrom ? "Có, dùng lại ảnh của video trước" : null],
       ["Quán và món", i.topic],
       ["Tên quán", i.name],
       ["Thành phố", i.city],
@@ -284,6 +288,7 @@ function SlideReview({ job }) {
         <h2>Duyệt ảnh trước khi dựng video</h2>
         <p>Ảnh nào chưa ưng thì bấm Vẽ lại (sửa mô tả nếu muốn) hoặc thay bằng ảnh của bạn. Dùng mũi tên để đổi thứ tự, xong bấm Dựng video.</p>
       </header>
+      {job.input?.layout === "map" && job.input.mapLink && <MapPreview link={job.input.mapLink} />}
       <ol className="slide-grid">
         {order.map((i, k) => {
           const s = slides[i];
@@ -397,6 +402,88 @@ function PostCaption({ caption, hashtags = [] }) {
   );
 }
 
+const RESTYLE_RATIOS = { "9:16": "Dọc 9:16", "1:1": "Vuông 1:1", "16:9": "Ngang 16:9" };
+const dishLines = (dishes = []) => dishes.map((d) => [d.name, d.price].filter(Boolean).join(" - ")).join("\n");
+
+/** "Đổi mẫu": the same photos laid out with another template, without drawing anything again (1 credit). */
+function Restyle({ job }) {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const current = job.input?.layout ?? "collage";
+  const [pick, setPick] = useState(null);
+  const [ratio, setRatio] = useState(job.input?.ratio ?? "9:16");
+  const [offer, setOffer] = useState(job.input?.offer ?? "");
+  const [dishes, setDishes] = useState(dishLines(job.input?.dishes));
+  // The words the user changed last time stay (a key shared by two templates carries over).
+  const [texts, setTexts] = useState(() => Object.fromEntries(Object.entries(job.input?.texts ?? {}).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : v])));
+  const [tagline, setTagline] = useState(job.input?.tagline ?? "");
+  const [mapLink, setMapLink] = useState(job.input?.mapLink ?? "");
+  const [mapReady, setMapReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const chosen = TEMPLATES.find(([id]) => id === pick);
+
+  async function go() {
+    setBusy(true);
+    try {
+      const body = { layout: pick, ratio, texts, tagline, ...(pick === "map" ? { mapLink } : {}), ...(OFFER_TEMPLATES.has(pick) ? { offer } : {}), ...(DISH_TEMPLATES[pick] ? { dishes } : {}) };
+      const { job: fresh } = await api(`/jobs/${job.id}/restyle`, { method: "POST", body });
+      navigate(`/jobs/${fresh.id}`);
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card restyle">
+      <div className="restyle-head">
+        <div>
+          <h2>Đổi mẫu video</h2>
+          <p className="hint">Dùng lại đúng các ảnh này với mẫu khác, không vẽ lại ảnh nên nhanh và chỉ 1 credit. Video cũ vẫn giữ nguyên.</p>
+        </div>
+      </div>
+      <div className="restyle-grid" role="radiogroup" aria-label="Mẫu video">
+        {TEMPLATES.map(([id, title]) => (
+          <button key={id} type="button" role="radio" aria-checked={pick === id} disabled={id === current} className={["restyle-card", pick === id && "on", id === current && "is-current"].filter(Boolean).join(" ")} onClick={() => setPick(id)}>
+            <img src={`${sampleOf(id)}.jpg?v=${SAMPLE_VERSION}`} alt="" loading="lazy" />
+            <span>{title}</span>
+            {id === current && <em>Đang dùng</em>}
+            {FEATURED.has(id) && <em className="tpl-hot">Nổi bật</em>}
+          </button>
+        ))}
+      </div>
+      {chosen && (
+        <div className="restyle-form">
+          <p className="restyle-pick"><b>{chosen[1]}</b> · {chosen[2]}</p>
+          <div className="row">
+            <label className="field">
+              <span className="field-label">Khung hình</span>
+              <select value={ratio} onChange={(e) => setRatio(e.target.value)}>
+                {Object.entries(RESTYLE_RATIOS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+            </label>
+            {OFFER_TEMPLATES.has(pick) && (
+              <label className="field">
+                <span className="field-label">Câu ưu đãi (bắt buộc, chỉ ghi ưu đãi có thật)</span>
+                <input value={offer} onChange={(e) => setOffer(e.target.value)} maxLength={120} placeholder="Tặng gỏi cuốn khi gọi 2 tô phở" />
+              </label>
+            )}
+          </div>
+          {DISH_TEMPLATES[pick] && (
+            <label className="field">
+              <span className="field-label">{DISH_TEMPLATES[pick]}</span>
+              <textarea rows={3} value={dishes} onChange={(e) => setDishes(e.target.value)} placeholder={"Phở bò - 65.000đ\nTrà sữa - 30.000đ"} />
+            </label>
+          )}
+          {pick === "map" && <MapLinkField value={mapLink} onChange={setMapLink} onReady={setMapReady} />}
+          {pick !== "single" && <TemplateTexts layout={pick} texts={texts} onTexts={setTexts} tagline={tagline} onTagline={setTagline} />}
+          <button type="button" className="btn primary" disabled={busy || (OFFER_TEMPLATES.has(pick) && !offer.trim()) || (pick === "map" && !mapReady)} onClick={go}>{busy ? "Đang bắt đầu…" : `Dựng lại với mẫu ${chosen[1]} · 1 credit`}</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function VideoResult({ job }) {
   const src = `/media/videos/${job.video.file}`;
   return (
@@ -409,6 +496,7 @@ function VideoResult({ job }) {
           <a className="btn primary" href={src} download={`${(job.video.title || "video").slice(0, 60)}.mp4`}>Tải MP4</a>
         </div>
       </section>
+      {job.video.slideshow && Array.isArray(job.slides) && job.slides.length > 1 && <Restyle job={job} />}
       <PostCaption caption={job.video.caption} hashtags={job.video.hashtags} />
       {job.video.slideshow ? (
         <section className="card">

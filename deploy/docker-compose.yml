@@ -50,9 +50,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: '2.0'
-          pids: 200
+          pids: 400
     restart: unless-stopped
 
   # Skipli Content (web/): Node API + React UI, data in Firestore. Run ONE replica -
@@ -64,6 +64,10 @@ services:
       dockerfile: web/Dockerfile
     ports:
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    # Everything in deploy/.env reaches the server (storage bucket, GPU worker, Facebook page...);
+    # the list below only adds defaults and the in-network addresses.
+    env_file:
+      - .env
     environment:
       - GOCLAW_URL=http://goclaw:18790
       - GOCLAW_GATEWAY_TOKEN=${GOCLAW_GATEWAY_TOKEN}
@@ -79,8 +83,10 @@ services:
       # Self sign-up with trial credits and Stripe top-ups (see deploy/README.md, section 3c).
       - SIGNUP=${SIGNUP:-}
       - TRIAL_CREDITS=${TRIAL_CREDITS:-20}
-      - SIGNUP_PER_IP=${SIGNUP_PER_IP:-2}
-      - TRUST_PROXY=${TRUST_PROXY:-}
+      - SIGNUP_PER_IP=${SIGNUP_PER_IP:-0}
+      # Only proxies on this machine or the Docker network (Caddy) are believed about the visitor's IP: a
+      # visitor reaching the web port directly cannot fake X-Forwarded-For. Cloudflare's proxy in front: 2.
+      - TRUST_PROXY=${TRUST_PROXY:-loopback,uniquelocal}
       # Sign-up and password codes by email (Gmail SMTP with an App Password); MAIL_LOG=1 prints them instead.
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
@@ -92,12 +98,14 @@ services:
       - ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL:-}
       - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-14}
       - SHUTDOWN_WAIT_SEC=${SHUTDOWN_WAIT_SEC:-25}
+      - HEAVY_PER_USER=${HEAVY_PER_USER:-2}
+      - COST_TOKEN_USD_PER_M=${COST_TOKEN_USD_PER_M:-0.5}
       - CREDIT_PACKS=${CREDIT_PACKS:-}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - STRIPE_CURRENCY=${STRIPE_CURRENCY:-usd}
       - PUBLIC_URL=${PUBLIC_URL:-}
-      - JOB_CONCURRENCY=${JOB_CONCURRENCY:-1}
+      - JOB_CONCURRENCY=${JOB_CONCURRENCY:-2}
       # Firestore (firebase-admin). Service account JSON as one line, see deploy/README.md.
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:?set FIREBASE_PROJECT_ID in deploy/.env}
       - FIREBASE_SERVICE_ACCOUNT=${FIREBASE_SERVICE_ACCOUNT:-}
@@ -115,8 +123,8 @@ services:
       # Google Maps reviews are read in the Chrome sidecar.
       - CHROME_CDP_URL=http://chrome:9222
       # Usage limits (0 = off) and the competitor watch interval.
-      - DAILY_JOB_LIMIT=${DAILY_JOB_LIMIT:-80}
-      - JOB_LIMIT_PER_IP_HOUR=${JOB_LIMIT_PER_IP_HOUR:-20}
+      - DAILY_JOB_LIMIT=${DAILY_JOB_LIMIT:-500}
+      - JOB_LIMIT_PER_IP_HOUR=${JOB_LIMIT_PER_IP_HOUR:-0}
       - CHAT_LIMIT_PER_IP_MINUTE=${CHAT_LIMIT_PER_IP_MINUTE:-8}
       - WATCH_INTERVAL_HOURS=${WATCH_INTERVAL_HOURS:-168}
     # Rendered videos, uploads, the AI-watched clips and the GPU worker settings live here.
@@ -166,11 +174,32 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 3G
           cpus: '2.0'
     restart: unless-stopped
 
+  # HTTPS in front of the web (Let's Encrypt, renewed by Caddy): docker compose --profile https up -d
+  # Needs DOMAIN in deploy/.env and its DNS A record pointing at this server, ports 80 and 443 open.
+  caddy:
+    image: caddy:2.10
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
 volumes:
+  caddy-data:
+  caddy-config:
   web-data:
   goclaw-data:
   goclaw-skills:

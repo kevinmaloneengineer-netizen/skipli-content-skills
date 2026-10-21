@@ -219,6 +219,24 @@ export const GUIDE = {
     ],
     output: ["Kết quả của mọi bước trong một trang", "Bước sau dùng kết quả bước trước", "Bước lỗi được hoàn credit"],
   },
+  "menu-board": {
+    perks: ["Miễn phí", "In A4 hoặc lưu PDF", "Link cố định, sửa là cập nhật"],
+    steps: [
+      ["Nhập món", "Mỗi dòng một món: tên, giá, mô tả. Dòng có # là tên nhóm."],
+      ["Chọn kiểu", "Kem cổ điển, đen sang trọng, xanh vườn hay phố đỏ, thêm logo và màu quán."],
+      ["In hoặc tạo link", "In menu A4, hoặc lưu thành menu điện tử kèm mã QR để in lên bàn."],
+    ],
+    output: ["Menu A4 hai cột, in hoặc lưu PDF", "Menu điện tử mở trên điện thoại, không cần cài app", "Mã QR dẫn tới menu, đổi giá không cần in lại mã"],
+  },
+  "event-banner": {
+    perks: ["Miễn phí", "14 dịp lễ", "5 khổ ảnh"],
+    steps: [
+      ["Chọn dịp", "Tết, Trung thu, 8/3, 20/10, Giáng sinh, Halloween, khai trương…"],
+      ["Thêm ảnh món", "Ảnh nền phủ kín hoặc ảnh trong khung; không có ảnh thì banner chỉ chữ."],
+      ["Sửa chữ và tải về", "Câu chính, dòng phụ, ưu đãi có thật, tên quán. Tải PNG đúng khổ."],
+    ],
+    output: ["Banner PNG đúng khổ Facebook, Instagram, story và Google Business", "Màu và hoạ tiết theo từng dịp lễ", "Chữ do bạn viết, không bịa ưu đãi"],
+  },
   qr: {
     perks: ["Miễn phí", "Có logo quán", "Không hết hạn"],
     steps: [

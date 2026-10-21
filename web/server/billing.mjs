@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 /** Credits a run takes: GPU and video work costs more than a written post. */
 export const CREDIT_COST = {
   video: 5,
+  "video-restyle": 1, // same photos, another template: no GPU drawing
   image: 2,
   "reel-cut": 4,
   dub: 4,

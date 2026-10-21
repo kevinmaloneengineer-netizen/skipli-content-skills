@@ -1,0 +1,5 @@
+# HTTPS for the web (docker compose --profile https up -d). DOMAIN comes from deploy/.env.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

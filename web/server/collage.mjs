@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { mapTiles } from "./sources/osm.mjs";
 
 const run = promisify(execFile);
 const TITLE = path.join(path.dirname(fileURLToPath(import.meta.url)), "overlay", "make_title.py");
@@ -135,6 +136,7 @@ async function layerScene({ spec, w, h, seconds, out, dir, name }) {
     else if (it.anim === "up") y = `${it.y}+(${Math.round(h * 0.08)})*${ease}`;
     else if (it.anim === "down") y = `${it.y}-(${Math.round(h * 0.05)})*${ease}`;
     else if (it.anim === "rise") y = `${it.y}+(${h - it.y + 40})*${ease}`; // up from below the frame
+    else if (it.anim === "drop") y = `${it.y}-(${it.y + Math.round(h * 0.35)})*${ease}`; // down from above the frame (map pin)
     else if (it.anim === "pan") {
       // Moves steadily the whole scene (film strip, running words): it.vx / it.vy px per second.
       x = `${it.x}+(${it.vx ?? 0})*t`;
@@ -177,14 +179,16 @@ const LABELS = {
 };
 Object.assign(LABELS.en, { showing: "Now showing", issue: "Special issue", from: "Greetings from", receipt: "Receipt", thanks: "Thank you!", now: "now", spotlight: "Signature dishes" });
 Object.assign(LABELS.vi, { showing: "Đang chiếu", issue: "Số đặc biệt", from: "Gửi từ", receipt: "Hoá đơn", thanks: "Cảm ơn quý khách!", now: "vừa xong", spotlight: "Món nổi bật" });
+Object.assign(LABELS.en, { breaking: "Breaking", live: "Live", mustTry: "Must try", today: "Today's specials", findUs: "Find us here", coupon: "Coupon" });
+Object.assign(LABELS.vi, { breaking: "Tin nóng", live: "Trực tiếp", mustTry: "Món nên thử", today: "Hôm nay có", findUs: "Quán ở đây", coupon: "Phiếu ưu đãi" });
 /** Templates that open on their own hook instead of the search bar (all but the Canva-like collage). */
-const OWN_HOOK = new Set(["top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee"]);
+const OWN_HOOK = new Set(["top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee", "news", "chalk", "map", "coupon"]);
 
 /**
  * Scene list of a template (durations are rough; they are scaled to the requested length).
  * "layers" scenes are drawn by make_title.py (spec.kind) with the photos of their roles.
  */
-function planFor(template, { seconds, hasCard, portrait, top, name, city, dishes, offer, words, tagline, blurb, query, logo, L }) {
+function planFor(template, { seconds, hasCard, portrait, top, name, city, address, phone, map, dishes, offer, words, tagline, blurb, query, logo, L }) {
   const long = seconds >= 30;
   const plan = [];
   // Only the Canva-like collage opens on the search bar; the marketing templates open on their own hook.
@@ -217,7 +221,7 @@ function planFor(template, { seconds, hasCard, portrait, top, name, city, dishes
     plan.push({ kind: "full", role: "ext", card: top, d: 3.2 });
     if (long) plan.push({ kind: "layout", layout: "trio", roles: ["medium", "close", "side"], d: 4.6 });
   } else if (template === "bold") {
-    const ws = words.length ? words : [tagline || name || "Fresh.", "Taste it.", "See you soon."].slice(0, 3);
+    const ws = (words.length ? words : [tagline || name || "Fresh.", "Taste it.", "See you soon."]).slice(0, 3);
     const shots = ["medium", "int", "close"];
     ws.forEach((word, k) => {
       plan.push({ kind: "layers", spec: { kind: "word", word, dark: k % 2 === 0 }, roles: [], d: 1.6 });
@@ -286,6 +290,41 @@ function planFor(template, { seconds, hasCard, portrait, top, name, city, dishes
   } else if (template === "marquee") {
     const items = [name, tagline, ...words].filter(Boolean);
     for (const role of long ? ["medium", "close", "table", "int", "side"] : ["medium", "close", "table"]) plan.push({ kind: "layers", spec: { kind: "marquee", items }, roles: [role], d: 4.4 });
+  } else if (template === "news") {
+    // Each scene is a "breaking news" frame on a new photo; the ticker runs everything we know.
+    const items = [name, tagline, ...dishNames, ...words, city].filter(Boolean);
+    const heads = [
+      { headline: name || tagline, sub: name ? tagline || city : city, role: "ext" },
+      // The AI's food photos: the signature dish (medium, then close-up), then a side dish or drink (side).
+      { headline: dishNames[0] ?? words[0], sub: L.mustTry, role: "medium" },
+      { headline: dishNames[1] ?? words[1], sub: city, role: "side" },
+      ...(long ? [{ headline: tagline || name, sub: city, role: "int" }, { headline: dishNames[0] ?? words[2], sub: L.mustTry, role: "close" }] : []),
+    ].filter((x) => x.headline);
+    for (const x of heads) plan.push({ kind: "layers", spec: { kind: "news", tag: L.breaking, live: L.live, headline: x.headline, sub: x.sub, items }, roles: [x.role], d: long ? 4.6 : 3.6 });
+    if (heads.length < 3) plan.push({ kind: "layout", layout: "trio", roles: ["medium", "close", "table"], d: 3.8 });
+  } else if (template === "chalk") {
+    // No dish at all: the slogan is written on the board instead of a list.
+    plan.push({ kind: "layers", spec: { kind: "chalk", title: L.today, name, rows: dishes, note: dishes.length ? "" : tagline || words.join(" ") }, roles: [], d: long ? 5.6 : 4.6 });
+    for (let k = 0; k < (long ? 3 : 2); k++) plan.push({ kind: "layers", spec: { kind: "chalk", mode: "photo", dish: dish(k).name, price: dish(k).price }, roles: [`dish${k + 1}`], d: long ? 4.4 : 3.4 });
+    plan.push({ kind: "full", role: "ext", card: top, d: 3 });
+    if (long) plan.push({ kind: "layout", layout: "split", roles: ["int", "table"], d: 4 });
+  } else if (template === "map") {
+    // The real map only when the address was found precisely (see sources/osm.mjs); never a made-up one.
+    if (map) plan.push({ kind: "layers", spec: { kind: "map", map, label: L.findUs, name: name || tagline, address, city, phone }, roles: [], d: long ? 5 : 4.4 });
+    plan.push({ kind: "full", role: "ext", card: top, d: 3.2 });
+    plan.push({ kind: "layout", layout: "trio", roles: ["close", "table", "int"], d: 3.8 });
+    if (long) {
+      plan.push({ kind: "tilted", roles: ["int", "medium"], d: 4 });
+      plan.push({ kind: "layout", layout: "split", roles: ["side", "close"], d: 4 });
+    }
+  } else if (template === "coupon") {
+    plan.push({ kind: "layers", spec: { kind: "coupon", label: L.coupon, offer, kicker: name ? `${L.onlyAt} ${name}` : "", place: city, sub: tagline }, roles: [], d: 3.8 });
+    plan.push({ kind: "layers", spec: { kind: "coupon", mode: "photo", label: L.coupon, offer, place: name || city }, roles: ["medium"], d: 3.6 });
+    plan.push({ kind: "layout", layout: "trio", roles: ["close", "table", "int"], d: 3.8 });
+    if (long) {
+      plan.push({ kind: "tilted", roles: ["ext", "side"], d: 4 });
+      plan.push({ kind: "layers", spec: { kind: "coupon", mode: "photo", label: L.coupon, offer, place: name || city }, roles: ["table"], d: 4 });
+    }
   } else {
     // "collage": the Canva-like layouts.
     if (hasCard && portrait) plan.push({ kind: "landing", roles: ["close", "int", "medium", "table"], d: 4.8 });
@@ -303,8 +342,14 @@ function planFor(template, { seconds, hasCard, portrait, top, name, city, dishes
   return plan;
 }
 
-export async function collage(slides, out, { template = "collage", ratio = "9:16", seconds = 15, name = "", city = "", address = "", phone = "", logo = null, tagline = "", blurb = "", lang = "", dishes = [], offer = "", words = [] } = {}) {
+/**
+ * place: the restaurant's exact { lat, lon } for the "map" template (null: the video has no map scene);
+ * tileDir: where OpenStreetMap tiles are cached; labels: the user's words for the template's own (see shared/templateTexts.js).
+ */
+export async function collage(slides, out, { template = "collage", ratio = "9:16", seconds = 15, name = "", city = "", address = "", phone = "", logo = null, tagline = "", blurb = "", lang = "", dishes = [], offer = "", words = [], labels = {}, place = null, tileDir = path.join(tmpdir(), "osm-tiles") } = {}) {
   const [w, h] = SIZES[ratio] ?? SIZES["9:16"];
+  // A Google Maps link or coordinates in the address only locate the place; they are never shown.
+  address = String(address).split("\n").filter((l) => !/https?:\/\/|^\s*-?\d{1,2}\.\d+,\s*-?\d{1,3}\.\d+\s*$/.test(l)).join("\n");
   const dir = await mkdtemp(path.join(tmpdir(), "collage-"));
   try {
     const take = picker(slides);
@@ -317,8 +362,16 @@ export async function collage(slides, out, { template = "collage", ratio = "9:16
     // Scene plan (durations include the transition overlap).
     const query = `${name} - ${searchPlace({ address, city })}`.replace(/ - $/, "");
     const portrait = h > w; // the landing page and the tall layouts are made for vertical video
-    const L = LABELS[lang === "en" ? "en" : "vi"];
-    const plan = planFor(template, { seconds, hasCard, portrait, top, name, city, dishes, offer, words, tagline, blurb, query, logo, L });
+    const L = { ...LABELS[lang === "en" ? "en" : "vi"], ...labels }; // the user's words replace the template's
+    let map = null;
+    if (template === "map" && place) {
+      // The pin sits where scene_map draws it; a failed download only drops the map scene.
+      map = await mapTiles(place, { w, h, pin: [Math.round(w / 2), Math.round(h * (portrait ? 0.4 : 0.38))], cacheDir: tileDir }).catch((e) => {
+        console.warn(`map: ${e.message}`);
+        return null;
+      });
+    }
+    const plan = planFor(template, { seconds, hasCard, portrait, top, name, city, address, phone, map, dishes, offer, words, tagline, blurb, query, logo, L });
     if (end) plan.push({ kind: "end", role: "table", d: 3.2 });
     // Stretch or squeeze evenly so the whole video lasts `seconds`.
     // total = Σd − (scenes − 1) × FADE; the search intro keeps its length.
@@ -366,6 +419,7 @@ export async function collage(slides, out, { template = "collage", ratio = "9:16
       last = `x${i}`;
     }
     await ffmpeg([...segs.flatMap((s) => ["-i", s.file]), ...(parts.length ? ["-filter_complex", parts.join(";"), "-map", `[${last}]`] : []), ...encode, "-movflags", "+faststart", out]);
+    return { map: !!map };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

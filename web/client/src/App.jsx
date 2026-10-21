@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout.jsx";
 import AuthGate, { LoginPage, RequireAuth } from "./components/AuthGate.jsx";
@@ -31,6 +31,9 @@ const LiveRecapPage = lazy(() => import("./pages/LiveRecapPage.jsx"));
 const DubPage = lazy(() => import("./pages/DubPage.jsx"));
 const CombosPage = lazy(() => import("./pages/CombosPage.jsx"));
 const QrPage = lazy(() => import("./pages/QrPage.jsx"));
+const MenuBoardPage = lazy(() => import("./pages/MenuBoardPage.jsx"));
+const BannerPage = lazy(() => import("./pages/BannerPage.jsx"));
+const PublicMenuPage = lazy(() => import("./pages/PublicMenuPage.jsx"));
 const PhotoFixPage = lazy(() => import("./pages/PhotoFixPage.jsx"));
 const LegalPage = lazy(() => import("./pages/LegalPage.jsx"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage.jsx"));
@@ -58,6 +61,8 @@ export default function App() {
       <ToastProvider>
         <JobsProvider>
           <Routes>
+            {/* The online menu guests open from a table QR: no navbar, no login. */}
+            <Route path="m/:id" element={<Suspense fallback={null}><PublicMenuPage /></Suspense>} />
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
               <Route path="samples/:type" element={<SamplePage />} />
@@ -95,6 +100,8 @@ export default function App() {
                 <Route path="gbp-post" element={<TextSkillPage config={TEXT_SKILLS["gbp-post"]} />} />
                 <Route path="photo-fix" element={<PhotoFixPage />} />
                 <Route path="qr" element={<QrPage />} />
+                <Route path="menu-board" element={<MenuBoardPage />} />
+                <Route path="banner" element={<BannerPage />} />
                 <Route path="combos" element={<CombosPage />} />
                 <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
                 <Route path="library" element={<LibraryPage />} />

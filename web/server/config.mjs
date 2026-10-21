@@ -38,7 +38,7 @@ export function loadConfig() {
     appPassword: env.APP_PASSWORD ?? "",
     accounts: env.ACCOUNTS === "1", // one login per customer (server/accounts.mjs)
     signup: env.SIGNUP === "1", // with ACCOUNTS=1: customers sign up themselves and buy credits (server/billing.mjs)
-    signupPerIp: int("SIGNUP_PER_IP", 2, 0, 1000), // accounts one IP address may create (0 = no cap)
+    signupPerIp: int("SIGNUP_PER_IP", 0, 0, 1000), // accounts one IP address may create (0 = no cap, the default)
     trustProxy: /^\d+$/.test(env.TRUST_PROXY ?? "") ? Number(env.TRUST_PROXY) : env.TRUST_PROXY || 0, // hops of reverse proxy in front
     goclaw: {
       url: (env.GOCLAW_URL ?? "http://localhost:18790").replace(/\/+$/, ""),

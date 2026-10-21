@@ -11,6 +11,13 @@ import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { ACTIVE, SKILLS, skillByType } from "../lib/constants.js";
 import { duration } from "../lib/format.js";
 import { BackLink } from "../components/SkillShell.jsx";
+import { businessOf } from "../lib/handoff.js";
+
+/** A picture the run made (photo fix, AI image, video still), for the row thumbnail. */
+const thumbOf = (j) => j.photos?.items?.[0]?.file ?? j.images?.items?.[0]?.file ?? j.video?.shots?.find((s) => s.image)?.image ?? j.slides?.find((s) => s.image)?.image ?? null;
+/** The restaurant a run was about, tidied for grouping ("Phở Cali " and "phở cali" are one). */
+const shopOf = (j) => businessOf(j).trim().replace(/\s+/g, " ").slice(0, 60);
+const shopKey = (name) => name.toLowerCase();
 
 
 /** How the free AI pipeline is holding up: how reels were analysed, how often Groq had to retry. */
@@ -290,9 +297,13 @@ function HistoryRow({ job }) {
     <>
     <div className={deletable ? "hist-row has-del" : "hist-row"} data-tone={skill?.tone} data-status={job.status}>
       <Link className="hist-open" to={`/jobs/${job.id}`}>
-        <span className="hist-thumb" aria-hidden="true"><SkillArt id={skill?.id} /></span>
+        {thumbOf(job) ? (
+          <span className="hist-thumb is-photo" aria-hidden="true"><img src={`/media/images/${thumbOf(job)}`} alt="" loading="lazy" /></span>
+        ) : (
+          <span className="hist-thumb" aria-hidden="true"><SkillArt id={skill?.id} /></span>
+        )}
         <span className="hist-row-main">
-          <span className="hist-row-skill">{job.type === "watch" ? "Theo dõi đối thủ" : skill?.short}</span>
+          <span className="hist-row-skill">{job.type === "watch" ? "Theo dõi đối thủ" : skill?.short}{shopOf(job) && <em className="hist-row-shop">{shopOf(job)}</em>}</span>
           <span className="hist-row-title">{job.title}</span>
           {job.status === "failed" && job.error && <span className="hist-row-err">{job.error.slice(0, 120)}</span>}
         </span>
@@ -327,14 +338,24 @@ export default function HistoryPage() {
   const type = params.get("type") ?? "";
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
+  const [shop, setShop] = useState("");
   const setType = (v) => setParams(v ? { type: v } : {});
 
   const used = SKILLS.filter((s) => s.type && jobs.some((j) => j.type === s.type || (s.type === "fb-reels" && j.type === "watch")));
+  // Restaurants named in the runs (the business / name / place typed in each form), most used first.
+  const shops = Object.values(
+    jobs.reduce((acc, j) => {
+      const name = shopOf(j);
+      if (name) (acc[shopKey(name)] ??= { key: shopKey(name), name, n: 0 }).n++;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.n - a.n);
   const q = query.trim().toLowerCase();
   const list = jobs.filter(
     (j) =>
       (!type || j.type === type || (type === "fb-reels" && j.type === "watch")) &&
       (!status || (status === "active" ? ACTIVE.has(j.status) : status === "failed" ? j.status === "failed" || j.status === "canceled" : j.status === status)) &&
+      (!shop || shopKey(shopOf(j)) === shop) &&
       (!q || j.title.toLowerCase().includes(q)),
   );
   const today = dayStart(new Date());
@@ -356,6 +377,12 @@ export default function HistoryPage() {
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
               <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm theo tên quán, chủ đề, link…" aria-label="Tìm trong lịch sử" />
             </label>
+            {shops.length > 0 && (
+              <select className="hist-shop" value={shop} onChange={(e) => setShop(e.target.value)} aria-label="Lọc theo quán">
+                <option value="">Mọi quán</option>
+                {shops.map((x) => <option key={x.key} value={x.key}>{x.name} ({x.n})</option>)}
+              </select>
+            )}
             <Segmented name="status" label="Lọc theo trạng thái" options={STATUS_FILTERS} value={status} onChange={setStatus} />
           </div>
           <div className="hist-chips" role="group" aria-label="Lọc theo công cụ">
@@ -371,7 +398,7 @@ export default function HistoryPage() {
             <div className="hist-empty">
               <b>{jobs.length ? "Không có lần chạy nào khớp bộ lọc" : "Chưa có lần chạy nào"}</b>
               <span>{jobs.length ? "Thử bỏ bớt bộ lọc hoặc đổi từ khoá." : "Chọn một công cụ ở trang chủ để bắt đầu."}</span>
-              {jobs.length > 0 ? <button type="button" className="btn small" onClick={() => { setStatus(""); setQuery(""); setType(""); }}>Xoá bộ lọc</button> : <Link className="btn primary small" to="/">Xem các công cụ</Link>}
+              {jobs.length > 0 ? <button type="button" className="btn small" onClick={() => { setStatus(""); setQuery(""); setShop(""); setType(""); }}>Xoá bộ lọc</button> : <Link className="btn primary small" to="/">Xem các công cụ</Link>}
             </div>
           )}
           {groups.map((g) => (

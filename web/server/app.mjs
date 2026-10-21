@@ -9,7 +9,9 @@ import { createGoclawClient } from "./goclaw.mjs";
 import { createJobRunner, ACTIVE } from "./jobs.mjs";
 import { createPreparer } from "./prepare.mjs";
 import { createFacebookSource } from "./sources/facebook.mjs";
-import { buildJob, cleanHashtags, InputError } from "./prompts.mjs";
+import { cleanTexts } from "../shared/templateTexts.js";
+import { isMapsLink, MapLinkError, placeFromLink } from "./sources/osm.mjs";
+import { buildJob, cleanHashtags, InputError, OFFER_TEMPLATES, parseDishes, SLIDE_TEMPLATES } from "./prompts.mjs";
 import { CHECKED_TYPES, checkFacts, englishBlanks } from "./facts.mjs";
 import { reviewsIn, verifyQuotes } from "./quotes.mjs";
 import { complete, directEnabled, fixDashes } from "./llm.mjs";
@@ -30,6 +32,7 @@ import { askDirect, extractAction, systemPrompt } from "./assistant.mjs";
 import { createVideoService, VideoError } from "./video.mjs";
 import { ClipError, createClipper } from "./clipper.mjs";
 import { dashboard } from "./dashboard.mjs";
+import { moneyStats } from "./stats.mjs";
 import { cleanUploads, createStorage, filesOf } from "./storage.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 
@@ -75,7 +78,7 @@ function passwordGate(password) {
     signedIn,
     middleware(req, res, next) {
       if (signedIn(req)) return next();
-      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -179,7 +182,7 @@ export async function createApp(config, adapter) {
       return billing.trial;
     },
     get perIp() {
-      return store.getSettings().signupPerIp ?? config.signupPerIp ?? 2;
+      return store.getSettings().signupPerIp ?? config.signupPerIp ?? 0;
     },
   };
   const errors = createErrorLog({ store, env: config.errorEnv ?? process.env, fetchFn: config.fetchFn });
@@ -286,6 +289,8 @@ export async function createApp(config, adapter) {
     // A photo fix runs on this server only (no model); its files go to storage like a video's.
     prepare: async (job, ctx) => {
       if (job.type === "photo-fix") return { done: await publishAfter(job, await video.fixPhoto(job, ctx)) };
+      // Reviewed photos (or a finished video's, for "Đổi mẫu") laid out as the video: nothing is drawn again.
+      if (job.type === "video" && job.renderOnly) return { done: await publishAfter(job, await video.renderSlides(job, job.slides, job.draft ?? "", ctx.setPhase)) };
       if (job.type === "combo") return { done: await runCombo(job, ctx) };
       return prepareJob(job, ctx);
     },
@@ -536,8 +541,8 @@ export async function createApp(config, adapter) {
     adminOnly(req);
     const saved = store.getSettings();
     res.json({
-      settings: { signupPerIp: signupRules.perIp, trialCredits: billing.trial, creditPacks: saved.creditPacks || billing.defaults.creditPacks },
-      defaults: { signupPerIp: config.signupPerIp ?? 2, ...billing.defaults },
+      settings: { signupPerIp: signupRules.perIp, trialCredits: billing.trial, creditPacks: saved.creditPacks || billing.defaults.creditPacks, heavyPerUser: heavyCap() },
+      defaults: { signupPerIp: config.signupPerIp ?? 0, heavyPerUser: HEAVY_DEFAULT, ...billing.defaults },
       signupOpen: !!config.signup,
       updatedAt: saved.updatedAt ?? null,
     });
@@ -553,6 +558,7 @@ export async function createApp(config, adapter) {
     };
     if (body.signupPerIp !== undefined) patch.signupPerIp = whole(body.signupPerIp, 1000, "Số tài khoản mỗi IP");
     if (body.trialCredits !== undefined) patch.trialCredits = whole(body.trialCredits, 10_000, "Credit dùng thử");
+    if (body.heavyPerUser !== undefined) patch.heavyPerUser = whole(body.heavyPerUser, 20, "Số tác vụ nặng cùng lúc");
     if (body.creditPacks !== undefined) {
       const text = String(body.creditPacks).trim();
       const packs = parsePacks(text);
@@ -561,6 +567,12 @@ export async function createApp(config, adapter) {
     }
     await store.saveSettings(patch);
     res.json({ ok: true });
+  }));
+
+  /** Money: top-ups, refunds through the bank, credits per tool and a rough running cost. */
+  api.get("/admin/stats", accountRoute((req, res) => {
+    adminOnly(req);
+    res.json(moneyStats({ users: store.listUsers(), jobs: store.listJobs(), today: vnDay(new Date().toISOString()), dayOf: (iso) => (iso ? vnDay(iso) : "") }));
   }));
 
   api.get("/admin/users", accountRoute((req, res) => {
@@ -803,8 +815,20 @@ export async function createApp(config, adapter) {
       billing.check(req.user, type);
     });
 
+  // Heavy runs (GPU, video) one account may have going at once, so one shop cannot fill the queue for everyone.
+  const HEAVY = new Set(["video", "image", "photo-fix", "reel-cut", "dub", "live-recap", "combo"]);
+  const HEAVY_DEFAULT = Number.isInteger(Number(process.env.HEAVY_PER_USER)) && process.env.HEAVY_PER_USER !== undefined ? Number(process.env.HEAVY_PER_USER) : 2;
+  const heavyCap = () => (Number.isInteger(store.getSettings?.()?.heavyPerUser) ? store.getSettings().heavyPerUser : HEAVY_DEFAULT);
+  function heavyGate(req, type) {
+    const cap = heavyCap();
+    if (!accounts || !req.user || req.user.role === "admin" || !HEAVY.has(type) || !cap) return;
+    const busy = store.listJobs().filter((j) => j.userId === req.user.id && HEAVY.has(j.type) && (j.status === "queued" || j.status === "running")).length;
+    if (busy >= cap) throw new HttpError(429, `Bạn đang có ${busy} tác vụ nặng (video, ảnh) đang chạy. Chờ xong bớt rồi chạy tiếp nhé, tối đa ${cap} tác vụ cùng lúc.`);
+  }
+
   api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
+    heavyGate(req, type);
     await enoughCredits(req, type, input);
     const spec = await jobSpec(type, input);
     if (input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" }; // English interface: English reports
@@ -826,6 +850,7 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
+    heavyGate(req, job.type);
     await enoughCredits(req, job.type, job.input);
     const spec = await jobSpec(job.type, job.input);
     if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
@@ -863,28 +888,130 @@ export async function createApp(config, adapter) {
     await publish(filesOf({ slides }));
     res.json({ slides: (await store.updateJob(job.id, { slides })).slides });
   });
-  /** Render the reviewed photos (in the order chosen on the page); runs in the background, the page polls. */
+  /** Render the reviewed photos (in the order chosen on the page): queued on the runner, the page polls. */
   api.post("/jobs/:id/render", async (req, res) => {
     const job = await reviewJob(req);
     const order = Array.isArray(req.body?.order) ? req.body.order.map(Number) : job.slides.map((_, i) => i);
     if (order.length < 2 || new Set(order).size !== order.length || order.some((i) => !job.slides[i])) throw new HttpError(400, "Thứ tự ảnh không hợp lệ (cần ít nhất 2 ảnh)");
     const slides = order.map((i) => job.slides[i]);
-    await store.updateJob(job.id, { status: "running", phase: "Đang ghép ảnh thành video…", slides, startedAt: new Date().toISOString() });
-    const setPhase = (phase) => store.updateJob(job.id, { phase });
-    video.renderSlides(job, slides, job.draft ?? "", setPhase).then(
-      async (out) => store.updateJob(job.id, { status: "done", result: (await publishAfter(job, out)).result, ...out.fields, phase: null, finishedAt: new Date().toISOString() }),
-      async (e) => billing.refund(await store.updateJob(job.id, { status: "failed", error: e.message, phase: null, finishedAt: new Date().toISOString() })),
-    );
+    // On the runner like any job: one lane limit, cancel, a restart renders it again (never redraws), failures refund.
+    await store.updateJob(job.id, { status: "queued", renderOnly: true, phase: "Đang chờ ghép ảnh thành video…", slides });
+    runner.requeue(job.id);
     res.status(202).json({ ok: true });
+  });
+
+  /**
+   * Same photos, another template: lay a finished slideshow out again without drawing anything on the GPU.
+   * A new video job (the old one stays), charged as "video-restyle".
+   */
+  // The video form checks the restaurant's Google Maps link before the "Chỉ đường" video is made.
+  api.post("/map/check", limits.map, async (req, res) => {
+    try {
+      res.json(await placeFromLink(req.body?.link));
+    } catch (e) {
+      throw new HttpError(400, e instanceof MapLinkError ? e.message : "Chưa đọc được link, thử lại sau ít phút.");
+    }
+  });
+
+  api.post("/jobs/:id/restyle", limits.jobs, async (req, res) => {
+    const job = await loadJob(req);
+    if (job.type !== "video" || job.input?.mode !== "slideshow" || job.status !== "done" || !Array.isArray(job.slides) || job.slides.length < 2) throw new HttpError(409, "Chỉ đổi mẫu được cho video trình chiếu đã dựng xong");
+    const layout = String(req.body?.layout ?? "");
+    if (!SLIDE_TEMPLATES.has(layout)) throw new HttpError(400, "Mẫu video không hợp lệ");
+    const ratio = ["9:16", "16:9", "1:1"].includes(req.body?.ratio) ? req.body.ratio : job.input.ratio;
+    const offer = String(req.body?.offer ?? job.input.offer ?? "").trim().slice(0, 120);
+    if (OFFER_TEMPLATES.has(layout) && !offer) throw new HttpError(400, "Mẫu này cần câu ưu đãi (chỉ ghi ưu đãi có thật)");
+    const dishes = req.body?.dishes !== undefined ? parseDishes(req.body.dishes) : job.input.dishes ?? [];
+    // The template's own words the user changed (kept from the old video when not sent again).
+    const texts = cleanTexts(layout, req.body?.texts ?? job.input.texts);
+    const tagline = String(req.body?.tagline ?? job.input.tagline ?? "").trim().slice(0, 60);
+    const mapLink = layout === "map" ? String(req.body?.mapLink ?? job.input.mapLink ?? "").trim().slice(0, 1000) : job.input.mapLink;
+    if (layout === "map" && !isMapsLink(mapLink)) throw new HttpError(400, "Mẫu Chỉ đường cần link Google Maps của quán");
+    heavyGate(req, "video");
+    await billingCall(() => billing.check(req.user, "video-restyle"));
+    // The photos may only be in object storage (another server, a cleaned disk): fetch them back first.
+    if (storage.remote) for (const s of job.slides) if (s.image && !existsSync(localOf(`images/${s.image}`))) await storage.get(`images/${s.image}`, localOf(`images/${s.image}`)).catch(() => false);
+    await ensureUploads(job.input);
+    const credits = await billingCall(() => billing.charge(req.user, "video-restyle"));
+    const fresh = await runner.submit({
+      type: "video",
+      agent: job.agent,
+      title: job.title,
+      input: { ...job.input, layout, ratio, offer, dishes, texts, tagline, mapLink, review: false, restyledFrom: job.id },
+      prompt: "",
+      userId: job.userId,
+      credits,
+      extra: { renderOnly: true, slides: job.slides, images: job.images, draft: job.draft ?? "" },
+    });
+    res.status(201).json({ job: summary(fresh, runner) });
+  });
+
+  // ---- "Menu in & menu điện tử": a menu kept as a library item of kind "menu"; its online page is public ----
+  const MENU_THEMES = new Set(["cream", "noir", "garden", "street"]);
+  function menuFields(raw = {}) {
+    const text = (v, max) => String(v ?? "").trim().slice(0, max);
+    const sections = (Array.isArray(raw.sections) ? raw.sections : []).slice(0, 12).map((sec) => ({
+      title: text(sec?.title, 60),
+      items: (Array.isArray(sec?.items) ? sec.items : []).slice(0, 40).map((it) => ({ name: text(it?.name, 80), price: text(it?.price, 24), desc: text(it?.desc, 200), tag: text(it?.tag, 20) })).filter((it) => it.name),
+    })).filter((sec) => sec.items.length);
+    if (!sections.length) throw new HttpError(400, "Menu cần ít nhất một món");
+    if (sections.reduce((a, sec) => a + sec.items.length, 0) > 150) throw new HttpError(400, "Menu tối đa 150 món");
+    // The logo travels inside the menu as a small data URL; a bad or too big one is refused, never dropped silently.
+    const logo = typeof raw.logo === "string" ? raw.logo : "";
+    if (logo && !(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo) && logo.length <= 120_000)) throw new HttpError(400, "Logo quá lớn, hãy chọn lại logo (ảnh nhỏ hơn).");
+    const color = /^#[0-9a-f]{6}$/i.test(String(raw.color ?? "")) ? raw.color : "#c2451f";
+    return {
+      name: text(raw.name, 60) || "Menu",
+      tagline: text(raw.tagline, 120),
+      note: text(raw.note, 200),
+      contact: text(raw.contact, 160),
+      theme: MENU_THEMES.has(raw.theme) ? raw.theme : "cream",
+      color,
+      logo,
+      sections,
+    };
+  }
+  const myMenu = (req) => {
+    const item = store.getItem(req.params.id);
+    if (!item || item.kind !== "menu" || !own(req, item)) throw new HttpError(404, "Không tìm thấy menu");
+    return item;
+  };
+  api.get("/menus", (req, res) => {
+    res.json({ menus: store.listLibrary().filter((x) => x.kind === "menu" && own(req, x)).map((x) => ({ id: x.id, title: x.title, menu: x.menu, updatedAt: x.updatedAt })) });
+  });
+  api.post("/menus", async (req, res) => {
+    if (store.listLibrary().filter((x) => x.kind === "menu" && own(req, x)).length >= 10) throw new HttpError(400, "Mỗi tài khoản lưu tối đa 10 menu, xoá bớt menu cũ nhé");
+    const menu = menuFields(req.body ?? {});
+    const item = await store.addItem({ kind: "menu", title: menu.name, menu, ...(accounts ? { userId: req.user.id } : {}) });
+    res.status(201).json({ menu: { id: item.id, title: item.title, menu: item.menu, updatedAt: item.updatedAt } });
+  });
+  api.put("/menus/:id", async (req, res) => {
+    myMenu(req);
+    const menu = menuFields(req.body ?? {});
+    const item = await store.updateItem(req.params.id, { title: menu.name, menu });
+    res.json({ menu: { id: item.id, title: item.title, menu: item.menu, updatedAt: item.updatedAt } });
+  });
+  api.delete("/menus/:id", async (req, res) => {
+    myMenu(req);
+    await store.deleteItem(req.params.id);
+    res.json({ ok: true });
+  });
+  /** The online menu guests open from the QR code: no login, only the menu itself. */
+  api.get("/public/menus/:id", (req, res) => {
+    const item = store.getItem(req.params.id);
+    if (!item || item.kind !== "menu") throw new HttpError(404, "Menu không tồn tại hoặc đã bị xoá");
+    res.set("Cache-Control", "public, max-age=60").json({ menu: item.menu, updatedAt: item.updatedAt });
   });
 
   api.delete("/jobs/:id", async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Huỷ tác vụ trước khi xoá");
+    // "Đổi mẫu" makes a new run on the same photos: files another run still shows are kept.
+    const shared = new Set(store.listJobs().filter((j) => j.id !== job.id).flatMap(filesOf));
     await store.deleteJob(job.id);
-    await video.remove(job);
+    await video.remove(job, shared);
     await clipper.removeClips(job);
-    if (storage.remote) for (const key of filesOf(job)) await storage.remove(key).catch(() => {});
+    if (storage.remote) for (const key of filesOf(job)) if (!shared.has(key)) await storage.remove(key).catch(() => {});
     res.json({ ok: true });
   });
 
@@ -942,7 +1069,7 @@ export async function createApp(config, adapter) {
   const sharedTemplate = (x) => x.kind === "template" && !x.userId;
   api.get("/library", (req, res) => {
     const { kind } = req.query;
-    res.json({ items: store.listLibrary().filter((x) => (!kind || x.kind === kind) && (sharedTemplate(x) || own(req, x))) });
+    res.json({ items: store.listLibrary().filter((x) => x.kind !== "menu" && (!kind || x.kind === kind) && (sharedTemplate(x) || own(req, x))) });
   });
 
   api.post("/library", async (req, res) => {
@@ -1017,7 +1144,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com https://maps.google.com https://www.google.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));

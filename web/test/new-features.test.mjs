@@ -227,5 +227,17 @@ test("slideshow templates: dish lists with prices, roles per template, promo nee
   assert.match(top3.prompt, /MÓN "Beef pho" chụp tầm trung/);
   assert.equal(top3.input.dishes[0].price, "$14.95");
   assert.throws(() => buildJob("video", { mode: "slideshow", layout: "promo", topic: "Pho restaurant" }, has), /câu ưu đãi/);
+  assert.throws(() => buildJob("video", { mode: "slideshow", layout: "coupon", topic: "Pho restaurant" }, has), /câu ưu đãi/);
+  assert.equal(buildJob("video", { mode: "slideshow", layout: "coupon", topic: "Pho restaurant", offer: "Free spring rolls" }, has).input.offer, "Free spring rolls");
+  assert.deepEqual(slideRoles("chalk", 1), { realRoles: ["dish1"], drawRoles: ["dish2", "dish3", "ext", "int", "table"] });
+  for (const layout of ["news", "chalk"]) assert.equal(buildJob("video", { mode: "slideshow", layout, topic: "Pho restaurant" }, has).input.layout, layout);
+  // The template's own words the user changed: only that template's keys are kept.
+  const own = buildJob("video", { mode: "slideshow", layout: "coupon", topic: "Pho restaurant", offer: "Free tea", texts: { coupon: "  Voucher  tặng ", breaking: "x", onlyAt: "" }, tagline: "Ngon mỗi ngày" }, has).input;
+  assert.deepEqual(own.texts, { coupon: "Voucher tặng" });
+  assert.equal(own.tagline, "Ngon mỗi ngày");
+  const { cleanTexts } = await import("../shared/templateTexts.js");
+  assert.deepEqual(cleanTexts("bold", { words: "Nóng, Giòn , Ngon," }), { words: ["Nóng", "Giòn", "Ngon"] });
+  assert.deepEqual(cleanTexts("bold", { words: ["Nóng", "Giòn"] }), { words: ["Nóng", "Giòn"] }); // a restyle sends the saved list back
+  assert.deepEqual(cleanTexts("single", { words: "x" }), {});
   assert.equal(buildJob("video", { mode: "slideshow", layout: "nonsense", topic: "x" }, has).input.layout, "collage");
 });

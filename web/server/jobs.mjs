@@ -27,8 +27,9 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
   const running = new Map(); // id -> AbortController
   let stopping = false; // shutting down: no new job starts
   // A combo only waits for the jobs it starts: it has its own lane, so it never takes their place.
-  const lane = (job) => (job.type === "combo" ? "combo" : lanes ? laneOf(job) : "all");
-  const limit = (name) => (name === "combo" ? 20 : lanes ? lanes[name] ?? 1 : concurrency);
+  // Laying reviewed photos out as a video (renderOnly: "Dựng video", "Đổi mẫu") needs no GPU: its own lane too.
+  const lane = (job) => (job.type === "combo" ? "combo" : job.renderOnly ? "render" : lanes ? laneOf(job) : "all");
+  const limit = (name) => (name === "combo" ? 20 : name === "render" ? 2 : lanes ? lanes[name] ?? 1 : concurrency);
   const ended = async (id) => {
     const job = store.cachedJob(id);
     if (job) await onEnd(job).catch((e) => log.error(`job ${id}: onEnd:`, e.message));
@@ -140,8 +141,10 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
       return running.size;
     },
 
-    async submit({ type, agent, direct = null, title, input, prompt, userId, credits = null }) {
+    /** extra: fields the job starts with (e.g. a restyle's slides, draft and renderOnly). */
+    async submit({ type, agent, direct = null, title, input, prompt, userId, credits = null, extra = {} }) {
       const job = {
+        ...extra,
         id: randomUUID(),
         ...(userId ? { userId } : {}), // owner, with customer accounts on
         ...(credits ? { credits } : {}), // credits this run took (given back if it fails)
@@ -163,6 +166,12 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
       queue.push(job.id);
       pump();
       return job;
+    },
+
+    /** Queue a job that is already stored (set to "queued" by the caller), e.g. a reviewed slideshow to render. */
+    requeue(id) {
+      if (!queue.includes(id)) queue.push(id);
+      pump();
     },
 
     /** Cancel a queued or running job. Aborting the HTTP call also stops the GoClaw run. */

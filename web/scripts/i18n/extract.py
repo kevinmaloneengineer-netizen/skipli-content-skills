@@ -1,8 +1,8 @@
 import re, json, sys, pathlib
 VI = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬĐÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ]")
-root = pathlib.Path(sys.argv[1])
+roots = [pathlib.Path(a) for a in sys.argv[1:]]  # e.g. client/src shared
 exact, patterns = set(), set()
-for f in list(root.rglob("*.jsx")) + list(root.rglob("*.js")):
+for f in [f for root in roots for f in list(root.rglob("*.jsx")) + list(root.rglob("*.js"))]:
     if "i18n" in str(f): continue
     src = f.read_text()
     src = re.sub(r"^\s*//.*$", "", src, flags=re.M)          # line comments

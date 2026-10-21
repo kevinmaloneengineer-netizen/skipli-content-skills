@@ -540,6 +540,54 @@ function CombosArt() {
 }
 
 /** Mã QR: a QR code with a logo square and a phone scanning it. */
+function MenuBoardArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(58 14) rotate(-4 50 62)">
+        <rect width="100" height="124" rx="8" className="art-card" />
+        <rect x="26" y="12" width="48" height="8" rx="4" className="art-fg" />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <g key={i} transform={`translate(12 ${34 + i * 17})`}>
+            <rect width={[44, 36, 50, 40, 46][i]} height="6" rx="3" className="art-mid" />
+            <rect x="62" width="14" height="6" rx="3" className={i === 0 ? "art-hi" : "art-mid"} />
+          </g>
+        ))}
+      </g>
+      <g transform="translate(184 18)">
+        <rect width="64" height="116" rx="12" className="art-fg" />
+        <rect x="5" y="9" width="54" height="98" rx="7" className="art-card" />
+        <rect x="14" y="20" width="36" height="6" rx="3" className="art-fg" />
+        {[0, 1, 2, 3].map((i) => <rect key={i} x="12" y={36 + i * 15} width={[40, 32, 38, 28][i]} height="5" rx="2.5" className="art-mid" />)}
+      </g>
+      <g transform="translate(244 96)">
+        <rect width="40" height="40" rx="7" className="art-hi" />
+        <path d="M9 9h8v8H9zM23 9h8v8h-8zM9 23h8v8H9zM24 24h3v3h-3zM29 29h3v3h-3z" className="art-fg" />
+      </g>
+    </svg>
+  );
+}
+
+function EventBannerArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(62 16)">
+        <rect width="196" height="118" rx="14" className="art-card" />
+        <circle cx="140" cy="60" r="38" className="art-mid" />
+        <circle cx="140" cy="60" r="28" className="art-hi" />
+        <rect x="18" y="38" width="76" height="12" rx="6" className="art-fg" />
+        <rect x="18" y="58" width="56" height="7" rx="3.5" className="art-mid" />
+        <rect x="18" y="78" width="48" height="16" rx="8" className="art-hi" />
+      </g>
+      <g className="art-fg">
+        <path d="M86 6v12" stroke="currentColor" strokeWidth="2" className="art-stroke" fill="none" />
+        <ellipse cx="86" cy="28" rx="10" ry="12" className="art-hi" />
+        <path d="M232 4v14" strokeWidth="2" className="art-stroke" fill="none" />
+        <ellipse cx="232" cy="28" rx="9" ry="11" className="art-hi" />
+      </g>
+    </svg>
+  );
+}
+
 function QrArt() {
   const cells = [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2],[2,2],[4,0],[5,1],[4,2],[6,0],[6,2],[0,4],[1,5],[2,4],[0,6],[2,6],[4,4],[6,4],[5,5],[4,6],[6,6]];
   return (
@@ -626,7 +674,7 @@ function LiveRecap() {
   );
 }
 
-const ART = { combos: CombosArt, qr: QrArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+const ART = { combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

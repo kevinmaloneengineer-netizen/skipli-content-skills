@@ -3,40 +3,18 @@ import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.js
 import { GpuCard, PhotoPick, PhotosPick } from "../components/GpuCard.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
-import { getLang } from "../lib/i18n.js";
 import { cutGrid, loadImage, upload } from "../lib/image.js";
 import { uploadAudio } from "../lib/api.js";
 import { useDrop } from "../lib/drop.js";
 import FilePick from "../components/FilePick.jsx";
 import FromBanner from "../components/FromBanner.jsx";
 import { dataUrlFromImage, firstPost, useFromJob } from "../lib/handoff.js";
+import MapLinkField from "../components/MapLinkField.jsx";
+import TemplateTexts from "../components/TemplateTexts.jsx";
+import { DISH_TEMPLATES, FEATURED, OFFER_TEMPLATES, SAMPLE_VERSION, TEMPLATES, sampleOf } from "../lib/videoTemplates.js";
 
 const MODES = { slideshow: "Trình chiếu ảnh", topic: "Kịch bản tự do", storyboard: "Story Board", story: "Kể chuyện" };
 const SLIDE_SECONDS = { 15: "15 giây", 30: "30 giây" };
-// Slideshow templates: [id, name, what it shows].
-const TEMPLATES = [
-  ["collage", "Ghép ảnh kiểu Canva", "Ô tìm kiếm, trang giới thiệu, khung ghép ảnh, ảnh nghiêng"],
-  ["top3", "Top 3 món phải thử", "Đếm ngược #3, #2, #1: mỗi món một ảnh lớn kèm tên và giá"],
-  ["menu", "Menu và giá", "Thẻ món có ảnh, tên, giá như menu điện tử"],
-  ["promo", "Khuyến mãi", "Câu ưu đãi chữ to, ruy băng ưu đãi trên ảnh món"],
-  ["polaroid", "Tường ảnh Polaroid", "Ảnh polaroid rơi xuống xếp nghiêng trên nền màu"],
-  ["bold", "Chữ to kiểu tạp chí", "3 chữ thật to xen kẽ ảnh toàn khung"],
-  ["film", "Cuộn phim", "Ảnh chạy dọc trên dải phim, chữ Đang chiếu và tên quán"],
-  ["magazine", "Bìa tạp chí", "Ảnh làm bìa, tên quán là tên tạp chí, các dòng giới thiệu món"],
-  ["grid", "Lưới 9 ô", "Ảnh hiện dần từng ô như trang cá nhân, ô giữa là logo"],
-  ["story", "Story Instagram", "Thanh tiến trình, tên quán ở góc, nhãn dán chữ trên từng ảnh"],
-  ["receipt", "Hoá đơn", "Tờ hoá đơn in ra danh sách món và giá, rồi tới ảnh món"],
-  ["neon", "Đèn neon", "Nền tối, tên quán và tên món phát sáng như bảng đèn"],
-  ["postcard", "Bưu thiếp", "Ảnh in trên bưu thiếp có tem, dấu bưu điện và lời giới thiệu"],
-  ["spotlight", "Món nổi bật", "Từng món trong khung tròn trên nền màu, tên món và giá"],
-  ["marquee", "Chữ chạy", "Hai dải chữ chạy ngược chiều trên ảnh toàn khung"],
-  ["single", "Từng ảnh", "Mỗi cảnh một ảnh, chuyển cảnh mờ dần"],
-];
-// Templates that take the dish list (names, prices only when typed).
-const DISH_TEMPLATES = { top3: "3 món phải thử (mỗi dòng một món, giá tuỳ chọn)", spotlight: "3 món nổi bật (mỗi dòng một món, giá tuỳ chọn)", menu: "Món và giá (tối đa 4 món, mỗi dòng một món)", receipt: "Món trên hoá đơn (tối đa 4 món, mỗi dòng một món, giá tuỳ chọn)" };
-// Sample clip of a template (client/public/samples, rendered from the same code with stock photos).
-const SAMPLE_VERSION = 4; // bump after re-rendering the samples so browsers fetch the new files
-const sampleOf = (id) => `/samples/${id === "single" ? "single" : `${id}-${getLang()}`}`;
 const calm = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /** One template: its sample as a 9:16 thumbnail that plays on hover (the picked one plays on the big screen). */
@@ -58,6 +36,7 @@ function TemplateCard({ id, title, on, onPick }) {
       <span className="tpl-thumb">
         <video ref={ref} src={`${sampleOf(id)}.mp4?v=${SAMPLE_VERSION}`} poster={`${sampleOf(id)}.jpg?v=${SAMPLE_VERSION}`} muted loop playsInline preload="none" aria-hidden="true" />
         {on && <i className="tpl-check" aria-hidden="true">✓</i>}
+        {FEATURED.has(id) && <em className="tpl-hot">Nổi bật</em>}
       </span>
       <b>{title}</b>
     </button>
@@ -156,7 +135,8 @@ function StoryboardPick({ panels, onChange }) {
 export default function VideoPage() {
   const [gpu, setGpu] = useState(null);
   const [mode, setMode] = useState("slideshow"); // photo show of the dishes and the place: the most asked for
-  const [form, setForm] = useState({ topic: "", narration: "", brief: "", seconds: "30", style: "real", tone: "warm", ratio: "9:16", voice: "female", narratorPct: "20", audio: "voice", kind: "story", name: "", city: "", address: "", phone: "", layout: "collage", review: true, dishes: "", offer: "" });
+  const [form, setForm] = useState({ topic: "", narration: "", brief: "", seconds: "30", style: "real", tone: "warm", ratio: "9:16", voice: "female", narratorPct: "20", audio: "voice", kind: "story", name: "", city: "", address: "", phone: "", layout: "top3", review: true, dishes: "", offer: "", texts: {}, tagline: "", mapLink: "" });
+  const [mapReady, setMapReady] = useState(false); // the Google Maps link was read (the "Chỉ đường" template)
   const [logo, setLogo] = useState(null);
   const [photos, setPhotos] = useState([]); // real photos for a slideshow
   const [photo, setPhoto] = useState(null);
@@ -193,6 +173,7 @@ export default function VideoPage() {
     e.preventDefault();
     setLocalError("");
     if (mode === "storyboard" && panels.length < 2) return setLocalError("Chọn ảnh storyboard có ít nhất 2 ô");
+    if (mode === "slideshow" && form.layout === "map" && !mapReady) return setLocalError("Mẫu Chỉ đường cần link Google Maps của quán (đợi dòng \"Đã đọc được vị trí quán\" hiện ra)");
     setUploading(true);
     try {
       const input = { mode, ...form, audio: mode === "story" ? "voice" : form.audio, seconds: Number(form.seconds), narratorPct: Number(form.narratorPct) };
@@ -278,11 +259,13 @@ export default function VideoPage() {
                 <textarea rows={4} value={form.dishes} onChange={set("dishes")} placeholder={"Beef pho - $14.95\nBanh mi - $9.50\nSpring rolls - $7"} />
               </Field>
             )}
-            {form.layout === "promo" && (
+            {OFFER_TEMPLATES.has(form.layout) && (
               <Field label="Câu ưu đãi (bắt buộc)" hint="Chỉ ghi ưu đãi có thật, video không tự thêm ưu đãi nào.">
                 <input value={form.offer} onChange={set("offer")} placeholder="Free spring rolls with any 2 bowls of pho" maxLength={120} required />
               </Field>
             )}
+            {form.layout === "map" && <MapLinkField value={form.mapLink} onChange={set("mapLink")} onReady={setMapReady} />}
+            {form.layout !== "single" && <TemplateTexts layout={form.layout} texts={form.texts} onTexts={set("texts")} tagline={form.tagline} onTagline={set("tagline")} />}
             <label className="check-row">
               <input type="checkbox" checked={form.review} onChange={(e) => setForm((f) => ({ ...f, review: e.target.checked }))} />
               <span>Duyệt ảnh trước khi dựng video (vẽ lại hoặc thay ảnh chưa ưng)</span>
@@ -292,7 +275,7 @@ export default function VideoPage() {
               <FilePick accept="audio/*,video/mp4" file={ownVoice} onChange={setOwnVoice} placeholder="Chọn nhạc hoặc giọng đọc (MP3, M4A, WAV)" kind="audio" clearLabel="Bỏ file, dùng nhạc nền tự tạo" />
               <small>Bài dài cũng được: video dùng đoạn đầu, cắt vừa độ dài video và nhỏ dần ở cuối. Ngắn hơn video thì phát lặp lại. Chỉ dùng nhạc bạn có quyền sử dụng.</small>
             </div>
-            <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint={["top3", "menu", "spotlight"].includes(form.layout) ? "Ảnh món ăn xếp đúng thứ tự các món đã nhập ở trên. AI chỉ vẽ phần còn thiếu." : "Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ."} value={photos} onChange={setPhotos} max={form.layout !== "single" || Number(form.seconds) === 30 ? 6 : 5} />
+            <PhotosPick label="Ảnh thật của quán (tuỳ chọn)" hint={["top3", "menu", "spotlight", "chalk"].includes(form.layout) ? "Ảnh món ăn xếp đúng thứ tự các món đã nhập ở trên. AI chỉ vẽ phần còn thiếu." : "Ảnh món ăn, bên trong hoặc bên ngoài quán. AI chỉ vẽ thêm cho đủ số ảnh; đủ ảnh thì không vẽ."} value={photos} onChange={setPhotos} max={form.layout !== "single" || Number(form.seconds) === 30 ? 6 : 5} />
             <fieldset className="slide-card-fields">
               <legend>Thông tin quán ở ảnh đầu (tuỳ chọn)</legend>
               <p className="hint">Hiện trên ảnh đầu tiên như bìa video. Để trống tên quán thì video chỉ có ảnh.</p>

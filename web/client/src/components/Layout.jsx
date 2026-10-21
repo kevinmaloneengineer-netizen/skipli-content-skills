@@ -6,7 +6,8 @@ import { ago } from "../lib/format.js";
 import { useParallax } from "../lib/motion.js";
 import { FLOWS } from "../lib/workflows.js";
 import Backdrop from "./Backdrop.jsx";
-const ChatWidget = lazy(() => import("./ChatWidget.jsx")); // signed-in only: loads after the page
+const ChatWidget = lazy(() => import("./ChatWidget.jsx"));
+import StarterGuide from "./StarterGuide.jsx"; // signed-in only: loads after the page
 import UserMenu from "./UserMenu.jsx";
 import { loginPath, useAuth } from "./AuthGate.jsx";
 import CommandPalette, { fold } from "./CommandPalette.jsx";
@@ -282,6 +283,7 @@ export default function Layout() {
       </main>
       <Footer />
       {!guest && <Suspense fallback={null}><ChatWidget /></Suspense>}
+      <StarterGuide />
       <CommandPalette open={palette} onClose={closePalette} onToggleTheme={toggle} />
       {needCredits && (
         <ConfirmDialog title="Hết credit" body={needCredits} okLabel="Nạp credit" cancelLabel="Để sau" okClass="primary" onOk={() => navigate("/billing")} onClose={() => setNeedCredits(null)} />

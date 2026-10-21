@@ -8,7 +8,7 @@ const num = (name, fallback) => {
 };
 const LIMITS = {
   jobsPerDay: num("DAILY_JOB_LIMIT", 80), // whole app, Vietnam calendar day
-  jobsPerIpHour: num("JOB_LIMIT_PER_IP_HOUR", 20),
+  jobsPerIpHour: num("JOB_LIMIT_PER_IP_HOUR", 0), // off by default: an office on one network shares an IP; accounts have their own limit
   jobsPerUserDay: num("USER_DAILY_JOB_LIMIT", 30), // ACCOUNTS=1: per customer, the admin can change it per account
   chatPerIpMinute: num("CHAT_LIMIT_PER_IP_MINUTE", 8),
   chatPerIpDay: num("CHAT_LIMIT_PER_IP_DAY", 200),
@@ -54,11 +54,17 @@ export function createLimits({ store }) {
       if (!take(`job|${ipOf(req)}`, LIMITS.jobsPerIpHour, 3600_000)) return tooMany(res, `Bạn đã chạy ${LIMITS.jobsPerIpHour} lượt trong 1 giờ qua. Nghỉ một chút rồi thử lại nhé.`);
       next();
     },
-    /** Express middleware for the assistant. */
+    /** Express middleware for checking a Google Maps link (the form checks as the link is typed): its own budget, not the assistant's. */
+    map(req, res, next) {
+      const who = req.user?.id ? `user:${req.user.id}` : ipOf(req);
+      if (!take(`map|${who}`, 30, 60_000)) return tooMany(res, "Kiểm tra link hơi nhiều, đợi khoảng 1 phút rồi thử lại nhé.");
+      next();
+    },
+    /** Express middleware for the assistant: counted per account when signed in, per IP for guests. */
     chat(req, res, next) {
-      const ip = ipOf(req);
-      if (!take(`chatmin|${ip}`, LIMITS.chatPerIpMinute, 60_000)) return tooMany(res, "Bạn nhắn hơi nhanh, đợi khoảng 1 phút rồi hỏi tiếp nhé.");
-      if (!take(`chatday|${ip}`, LIMITS.chatPerIpDay, 86_400_000)) return tooMany(res, "Hôm nay bạn đã hỏi trợ lý rất nhiều, mai mình trò chuyện tiếp nhé.");
+      const who = req.user?.id ? `user:${req.user.id}` : ipOf(req);
+      if (!take(`chatmin|${who}`, LIMITS.chatPerIpMinute, 60_000)) return tooMany(res, "Bạn nhắn hơi nhanh, đợi khoảng 1 phút rồi hỏi tiếp nhé.");
+      if (!take(`chatday|${who}`, LIMITS.chatPerIpDay, 86_400_000)) return tooMany(res, "Hôm nay bạn đã hỏi trợ lý rất nhiều, mai mình trò chuyện tiếp nhé.");
       next();
     },
   };

@@ -6,6 +6,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/vite.config.js ./
 COPY web/client ./client
+COPY web/shared ./shared
 RUN npm run build
 
 FROM node:24-alpine
@@ -17,6 +18,7 @@ RUN apk add --no-cache python3 py3-numpy py3-pillow py3-pip ffmpeg tzdata yt-dlp
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY web/server ./server
+COPY web/shared ./shared
 COPY skills /skills
 COPY --from=build /app/client/dist ./client/dist
 # videos + uploads (mount a volume here to keep them)

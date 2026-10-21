@@ -14,6 +14,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { collage } from "./collage.mjs";
 import { transcribe } from "./clipper.mjs";
 import { checkFacts } from "./facts.mjs";
+import { placeFromLink } from "./sources/osm.mjs";
 import { PHOTO_AI, PHOTO_BACKGROUNDS, slideRoles } from "./prompts.mjs";
 
 const run = promisify(execFile);
@@ -396,13 +397,27 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     await setPhase("Đang ghép ảnh thành video…");
     const out = videoPath(job.id);
     const title = job.input.name && job.input.layout === "single" ? await titleCard(job) : null; // the templates draw their own cards
+    // "Chỉ đường": the pin from the restaurant's Google Maps link; no exact spot → no map scene, and the result says so.
+    let place = null;
+    if (job.input.layout === "map") {
+      await setPhase("Đang đọc vị trí quán từ link Google Maps…");
+      place = await placeFromLink(job.input.mapLink).catch((e) => {
+        log.warn?.(`map: ${e.message}`);
+        return null;
+      });
+    }
+    let drawn = null;
     try {
       if (job.input.layout !== "single") {
         const logo = job.input.logoId && hasUpload(job.input.logoId) ? path.join(dirs.uploads, job.input.logoId) : null;
         const text = landingText(content);
         // Dish names the user typed (with their prices) first; names the AI picked fill the rest, never a price.
         const dishes = [0, 1, 2, 3].map((k) => job.input.dishes?.[k]?.name ? job.input.dishes[k] : text.dishes[k] ? { name: text.dishes[k], price: "" } : null).filter(Boolean);
-        await collage(slides.map((x, i) => ({ ...x, file: files[i] })), out, { template: job.input.layout, ratio: job.input.ratio, seconds: job.input.seconds ?? 15, name: job.input.name, city: job.input.city, address: job.input.address, phone: job.input.phone, logo, lang: job.input.lang, offer: job.input.offer, ...text, dishes });
+        // The user's own words win over the AI's slogan and words, and over the template's labels.
+        const { words: ownWords, ...labels } = job.input.texts ?? {};
+        if (job.input.tagline) text.tagline = job.input.tagline;
+        if (ownWords?.length) text.words = ownWords;
+        drawn = await collage(slides.map((x, i) => ({ ...x, file: files[i] })), out, { template: job.input.layout, ratio: job.input.ratio, seconds: job.input.seconds ?? 15, name: job.input.name, city: job.input.city, address: job.input.address, phone: job.input.phone, logo, lang: job.input.lang, offer: job.input.offer, ...text, dishes, labels, place, tileDir: path.join(dataDir, "osm-tiles") });
       } else {
         await slideshow(files, out, { ratio: job.input.ratio, seconds: job.input.seconds ?? 15, title });
       }
@@ -419,8 +434,11 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     const facts = Object.values(job.input ?? {}).filter((v) => typeof v === "string").join("\n");
     const caption = words.caption ? checkFacts(words.caption, facts).text : "";
     const realCount = slides.filter((x) => x.real).length;
+    const mapNote = job.input.layout !== "map" ? "" : drawn?.map
+      ? `\n\nBản đồ: ghim đặt tại ${place.lat.toFixed(5)}, ${place.lon.toFixed(5)} theo link Google Maps của quán (bản đồ OpenStreetMap).`
+      : "\n\nKhông đọc được vị trí từ link Google Maps (hoặc không tải được bản đồ) nên video không có cảnh bản đồ. Mở đúng quán trên Google Maps, bấm Chia sẻ, dán link mới rồi bấm Đổi mẫu.";
     return {
-      result: `Video trình chiếu ${files.length} ảnh (${realCount} ảnh thật, ${files.length - realCount} ảnh AI vẽ), ${ownAudio ? "âm thanh của bạn" : "nhạc nền không lời"}.\n\n${shots.map((x, i) => `${i + 1}. ${x.visual}`).join("\n")}`,
+      result: `Video trình chiếu ${files.length} ảnh (${realCount} ảnh thật, ${files.length - realCount} ảnh AI vẽ), ${ownAudio ? "âm thanh của bạn" : "nhạc nền không lời"}.${mapNote}\n\n${shots.map((x, i) => `${i + 1}. ${x.visual}`).join("\n")}`,
       fields: { video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title: job.title, shots, slideshow: true, caption, hashtags: words.hashtags } },
     };
   }
@@ -432,7 +450,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       return { result: `Đã vẽ xong ${slides.length} ảnh. Duyệt ảnh rồi bấm Dựng video.`, fields: { status: "review", slides, images, draft: content } };
     }
     const out = await renderSlides(job, slides, content, ctx.setPhase);
-    return { ...out, fields: { ...out.fields, images, slides } };
+    return { ...out, fields: { ...out.fields, images, slides, draft: content } }; // the draft lets "Đổi mẫu" re-lay it later
   }
 
   /** Review screen: draw one slide again (optionally from an edited prompt). */
@@ -682,11 +700,13 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     return Math.round(dur * 10) / 10;
   }
 
-  async function remove(job) {
+  /** keep: "images/<file>" keys another run still uses (a restyle shares its original's photos). */
+  async function remove(job, keep = new Set()) {
+    const drop = async (file) => file && imagePath(file) && !keep.has(`images/${file}`) && rm(imagePath(file), { force: true });
     if (job.type === "video") await rm(videoPath(job.id), { force: true });
-    for (const x of job.images?.items ?? []) if (imagePath(x.file)) await rm(imagePath(x.file), { force: true });
-    for (const f of [job.photos?.original, job.photos?.fixed, ...(job.photos?.items ?? []).map((x) => x.file)]) if (f && imagePath(f)) await rm(imagePath(f), { force: true });
-    for (const x of [...(job.video?.shots ?? []), ...(job.slides ?? [])]) if (x.image && imagePath(x.image)) await rm(imagePath(x.image), { force: true });
+    for (const x of job.images?.items ?? []) await drop(x.file);
+    for (const f of [job.photos?.original, job.photos?.fixed, ...(job.photos?.items ?? []).map((x) => x.file)]) await drop(f);
+    for (const x of [...(job.video?.shots ?? []), ...(job.slides ?? [])]) await drop(x.image);
   }
 
   /**

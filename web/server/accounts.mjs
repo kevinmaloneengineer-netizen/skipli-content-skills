@@ -113,8 +113,19 @@ export function createAccounts({ store, dataDir, signup = null }) {
   }
   /** What the session shows for a pending sign-up (the login page asks for its code). */
   const publicPending = (p) => p && { id: p.id, email: p.email, contact: p.email, name: p.name, role: "member", dailyLimit: null, credits: 0, verified: false, disabled: false, createdAt: new Date(p.createdAt).toISOString() };
-  const attempts = new Map(); // ip → failed logins
-  const signups = new Map(); // ip → sign-up timestamps
+  // Failed logins: 10 per account and address (people sharing one office network don't lock each other
+  // out), and a wider 100 per address against trying a few passwords on many accounts. 15 minutes each.
+  const attempts = new Map(); // "ip|email" and "ip" → failure times
+  const LOGIN_MS = 15 * 60_000;
+  const recentOf = (key) => (attempts.get(key) ?? []).filter((t) => Date.now() - t < LOGIN_MS);
+  function fail(...keys) {
+    if (attempts.size > 20_000) for (const [k, list] of attempts) if (!list.some((t) => Date.now() - t < LOGIN_MS)) attempts.delete(k); // old entries go
+    for (const k of keys) attempts.set(k, [...recentOf(k), Date.now()]);
+  }
+  // Sign-ups across the whole server (not per address: an office shares one), so a script cannot burn
+  // the mail quota (Gmail ~500 a day) or, without mail, farm trial credits.
+  let signupTimes = [];
+  const SIGNUPS_PER_HOUR = Number(process.env.SIGNUP_PER_HOUR) || 60;
   // The sign-up IP is kept as a keyed hash: enough to count accounts per address, not to read it back.
   // Email codes: 6 digits, kept only as a keyed hash, valid 10 minutes, 5 tries, resent at most once a
   // minute and 5 times an hour.
@@ -209,14 +220,14 @@ export function createAccounts({ store, dataDir, signup = null }) {
       req.user = userOf(req);
       // An old account not confirmed yet: only the confirm calls (and the public pages).
       if (unconfirmed(req.user)) {
-        const allowed = ["/api/session", "/api/logout", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+        const allowed = ["/api/session", "/api/logout", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
         if (allowed) return next();
         return res.status(403).set("Cache-Control", "no-store").json({ error: "Xác nhận email trước khi dùng công cụ", verify: true });
       }
       if (req.user) return next();
       // Open without a login: the session and login calls, the page itself, and the canned sample results
       // shown on the home page (no customer data in them).
-      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && req.path.startsWith("/api/samples/")) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -224,17 +235,18 @@ export function createAccounts({ store, dataDir, signup = null }) {
     signedIn: (req) => !!userOf(req),
 
     async login(req, res) {
+      const login = req.body?.login ?? req.body?.email;
       const ip = req.ip ?? "?";
-      const recent = (attempts.get(ip) ?? []).filter((t) => Date.now() - t < 15 * 60_000);
-      if (recent.length >= 10) return res.status(429).json({ error: "Sai mật khẩu nhiều lần, thử lại sau 15 phút." });
-      const user = store.userByEmail(req.body?.login ?? req.body?.email);
+      const key = `${ip}|${String(login ?? "").trim().toLowerCase()}`;
+      if (recentOf(key).length >= 10 || recentOf(ip).length >= 100) return res.status(429).json({ error: "Sai mật khẩu nhiều lần, thử lại sau 15 phút." });
+      const user = store.userByEmail(login);
       const ok = user && (await checkPassword(req.body?.password ?? "", user.passHash));
       if (!ok) {
-        attempts.set(ip, [...recent, Date.now()]);
+        fail(key, ip);
         return res.status(401).json({ error: "Sai email hoặc mật khẩu" });
       }
       if (user.disabled) return res.status(403).json({ error: user.disabledReason === "dispute" ? "Tài khoản tạm khoá vì có yêu cầu hoàn tiền qua ngân hàng cho một lần nạp. Liên hệ hỗ trợ để mở lại." : "Tài khoản đã bị khoá, liên hệ quản trị viên." });
-      attempts.delete(ip);
+      attempts.delete(key);
       await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
       setCookie(req, res, token(user), DAYS * 86_400);
       res.json({ ok: true, user: publicUser(user) });
@@ -252,19 +264,18 @@ export function createAccounts({ store, dataDir, signup = null }) {
     async signup(req, res) {
       if (!signup) throw new AccountError(403, "Chưa mở đăng ký, liên hệ quản trị viên để có tài khoản.");
       if (store.listUsers().length === 0) throw new AccountError(409, "Web chưa có tài khoản quản trị");
-      const ip = req.ip ?? "?";
-      const recent = (signups.get(ip) ?? []).filter((t) => Date.now() - t < 3600_000);
-      if (recent.length >= 5) throw new AccountError(429, "Bạn đã tạo nhiều tài khoản trong 1 giờ qua, thử lại sau nhé.");
-      // Trial credits are per person: one address only ever makes `perIp` accounts (kept in the store, so restarts don't reset it).
-      const key = ipKey(ip);
-      const perIp = signup.perIp ?? 2;
+      signupTimes = signupTimes.filter((t) => Date.now() - t < 3600_000);
+      if (signupTimes.length >= SIGNUPS_PER_HOUR) throw new AccountError(429, "Đang có quá nhiều lượt đăng ký, thử lại sau ít phút nhé.");
+      signupTimes.push(Date.now());
+      // Optional cap (admin page, 0 = off): one address only ever makes `perIp` accounts (kept in the store, so restarts don't reset it).
+      const key = ipKey(req.ip ?? "?");
+      const perIp = signup.perIp ?? 0;
       if (perIp && store.listUsers().filter((u) => u.signupIp === key).length >= perIp) {
         throw new AccountError(429, "Mạng này đã tạo đủ số tài khoản dùng thử. Đăng nhập tài khoản cũ hoặc liên hệ quản trị viên.");
       }
       // Without mail set up: the account is made at once, with the trial credits.
       if (!verifying()) {
         const user = await create({ email: req.body?.email, password: req.body?.password, name: req.body?.name ?? "", credits: signup.credits, signupIp: key });
-        signups.set(ip, [...recent, Date.now()]);
         await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
         setCookie(req, res, token(user), DAYS * 86_400);
         return res.status(201).json({ ok: true, user: publicUser(user), sendError: null });
@@ -277,7 +288,6 @@ export function createAccounts({ store, dataDir, signup = null }) {
       for (const [pid, p] of pending) if (p.email === email) pending.delete(pid); // signing up again replaces the old attempt
       const rec = { id: randomBytes(12).toString("hex"), email, name: String(req.body?.name ?? "").trim().slice(0, 80), passHash: await hashPassword(req.body.password), signupIp: key, createdAt: Date.now() };
       pending.set(rec.id, rec);
-      signups.set(ip, [...recent, Date.now()]);
       setCookie(req, res, `${rec.id}.${pendingMac(rec.id)}`, PENDING_MS / 1000, PENDING_COOKIE);
       if (cookieOf(req, COOKIE)) setCookie(req, res, "", 0); // a session of another account on this browser ends
       let sendError = null;

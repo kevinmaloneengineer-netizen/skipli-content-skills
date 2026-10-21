@@ -69,7 +69,7 @@ test("admin settings change the trial credits, the packs and the per-IP cap with
   try {
     const admin = await req("POST", "/api/setup", { email: "boss@example.com", password: "admin-pass-1" });
     const before = (await req("GET", "/api/admin/settings", null, admin.cookie)).body;
-    assert.deepEqual(before.settings, { signupPerIp: 5, trialCredits: 20, creditPacks: "100:900,300:2400,1000:6900" });
+    assert.deepEqual(before.settings, { signupPerIp: 5, trialCredits: 20, creditPacks: "100:900,300:2400,1000:6900", heavyPerUser: 2 });
     assert.equal((await req("PUT", "/api/admin/settings", { creditPacks: "nope" }, admin.cookie)).status, 400);
     assert.equal((await req("PUT", "/api/admin/settings", { trialCredits: -1 }, admin.cookie)).status, 400);
     assert.equal((await req("PUT", "/api/admin/settings", { trialCredits: 3, signupPerIp: 1, creditPacks: "50:500, 200:1500" }, admin.cookie)).status, 200);

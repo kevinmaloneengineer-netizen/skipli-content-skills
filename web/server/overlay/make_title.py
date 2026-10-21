@@ -13,7 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 FONTS = Path(__file__).parent / "fonts"
 
@@ -995,10 +995,374 @@ def scene_marquee(spec, w, h, u, color, accent, logo, photos, add):
         add(chip, "logo", int(5 * u), int(5 * u), "down", 0.2)
 
 
+def chip_logo(logo, u, max_w, max_h):
+    """The logo on a small white rounded tile (for corners of photo scenes)."""
+    lg = logo.copy()
+    lg.thumbnail((int(max_w), int(max_h)), Image.LANCZOS)
+    pad = int(2 * u)
+    chip = Image.new("RGBA", (lg.width + 2 * pad, lg.height + 2 * pad), (0, 0, 0, 0))
+    ImageDraw.Draw(chip).rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=int(2.4 * u), fill=(255, 255, 255, 255))
+    chip.alpha_composite(lg, (pad, pad))
+    return chip
+
+
+def roomy(u, w, h):
+    """Layout unit for scenes with a lot of small type: wide and square frames get bigger type than the default."""
+    return max(u, min(w, h) * 0.0075)
+
+
+def scene_news(spec, w, h, u, color, accent, logo, photos, add):
+    """A TV news frame: full photo, LIVE chip, a "breaking" lower third (tag, headline, sub) and a running ticker."""
+    u = roomy(u, w, h)
+    add(cover(photos[0], w, h).convert("RGBA"), "photo", 0, 0, "none")
+    add(gradient(w, int(h * 0.45), 0, 190), "shade", 0, h - int(h * 0.45), "none")
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    red, white, ink = (212, 34, 38, 255), (255, 255, 255, 255), (24, 22, 20, 255)
+    m = int(5 * u)
+    # LIVE chip, top left
+    live = str(spec.get("live", "")).upper()
+    if live:
+        f = font("Bold", 3.8 * u)
+        dot = int(2 * u)
+        chip = Image.new("RGBA", (int(text_w(probe, live, f) + dot + 6 * u), int(7 * u)), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(chip)
+        cd.rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=int(1.2 * u), fill=red)
+        cd.ellipse((int(2 * u), chip.height // 2 - dot // 2, int(2 * u) + dot, chip.height // 2 + dot // 2), fill=white)
+        cd.text((int(2 * u) + dot + int(1.6 * u), chip.height // 2), live, font=f, fill=white, anchor="lm")
+        add(chip, "live", m, m, "fade", 0.05)
+    if logo is not None:
+        chip = chip_logo(logo, u, 18 * u, 10 * u)
+        add(chip, "logo", w - m - chip.width, m, "down", 0.1)
+    # Lower third: red tag, white headline bar, brand-colour sub bar; all slide in from the left.
+    ticker_h = int(7.5 * u)
+    bw = (w - 2 * m) if h >= w else int(w * 0.62)
+    lines, fh = fit_lines(probe, str(spec.get("headline", "")).upper(), "Bold", 7.4 * u, 5 * u, bw - 6 * u)
+    head = Image.new("RGBA", (bw, int(len(lines) * fh.size * 1.12 + 3.6 * u)), white)
+    for i, line in enumerate(lines):
+        ImageDraw.Draw(head).text((int(3 * u), int(1.8 * u + i * fh.size * 1.12)), line, font=fh, fill=ink)
+    y = h - ticker_h - int(5 * u)
+    sub = str(spec.get("sub", "")).strip()
+    if sub:
+        fs = font("SemiBold", 4.2 * u)
+        bar = Image.new("RGBA", (bw, int(fs.size * 1.9)), accent)
+        label = sub
+        while text_w(probe, label, fs) > bw - 6 * u and len(label) > 3:
+            label = label[:-2].rstrip() + "…"
+        ImageDraw.Draw(bar).text((int(3 * u), bar.height // 2), label, font=fs, fill=white, anchor="lm")
+        y -= bar.height
+        add(bar, "sub", m, y, "left", 0.45)
+    y -= head.height
+    add(head, "headline", m, y, "left", 0.3)
+    tag = str(spec.get("tag", "")).upper()
+    if tag:
+        ft = font("Bold", 4.4 * u)
+        box = Image.new("RGBA", (int(text_w(probe, tag, ft) + 5 * u), int(ft.size * 1.8)), red)
+        ImageDraw.Draw(box).text((box.width // 2, box.height // 2), tag, font=ft, fill=white, anchor="mm")
+        add(box, "tag", m, y - box.height, "left", 0.15)
+    # Ticker: dark band, the words running right to left, a yellow block at the start.
+    add(solid(w, ticker_h, (16, 16, 20, 238)), "tickerbg", 0, h - ticker_h, "none")
+    text = "   •   ".join(str(x).upper() for x in spec.get("items", []) if x) or "•"
+    fk = font("SemiBold", 3.8 * u)
+    unit = text_w(probe, text + "   •   ", fk)
+    speed = 12 * u
+    reps = int((w * 1.2 + speed * float(spec.get("seconds", 5)) + unit) / max(1, unit)) + 1
+    strip = Image.new("RGBA", (int(unit * reps), ticker_h), (0, 0, 0, 0))
+    ImageDraw.Draw(strip).text((0, ticker_h // 2), (text + "   •   ") * reps, font=fk, fill=white, anchor="lm")
+    add(strip, "ticker", int(12 * u), h - ticker_h, "pan", 0, vx=-round(speed, 2), vy=0)
+    block = solid(int(9 * u), ticker_h, (255, 204, 0, 255))
+    ImageDraw.Draw(block).polygon([(int(3.4 * u), ticker_h * 0.3), (int(3.4 * u), ticker_h * 0.7), (int(6 * u), ticker_h * 0.5)], fill=ink)
+    add(block, "tickerhead", 0, h - ticker_h, "none")
+
+
+def chalkboard(w, h, u):
+    """A dark green chalkboard with faint erased smudges and a wooden frame."""
+    bg = Image.new("RGBA", (w, h), (36, 52, 44, 255))
+    smudge = Image.effect_noise((max(1, w // 10), max(1, h // 10)), 34).resize((w, h), Image.BICUBIC)
+    haze = Image.merge("RGBA", [Image.new("L", (w, h), 255)] * 3 + [smudge.point(lambda v: max(0, v - 104) // 3)])
+    bg.alpha_composite(haze)
+    d = ImageDraw.Draw(bg)
+    fw = int(3 * u)
+    d.rectangle((0, 0, w - 1, h - 1), outline=(126, 86, 52, 255), width=fw)
+    d.rectangle((fw, fw, w - 1 - fw, h - 1 - fw), outline=(84, 56, 34, 255), width=max(2, int(0.6 * u)))
+    return bg
+
+
+def chalky(img, seed=0):
+    """Rough chalk strokes: random specks knocked out of the drawing's alpha."""
+    noise = Image.effect_noise(img.size, 80).point(lambda v: 255 if v > 64 else 110)
+    img.putalpha(ImageChops.multiply(img.getchannel("A"), noise))
+    return img
+
+
+def scene_chalk(spec, w, h, u, color, accent, logo, photos, add):
+    """Today's specials written in chalk (dishes, dotted leaders, prices), or one dish photo taped to the board."""
+    u = roomy(u, w, h)
+    add(chalkboard(w, h, u), "bg", 0, 0, "none")
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    white, yellow = (244, 241, 230, 255), (246, 222, 140, 255)
+    pastel = tint(bright(accent), 0.35)
+    portrait = h >= w
+    if spec.get("mode") == "photo" and photos:
+        pw = int(w * 0.72) if portrait else int(w * 0.42)
+        ph = int(min(pw * 1.05, h * (0.56 if portrait else 0.72)))
+        border = int(1.6 * u)
+        card = Image.new("RGBA", (pw + 2 * border, ph + 2 * border), (250, 248, 240, 255))
+        card.paste(cover(photos[0], pw, ph), (border, border))
+        tape = Image.new("RGBA", (int(16 * u), int(4.6 * u)), (236, 224, 190, 200))
+        for x in (int(-4 * u), card.width - int(12 * u)):
+            card.alpha_composite(tape, (max(0, x), 0))
+        card = card.rotate(-3, resample=Image.BICUBIC, expand=True)
+        card, pad = with_shadow(card, blur=12, alpha=110, drop=8)
+        cx = (w - card.width) // 2 if portrait else int(6 * u)
+        cy = int(h * 0.15) if portrait else (h - card.height) // 2
+        add(card, "photo", cx, cy, "down", 0.05)
+        rows = [str(spec.get("dish", "")).upper(), str(spec.get("price", ""))]
+        tw = w - 14 * u if portrait else w - (cx + card.width) - 10 * u
+        x0 = 0 if portrait else cx + card.width
+        y = cy + card.height - pad + int(3 * u) if portrait else int(h * 0.38)
+        if rows[0]:
+            lines, f = fit_lines(probe, rows[0], "Bold", 8.5 * u, 5.5 * u, tw)
+            blk = chalky(text_block(lines, f, white, w - x0 if not portrait else w, gap=1.04))
+            add(blk, "dish", x0, y, "fade", 0.5)
+            y += blk.height + int(1 * u)
+        if rows[1]:
+            add(chalky(text_block([rows[1]], font("Bold", 7 * u), yellow, w - x0 if not portrait else w)), "price", x0, y, "fade", 0.8)
+        return
+    # The list: a title with a wavy underline, then one dish per row, written one after another.
+    title = str(spec.get("title", "")).upper()
+    y = int(h * (0.12 if portrait else 0.1))
+    if title:
+        lines, f = fit_lines(probe, title, "Bold", 10 * u, 6.5 * u, w - 16 * u)
+        blk = text_block(lines, f, white, w, gap=1.02)
+        line_w = int(min(w - 20 * u, max(text_w(probe, l, f) for l in lines)))
+        under = Image.new("RGBA", (w, int(3 * u)), (0, 0, 0, 0))
+        pts = [((w - line_w) / 2 + line_w * k / 40, u * 1.4 + u * 0.9 * (1 if k % 2 else -1) * (0.5 + (k % 3) / 4)) for k in range(41)]
+        ImageDraw.Draw(under).line(pts, fill=pastel, width=max(3, int(0.7 * u)), joint="curve")
+        out = Image.new("RGBA", (w, blk.height + under.height), (0, 0, 0, 0))
+        out.alpha_composite(blk)
+        out.alpha_composite(under, (0, blk.height))
+        add(chalky(out.rotate(-2, resample=Image.BICUBIC)), "title", 0, y, "fade", 0.1)
+        y += out.height + int(6 * u)
+    note = str(spec.get("note", "")).strip()
+    if note:
+        f = font("Bold", 8 * u)
+        lines = wrap(probe, note.upper(), f, w - 20 * u, 4)
+        add(chalky(text_block(lines, f, (246, 222, 140, 255), w, gap=1.15)), "note", 0, y + int(4 * u), "fade", 0.55)
+    rows = [r for r in spec.get("rows", []) if r.get("name")][:4]
+    rw = int(w - 18 * u) if portrait else int(w * 0.62)
+    rx = (w - rw) // 2
+    fn, fp = font("SemiBold", 6.2 * u), font("Bold", 6.2 * u)
+    step = int(fn.size * 2.3)
+    if not portrait:
+        step = int(min(step, (h * 0.86 - y) / max(1, len(rows))))
+    for k, r in enumerate(rows):
+        price = str(r.get("price", ""))
+        room = rw - (text_w(probe, price, fp) + int(6 * u) if price else 0)
+        label = str(r["name"])
+        while text_w(probe, label, fn) > room and len(label) > 3:
+            label = label[:-2].rstrip() + "…"
+        row = Image.new("RGBA", (rw, int(fn.size * 1.5)), (0, 0, 0, 0))
+        rd = ImageDraw.Draw(row)
+        rd.text((0, row.height // 2), label, font=fn, fill=white, anchor="lm")
+        if price:
+            rd.text((rw, row.height // 2), price, font=fp, fill=yellow, anchor="rm")
+            x = text_w(probe, label, fn) + int(2 * u)
+            end = rw - text_w(probe, price, fp) - int(2 * u)
+            while x < end:
+                rd.ellipse((x, row.height * 0.62, x + 0.7 * u, row.height * 0.62 + 0.7 * u), fill=(244, 241, 230, 170))
+                x += 2.2 * u
+        add(chalky(row), f"row{k}", rx, y, "fade", 0.55 + 0.32 * k)
+        y += step
+    name = str(spec.get("name", "")).upper()
+    if name:
+        lines, f = fit_lines(probe, name, "Bold", 5 * u, 3.6 * u, w - 20 * u)
+        add(chalky(text_block(lines, f, pastel, w)), "name", 0, h - int(8 * u) - int(len(lines) * f.size * 1.12), "fade", 0.55 + 0.32 * len(rows))
+    if logo is not None and portrait:
+        chip = chip_logo(logo, u, 14 * u, 9 * u)
+        add(chip, "logo", w - int(6 * u) - chip.width, h - int(6 * u) - chip.height, "fade", 0.3)
+
+
+def scene_map(spec, w, h, u, color, accent, logo, photos, add):
+    """The real OpenStreetMap around the restaurant (tiles fetched by the server), a pin dropping on its exact
+    spot, its address card and the OpenStreetMap credit."""
+    u = roomy(u, w, h)
+    m = spec["map"]
+    scale, (wx, wy), (px, py) = float(m["scale"]), m["world"], m["pin"]
+    base = Image.new("RGBA", (w, h), (242, 239, 233, 255))
+    side = round(256 * scale)
+    for t in m["tiles"]:
+        tile = Image.open(t["file"]).convert("RGBA").resize((side, side), Image.LANCZOS)
+        base.alpha_composite(tile, (round(px + (t["tx"] * 256 - wx) * scale), round(py + (t["ty"] * 256 - wy) * scale)))
+    add(base, "map", 0, 0, "none")
+    credit = "© OpenStreetMap contributors"
+    fcr = font("Medium", max(11, 2.4 * u))
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    tag = Image.new("RGBA", (int(text_w(probe, credit, fcr) + 2 * u), int(fcr.size * 1.6)), (255, 255, 255, 210))
+    ImageDraw.Draw(tag).text((int(u), tag.height // 2), credit, font=fcr, fill=(60, 56, 50, 255), anchor="lm")
+    add(tag, "credit", w - tag.width, 0, "none")
+    px, py = int(px), int(py)
+    portrait = h >= w
+    label = str(spec.get("label", "")).upper()
+    if label:
+        f = font("Bold", 4.4 * u)
+        chip = Image.new("RGBA", (int(text_w(probe, label, f) + 7 * u), int(f.size * 2.1)), (0, 0, 0, 0))
+        ImageDraw.Draw(chip).rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=chip.height // 2, fill=accent)
+        ImageDraw.Draw(chip).text((chip.width // 2, chip.height // 2), label, font=f, fill=(255, 255, 255, 255), anchor="mm")
+        chip, _ = with_shadow(chip, blur=8, alpha=70, drop=4)
+        add(chip, "label", (w - chip.width) // 2, int(5 * u), "down", 0.05)
+    # Pulse ring and shadow on the spot, then the pin dropping onto it.
+    rr = int(9 * u)
+    ring = Image.new("RGBA", (2 * rr, rr), (0, 0, 0, 0))
+    ImageDraw.Draw(ring).ellipse((0, 0, 2 * rr - 1, rr - 1), fill=accent[:3] + (60,), outline=accent[:3] + (150,), width=max(2, int(0.5 * u)))
+    add(ring, "ring", px - rr, py - rr // 2, "fade", 0.75)
+    R = int(8.5 * u)
+    k = 4  # drawn 4x then scaled down for smooth edges
+    big = Image.new("RGBA", (2 * R * k, int(3.1 * R) * k), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(big)
+    bd.ellipse((0, 0, 2 * R * k - 1, 2 * R * k - 1), fill=accent)
+    bd.polygon([(R * k * 0.25, R * k * 1.55), (R * k * 1.75, R * k * 1.55), (R * k, big.height - 1)], fill=accent)
+    ir = int(R * k * 0.62)
+    bd.ellipse((R * k - ir, R * k - ir, R * k + ir, R * k + ir), fill=(255, 255, 255, 255))
+    pin = big.resize((2 * R, int(3.1 * R)), Image.LANCZOS)
+    if logo is not None:
+        lg = logo.copy()
+        lg.thumbnail((int(R * 0.95), int(R * 0.95)), Image.LANCZOS)
+        pin.alpha_composite(lg, (R - lg.width // 2, R - lg.height // 2))
+    else:
+        ImageDraw.Draw(pin).ellipse((R - int(R * 0.25), R - int(R * 0.25), R + int(R * 0.25), R + int(R * 0.25)), fill=accent)
+    pin, pad = with_shadow(pin, blur=8, alpha=90, drop=6)
+    add(pin, "pin", px - pin.width // 2, py - pin.height + pad, "drop", 0.25)
+    # Address card at the bottom.
+    cw = int(w - 12 * u) if portrait else int(min(w - 12 * u, 96 * u))
+    pad_c = int(4 * u)
+    fname, fa = font("Bold", 7 * u), font("Medium", 4.4 * u)
+    name = str(spec.get("name", "")).upper()
+    nlines, fname = fit_lines(probe, name, "Bold", 7 * u, 4.8 * u, cw - 2 * pad_c) if name else ([], fname)
+    addr = [l.strip() for l in str(spec.get("address", "")).splitlines() if l.strip()]
+    city = str(spec.get("city", "")).strip()
+    if city and city.split(",")[0].strip().lower() not in " ".join(addr).lower():  # the address usually names the city already
+        addr.append(city)
+    if spec.get("phone"):
+        addr.append(str(spec["phone"]))
+    # A long one-line address ("52A Trần Bình Trọng, Phường Bình Lợi Trung, TP HCM") breaks at its commas.
+    split = []
+    for a in addr:
+        split += [x.strip() for x in a.split(",") if x.strip()] if "," in a and text_w(probe, a, fa) > cw - 2 * pad_c - 6 * u else [a]
+    addr = split
+    rows = []
+    for a in addr[:3]:
+        while text_w(probe, a, fa) > cw - 2 * pad_c - 6 * u and len(a) > 3:
+            a = a[:-2].rstrip() + "…"
+        rows.append(a)
+    ch = pad_c * 2 + int(len(nlines) * fname.size * 1.1) + (int(1.5 * u) if nlines and rows else 0) + int(len(rows) * fa.size * 1.5)
+    card = Image.new("RGBA", (cw, max(ch, int(12 * u))), (0, 0, 0, 0))
+    cd = ImageDraw.Draw(card)
+    cd.rounded_rectangle((0, 0, cw - 1, card.height - 1), radius=int(3.4 * u), fill=(255, 255, 255, 255))
+    cd.rounded_rectangle((0, 0, int(1.4 * u), card.height - 1), radius=int(0.7 * u), fill=accent)
+    y = pad_c
+    for line in nlines:
+        cd.text((pad_c + int(1 * u), y), line, font=fname, fill=accent)
+        y += int(fname.size * 1.1)
+    y += int(1.5 * u) if nlines and rows else 0
+    for a in rows:
+        cd.text((pad_c + int(1 * u), y), a, font=fa, fill=(52, 48, 42, 255))
+        y += int(fa.size * 1.5)
+    card, pad = with_shadow(card, blur=12, alpha=80, drop=8)
+    add(card, "card", (w - card.width) // 2, h - card.height + pad - int(6 * u), "up", 0.7)
+
+
+def coupon_card(spec, cw, u, accent):
+    """A tear-off coupon: notches at the perforation, a dashed inner border, the deal, a stub with a barcode."""
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    ch = int(cw * 0.6)
+    stub = int(cw * 0.24)
+    card = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    d = ImageDraw.Draw(card)
+    r = int(2.6 * u)
+    d.rounded_rectangle((0, 0, cw - 1, ch - 1), radius=r, fill=tint(accent, 0.82))  # the stub's colour
+    d.rounded_rectangle((0, 0, cw - stub + r, ch - 1), radius=r, fill=(255, 252, 244, 255))
+    d.rectangle((cw - stub, 0, cw - stub + r, ch - 1), fill=tint(accent, 0.82))
+    nr = int(2.6 * u)
+    for y in (0, ch):  # notches where it tears
+        d.ellipse((cw - stub - nr, y - nr, cw - stub + nr, y + nr), fill=(0, 0, 0, 0))
+    y = nr + int(1.2 * u)
+    while y < ch - nr - int(1.2 * u):
+        d.line((cw - stub, y, cw - stub, min(ch - nr, y + 1.4 * u)), fill=(150, 144, 133, 255), width=max(2, int(0.35 * u)))
+        y += 2.6 * u
+    inset = int(2.4 * u)
+    left = cw - stub - inset
+    dashed(d, inset, left - inset, inset, accent, u)
+    dashed(d, inset, left - inset, ch - inset, accent, u)
+    pad = int(5 * u)
+    room = left - pad - inset
+    label = str(spec.get("label", "")).upper()
+    fl = font("Bold", 3.8 * u)
+    d.text((pad, pad), label, font=fl, fill=accent)
+    text = str(spec.get("offer", "")).upper()
+    fo = font("Bold", 8.4 * u)
+    lines = wrap(probe, text, fo, room, 4)
+    while (len(lines) > 3 or len(lines) * fo.size * 1.08 > ch - 2 * pad - fl.size * 3.2) and fo.size > 4 * u:
+        fo = font("Bold", fo.size - 2)
+        lines = wrap(probe, text, fo, room, 4)
+    oy = pad + int(fl.size * 1.9)
+    for i, line in enumerate(lines):
+        d.text((pad, oy + int(i * fo.size * 1.08)), line, font=fo, fill=(28, 26, 22, 255))
+    if spec.get("place"):
+        fp = font("SemiBold", 3.8 * u)
+        place = str(spec["place"])
+        while text_w(probe, place, fp) > room and len(place) > 3:
+            place = place[:-2].rstrip() + "…"
+        d.text((pad, ch - pad - fp.size), place, font=fp, fill=(110, 104, 93, 255))
+    bc = barcode(int(ch * 0.62), int(stub * 0.5), text or "x").rotate(90, expand=True)
+    card.alpha_composite(bc, (cw - stub + (stub - bc.width) // 2, (ch - bc.height) // 2))
+    return card
+
+
+def scene_coupon(spec, w, h, u, color, accent, logo, photos, add):
+    """The deal as a tear-off coupon on a striped backdrop, or (mode "photo") a smaller coupon on a dish photo."""
+    u = roomy(u, w, h)
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    portrait = h >= w
+    if spec.get("mode") == "photo" and photos:
+        add(cover(photos[0], w, h).convert("RGBA"), "photo", 0, 0, "none")
+        add(gradient(w, int(h * 0.5), 0, 170), "shade", 0, h - int(h * 0.5), "none")
+        cw = int(w * 0.8) if portrait else int(w * 0.44)
+        card = coupon_card(spec, cw, cw / 88, accent).rotate(4, resample=Image.BICUBIC, expand=True)  # type scales with the coupon
+        card, pad = with_shadow(card, blur=14, alpha=110, drop=10)
+        add(card, "coupon", (w - card.width) // 2 if portrait else w - card.width - int(2 * u), h - card.height - int(4 * u), "rise", 0.25)
+        if logo is not None:
+            chip = chip_logo(logo, u, 18 * u, 10 * u)
+            add(chip, "logo", int(5 * u), int(5 * u), "down", 0.1)
+        return
+    bg = solid(w, h, tint(accent, 0.86))
+    stripes = Image.new("RGBA", (w * 2, h * 2), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(stripes)
+    step = int(9 * u)
+    for x in range(0, w * 2, step * 2):
+        sd.rectangle((x, 0, x + step, h * 2), fill=(255, 255, 255, 60))
+    stripes = stripes.rotate(30, resample=Image.BICUBIC)
+    bg.alpha_composite(stripes.crop((w // 2, h // 2, w // 2 + w, h // 2 + h)))
+    add(bg, "bg", 0, 0, "none")
+    y = int(h * (0.2 if portrait else 0.08))
+    kicker = str(spec.get("kicker", "")).upper()
+    if kicker:
+        lines, f = fit_lines(probe, kicker, "Bold", 5.6 * u, 4 * u, w - 14 * u)
+        blk = text_block(lines, f, accent, w)
+        add(blk, "kicker", 0, y, "fade", 0.05)
+        y += blk.height + int(4 * u)
+    cw = int(w * 0.88) if portrait else int(min(w * 0.6, (h - y - 16 * u) / 0.6))
+    card = coupon_card(spec, cw, cw / 88, accent).rotate(-3, resample=Image.BICUBIC, expand=True)
+    card, pad = with_shadow(card, blur=16, alpha=100, drop=12)
+    add(card, "coupon", (w - card.width) // 2, y - pad, "rise", 0.2)
+    if spec.get("sub"):
+        lines, f = fit_lines(probe, str(spec["sub"]).upper(), "Bold", 4.6 * u, 3.6 * u, w - 14 * u)
+        add(text_block(lines, f, (60, 56, 50, 255), w), "sub", 0, y - pad + card.height + int(2 * u), "fade", 0.8)
+
+
 MARKETING = {
     "title": scene_title, "countdown": scene_countdown, "menu": scene_menu, "offer": scene_offer, "ribbon": scene_ribbon, "polaroids": scene_polaroids, "word": scene_word,
     "film": scene_film, "cover": scene_cover, "grid9": scene_grid9, "story": scene_story, "receipt": scene_receipt, "neon": scene_neon, "postcard": scene_postcard,
-    "circle": scene_circle, "marquee": scene_marquee,
+    "circle": scene_circle, "marquee": scene_marquee, "news": scene_news, "chalk": scene_chalk, "map": scene_map, "coupon": scene_coupon,
 }
 
 
