@@ -35,6 +35,8 @@ import { dashboard } from "./dashboard.mjs";
 import { moneyStats } from "./stats.mjs";
 import { cleanUploads, createStorage, filesOf } from "./storage.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
+import { readMenu } from "./vision.mjs";
+import { promoReport } from "./promo.mjs";
 
 const CLIENT_DIST = path.join(WEB_ROOT, "client", "dist");
 const LIBRARY_KINDS = new Set(["template", "saved"]);
@@ -268,6 +270,8 @@ export async function createApp(config, adapter) {
     // The fanpage report template says "reel"; most Instagram posts are photos and albums.
     if (job.type === "instagram") content = content.replace(/(?<![/#@]\s?)\b(R|r)eels?\b/g, (w, r) => (r === "R" ? "Bài" : "bài"));
     if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
+    // The money of each promotion is worked out here from the owner's prices, never taken from the model.
+    if (job.type === "promo-plan") return { result: promoReport(content, job.input) };
     if (job.type === "reel-cut") return clipper.finishReels(job, content, ctx);
     if (job.type === "live-recap") return clipper.finishRecap(job, content, ctx);
     if (job.type === "dub") return clipper.finishDub(job, content, ctx);
@@ -724,9 +728,12 @@ export async function createApp(config, adapter) {
     plan: () => ({ start: nextMondayYmd(), platform: "facebook", days: 7, perDay: 1, topic: "Quán cà phê" }),
     campaign: () => ({ start: nextMondayYmd(), platform: "facebook", days: 7, perDay: 1, topic: "Quán cà phê" }),
     clone: () => ({ platform: "facebook", topic: "Quán cà phê nhỏ", pillars: ["entertain", "educate", "engage", "sell"] }),
+    "promo-plan": () => ({ business: "Phở Cali", goal: "slow", dishes: "Phở bò - 65.000 - 28.000\nTrà đá - 5.000 - 1.000" }),
   };
   api.get("/samples/:type", (req, res) => {
-    const result = sampleReply(req.params.type);
+    const raw = sampleReply(req.params.type);
+    // The promotion sample is a model answer like any other: its money is worked out the same way.
+    const result = raw && req.params.type === "promo-plan" ? promoReport(raw, SAMPLE_INPUT["promo-plan"]()) : raw;
     if (!result) throw new HttpError(404, "Công cụ này chưa có kết quả mẫu");
     const now = new Date().toISOString();
     res.json({ job: { id: `sample-${req.params.type}`, type: req.params.type, sample: true, status: "done", title: "Kết quả mẫu", input: SAMPLE_INPUT[req.params.type]?.() ?? {}, result, createdAt: now, startedAt: now, finishedAt: now } });
@@ -979,6 +986,18 @@ export async function createApp(config, adapter) {
   api.get("/menus", (req, res) => {
     res.json({ menus: store.listLibrary().filter((x) => x.kind === "menu" && own(req, x)).map((x) => ({ id: x.id, title: x.title, menu: x.menu, updatedAt: x.updatedAt })) });
   });
+  // "Chụp menu giấy": a photo of the paper menu read into the menu text (the owner checks it before saving).
+  // 1 credit, taken only when dishes were read.
+  api.post("/menus/scan", express.json({ limit: "9mb" }), limits.jobs, async (req, res) => {
+    const m = String(req.body?.dataUrl ?? "").match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw new HttpError(400, "Chọn ảnh menu (JPG, PNG hoặc WebP)");
+    await billingCall(async () => billing.check(req.user, "menu-scan"));
+    const text = await readMenu({ data: Buffer.from(m[2], "base64"), mime: m[1] }).catch(() => null);
+    if (!text) throw new HttpError(422, "Chưa đọc được món nào từ ảnh này. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại (không bị trừ credit).");
+    const credits = await billingCall(() => billing.charge(req.user, "menu-scan"));
+    res.json({ text, credits });
+  });
+
   api.post("/menus", async (req, res) => {
     if (store.listLibrary().filter((x) => x.kind === "menu" && own(req, x)).length >= 10) throw new HttpError(400, "Mỗi tài khoản lưu tối đa 10 menu, xoá bớt menu cũ nhé");
     const menu = menuFields(req.body ?? {});

@@ -45,6 +45,27 @@ export default function MenuBoardPage() {
   const [id, setId] = useState(null); // the menu being edited (null = new)
   const [busy, setBusy] = useState(false);
   const [qr, setQr] = useState("");
+  // "Chụp menu giấy": the photo is read on the server (1 credit); the old text stays one click away.
+  const scanRef = useRef(null);
+  const [scanning, setScanning] = useState(false);
+  const [beforeScan, setBeforeScan] = useState(null);
+  async function scanMenu(file) {
+    if (!file) return;
+    setScanning(true);
+    try {
+      const img = await loadImage(file);
+      const dataUrl = crop(img, 0, 0, img.naturalWidth, img.naturalHeight, 2000, "image/jpeg"); // big enough for small print
+      const { text: read } = await api("/menus/scan", { method: "POST", body: { dataUrl } });
+      setBeforeScan(text);
+      setText(read);
+      toast(`Đã đọc ${parseMenu(read).reduce((a, s) => a + s.items.length, 0)} món từ ảnh. Kiểm tra lại tên và giá trước khi lưu.`);
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+    } finally {
+      setScanning(false);
+      if (scanRef.current) scanRef.current.value = "";
+    }
+  }
   const set = (k) => (e) => setInfo((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
   const sections = parseMenu(text, getLang() === "en" ? "Must try" : "Nên thử");
   const menu = { ...info, sections };
@@ -154,6 +175,12 @@ export default function MenuBoardPage() {
           <div className="row">
             <Field label="Tên quán"><input className="input-lg" value={info.name} onChange={set("name")} placeholder="Phở Cali" maxLength={60} autoComplete="off" /></Field>
             <Field label="Dòng giới thiệu (tuỳ chọn)"><input value={info.tagline} onChange={set("tagline")} placeholder="Phở nấu chậm, tươi mỗi ngày" maxLength={120} autoComplete="off" /></Field>
+          </div>
+          <div className="mb-scan">
+            <button type="button" className="btn small" onClick={() => scanRef.current?.click()} disabled={scanning}>{scanning ? "Đang đọc menu…" : "Chụp menu giấy"}</button>
+            <small>AI đọc tên món và giá từ ảnh menu hoặc bảng giá, điền sẵn vào ô bên dưới. 1 credit, không đọc được thì không trừ.</small>
+            {beforeScan != null && !scanning && <button type="button" className="btn small ghost" onClick={() => { setText(beforeScan); setBeforeScan(null); }}>Hoàn tác</button>}
+            <input ref={scanRef} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" hidden onChange={(e) => scanMenu(e.target.files?.[0])} />
           </div>
           <Field label={`Món (${count})`} hint='Dòng bắt đầu bằng # là tên nhóm. Mỗi món một dòng: Tên món - giá - mô tả. Thêm " *" ở cuối để gắn nhãn Nên thử.'>
             <textarea className="mb-text" rows={12} value={text} onChange={(e) => setText(e.target.value)} placeholder={SAMPLE} spellCheck={false} />

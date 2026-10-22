@@ -31,6 +31,9 @@ export const CREDIT_COST = {
   combo: 0, // its steps take their own credits
   "photo-fix": 1, // server-side photo grading, no model
   "gbp-post": 1,
+  "menu-scan": 1, // a menu photo read by Gemini, taken only when dishes come back
+  "zalo-message": 1,
+  "promo-plan": 1,
 };
 export const costOf = (type) => CREDIT_COST[type] ?? 1;
 

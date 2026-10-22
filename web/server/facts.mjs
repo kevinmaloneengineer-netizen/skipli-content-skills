@@ -14,7 +14,7 @@ export function englishBlanks(md) {
 }
 
 /** Job types whose result is copy the user will post (scan reports quote real data, so they are skipped). */
-export const CHECKED_TYPES = new Set(["write", "clone", "menu", "livestream", "plan", "campaign", "review", "inbox", "post-score", "gbp-post"]);
+export const CHECKED_TYPES = new Set(["write", "clone", "menu", "livestream", "plan", "campaign", "review", "inbox", "post-score", "gbp-post", "zalo-message"]);
 
 const MONEY = /(?<![\d.,])(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?)\s*(k|K|nghìn|ngàn|đ|đồng|vnđ|vnd|VNĐ|VND|triệu|tr)(?![\p{L}\d])/gu;
 // US prices: "$12.99", "$1,200", "15 dollars", "20 USD".

@@ -522,6 +522,43 @@ function GbpPost() {
   );
 }
 
+/** Tin Zalo: a phone with chat bubbles and a button. */
+function ZaloArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(112 10)">
+        <rect width="96" height="132" rx="16" className="art-card" />
+        <rect x="12" y="18" width="58" height="22" rx="11" className="art-mid" />
+        <rect x="26" y="48" width="58" height="30" rx="12" className="art-hi" />
+        <rect x="12" y="86" width="46" height="18" rx="9" className="art-mid" />
+        <rect x="24" y="112" width="48" height="12" rx="6" className="art-hi" />
+      </g>
+      <circle cx="74" cy="52" r="16" className="art-hi" />
+      <circle cx="248" cy="96" r="12" className="art-mid" />
+    </svg>
+  );
+}
+
+/** Gợi ý khuyến mãi: a coupon with a percent sign and profit bars. */
+function PromoArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(36 34)">
+        <rect width="136" height="82" rx="12" className="art-card" />
+        <rect x="100" y="0" width="36" height="82" rx="12" className="art-hi" />
+        <circle cx="34" cy="30" r="9" className="art-hi" />
+        <circle cx="66" cy="56" r="9" className="art-hi" />
+        <path d="M70 22 L30 64" fill="none" strokeWidth="7" strokeLinecap="round" className="art-stroke" />
+      </g>
+      <g transform="translate(196 30)">
+        <rect x="0" y="50" width="20" height="40" rx="5" className="art-mid" />
+        <rect x="30" y="30" width="20" height="60" rx="5" className="art-mid" />
+        <rect x="60" y="8" width="20" height="82" rx="5" className="art-hi" />
+      </g>
+    </svg>
+  );
+}
+
 /** Gói chạy liền: three tool cards joined by arrows. */
 function CombosArt() {
   return (
@@ -674,7 +711,7 @@ function LiveRecap() {
   );
 }
 
-const ART = { combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+const ART = { "zalo-message": ZaloArt, "promo-plan": PromoArt, combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

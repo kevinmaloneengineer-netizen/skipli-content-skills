@@ -422,7 +422,33 @@ Bàn ấm, phở nóng, nhạc nhẹ: Phở Cali là chỗ quen cho bữa tối 
 - **Quán mở cửa giờ nào?** [HOURS].
 - **Có giao hàng không?** Có, đặt qua nút Order online.`;
 
-const REPLIES = { "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const ZALO = `## Tin 1: Nhớ khách quen
+**Tiêu đề:** Lâu rồi chưa gặp bạn ở Phở Cali
+Chào {ten_khach}, dạo này bận lắm phải không? Nồi nước dùng ở quán vẫn hầm từ sáng sớm như mọi ngày. Ghé ăn một tô nóng cho ấm bụng nhé.
+**Nút:** Xem menu
+
+## Tin 2: Ưu đãi tuần này
+**Tiêu đề:** Tặng trà đá cả tuần này
+Chào {ten_khach}, tuần này quán tặng trà đá cho mỗi tô phở. Áp dụng đến [NGÀY], ăn tại quán.
+**Nút:** Nhận ưu đãi
+
+## Tin 3: Lý do ghé hôm nay
+**Tiêu đề:** Trời trở lạnh, ăn phở thôi
+Chào {ten_khach}, trời trở lạnh rồi, một tô phở bò nóng là hợp nhất. Quán mở cửa [GIỜ MỞ CỬA], chờ bạn ghé nhé.
+**Nút:** Chỉ đường
+
+## Gửi thế nào
+- Gửi khoảng 10h sáng hoặc 4h chiều, trước bữa ăn.
+- Mỗi tuần tối đa 1 đến 2 tin, đừng gửi dồn.
+- Trả lời từng khách nhắn lại trong ngày.`;
+
+const PROMO = "```json\n" + JSON.stringify({ promos: [
+  { title: "Combo trưa văn phòng", kind: "combo", items: [{ dish: "Phở bò", qty: 1 }, { dish: "Trà đá", qty: 1 }], gift: [], price: 65000, when: "11h đến 14h, thứ Hai đến thứ Sáu", why: "Khách văn phòng cần bữa trưa nhanh, giá chẵn dễ nhớ.", post: "Combo trưa: phở bò kèm trà đá chỉ 65.000đ." },
+  { title: "Đi hai người", kind: "bundle", items: [{ dish: "Phở bò", qty: 2 }], gift: [], price: 120000, when: "Sau 20h mỗi tối", why: "Giờ vắng buổi tối, rủ thêm bạn đi cùng.", post: "Sau 8h tối: 2 tô phở bò chỉ 120.000đ." },
+  { title: "Tặng trà đá", kind: "gift", items: [{ dish: "Phở bò", qty: 1 }], gift: [{ dish: "Trà đá", qty: 1 }], price: 65000, when: "14h đến 17h", why: "Giờ chiều ít khách, quà nhỏ dễ kéo khách ghé.", post: "Chiều nay: gọi phở bò tặng trà đá." },
+] }) + "\n```";
+
+const REPLIES = { "zalo-message": ZALO, "promo-plan": PROMO, "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 /** Canned report for the "Xem kết quả mẫu" page of a skill (null for skills whose result is media). */
 export const sampleReply = (type) => (type === "image" || type === "video" ? null : REPLIES[type] ?? null);

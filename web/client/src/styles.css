@@ -3405,3 +3405,7 @@ select:disabled { cursor: not-allowed; opacity: .6; }
 /* ---- Mẫu video nổi bật ---- */
 .tpl-thumb .tpl-hot, .restyle-card em.tpl-hot { position: absolute; left: 7px; bottom: 7px; top: auto; padding: 3px 8px; border-radius: 99px; background: linear-gradient(135deg, #ff7a3d, #e8396b); color: #fff; font: 700 10.5px var(--text); font-style: normal; letter-spacing: .02em; box-shadow: 0 4px 10px -4px rgb(0 0 0 / .5); }
 .restyle-card em.tpl-hot { left: auto; right: 6px; top: 6px; bottom: auto; font-size: 10px; padding: 2px 7px; }
+
+/* ---- Chụp menu giấy ---- */
+.mb-scan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px; border-radius: 14px; background: var(--ok-soft); }
+.mb-scan small { flex: 1 1 260px; color: var(--muted); }

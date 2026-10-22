@@ -210,6 +210,24 @@ export const GUIDE = {
     ],
     output: ["3 bài đăng theo 3 góc khác nhau", "Nút bấm và ảnh nên dùng cho từng bài", "5 câu hỏi đáp cho mục Hỏi đáp"],
   },
+  "zalo-message": {
+    perks: ["Cho Zalo OA", "Có nút bấm", "Chèn tên khách"],
+    steps: [
+      ["Chọn mục đích", "Mời khách quay lại, báo ưu đãi, món mới, sinh nhật hoặc sự kiện."],
+      ["Ghi thông tin thật", "Ưu đãi, món, ngày áp dụng. AI không tự thêm ưu đãi hay giá."],
+      ["Gửi từ Zalo OA", "Dán tiêu đề, nội dung và nút vào tin gửi khách đã quan tâm OA của quán."],
+    ],
+    output: ["3 tin nhắn theo 3 góc khác nhau", "Tiêu đề, nội dung ngắn và nút cho từng tin", "Gợi ý giờ gửi và số tin mỗi tuần"],
+  },
+  "promo-plan": {
+    perks: ["Tính sẵn tiền lãi", "3 kiểu khuyến mãi", "Dùng giá của bạn"],
+    steps: [
+      ["Nhập món, giá bán, giá vốn", "Mỗi dòng một món. Thiếu giá vốn thì vẫn có gợi ý nhưng chưa tính được lãi."],
+      ["Chọn mục tiêu", "Giờ vắng, tăng giá trị đơn, đẩy món mới hoặc kéo khách quay lại."],
+      ["So sánh và chọn", "Mỗi khuyến mãi có giá thường, giá khuyến mãi, giá vốn và lãi mỗi đơn."],
+    ],
+    output: ["3 khuyến mãi khác kiểu nhau", "Bảng tiền do hệ thống tự tính", "Giờ áp dụng và câu quảng bá ngắn"],
+  },
   combos: {
     perks: ["Bấm một lần", "Nhiều công cụ nối nhau", "Credit theo từng bước"],
     steps: [

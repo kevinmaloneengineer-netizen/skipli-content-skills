@@ -57,6 +57,43 @@ export const TEXT_SKILLS = {
     ],
     notes: ["3 bài theo 3 góc khác nhau, mỗi bài 60 đến 120 chữ, đúng giới hạn của Google.", "Kèm nút bấm, ảnh nên dùng và 5 câu hỏi đáp cho mục Hỏi đáp trên Google.", "Đăng: vào Google Business Profile của quán, Thêm cập nhật, dán bài và gắn ảnh."],
   },
+  "zalo-message": {
+    type: "zalo-message",
+    label: "Viết tin Zalo",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Phở Cali, Quận 1", required: true },
+      {
+        name: "goal",
+        kind: "select",
+        label: "Gửi để làm gì",
+        options: [["back", "Mời khách quen lâu chưa ghé quay lại"], ["offer", "Báo ưu đãi đang có"], ["new", "Giới thiệu món mới"], ["birthday", "Chúc mừng sinh nhật khách"], ["event", "Ngày lễ hoặc sự kiện của quán"]],
+      },
+      { name: "details", kind: "area", label: "Ưu đãi, món hoặc ngày (thông tin thật)", hint: "Bắt buộc khi báo ưu đãi, món mới hoặc sự kiện. AI chỉ dùng những gì bạn ghi, thiếu gì sẽ để chỗ trống như [NGÀY].", placeholder: "Tặng trà đá cho mỗi tô phở, từ 1/11 đến 7/11, ăn tại quán" },
+      { name: "button", kind: "select", label: "Nút dưới tin", options: [["menu", "Xem menu"], ["book", "Đặt bàn"], ["call", "Gọi ngay"], ["offer", "Nhận ưu đãi"], ["map", "Chỉ đường"]] },
+      { name: "contact", label: "Hotline hoặc link (tuỳ chọn)", placeholder: "0909 123 456" },
+    ],
+    notes: ["3 tin theo 3 góc khác nhau, mỗi tin có tiêu đề, nội dung ngắn và nút bấm.", "Tin mở đầu bằng {ten_khach}: khi gửi từ Zalo OA, chèn tên khách vào chỗ này.", "Kèm gợi ý giờ gửi và số tin mỗi tuần để khách không thấy phiền."],
+  },
+  "promo-plan": {
+    type: "promo-plan",
+    label: "Gợi ý khuyến mãi",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Phở Cali, Quận 1", required: true },
+      { name: "goal", kind: "select", label: "Mục tiêu", options: [["slow", "Kéo khách vào giờ vắng"], ["bill", "Tăng giá trị mỗi đơn"], ["launch", "Đẩy món mới hoặc món ít người gọi"], ["return", "Kéo khách quen quay lại"]] },
+      {
+        name: "dishes",
+        kind: "area",
+        label: "Món, giá bán và giá vốn",
+        hint: "Mỗi dòng một món: Tên món - giá bán - giá vốn. Có giá vốn thì hệ thống tính được tiền lãi của từng khuyến mãi.",
+        placeholder: "Phở bò - 65.000 - 28.000\nPhở tái - 60.000 - 25.000\nTrà đá - 5.000 - 1.000\nChả giò - 30.000 - 12.000",
+        required: true,
+      },
+      { name: "limits", kind: "area", label: "Giới hạn của bạn (tuỳ chọn)", placeholder: "Không giảm quá 15%, chỉ chạy các ngày trong tuần" },
+    ],
+    notes: ["3 khuyến mãi khác kiểu nhau: combo, tặng món, giảm giá giờ vắng hoặc mua nhiều.", "Giá thường, giá vốn và tiền lãi do hệ thống tự tính từ giá bạn nhập, không để AI tự cộng.", "Mỗi khuyến mãi có câu quảng bá ngắn, dán vào mẫu video Phiếu ưu đãi hoặc Khuyến mãi."],
+  },
   "weather-post": {
     type: "weather-post",
     label: "Viết bài theo thời tiết",

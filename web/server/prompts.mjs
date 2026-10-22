@@ -1,6 +1,7 @@
 // Validate job input from the UI and turn it into the agent prompt.
 // Prompts are written so the right skill triggers; the skill owns the method.
 
+import { parseDishTable } from "./promo.mjs";
 import { cleanTexts } from "../shared/templateTexts.js";
 import { isMapsLink } from "./sources/osm.mjs";
 import { instagramUser, yelpUrl } from "./sources/socialApify.mjs";
@@ -129,7 +130,13 @@ export function buildJob(type, raw, refs = {}) {
 }
 
 /** Job types whose result is copy for customers (scan reports stay in Vietnamese for the owner). */
-const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post"]);
+const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan"]);
+
+/** Zalo OA messages: what the message is for, and the button under it. */
+export const ZALO_GOALS = { back: "Mời khách quen lâu chưa ghé quay lại", offer: "Báo ưu đãi đang có", new: "Giới thiệu món mới", birthday: "Chúc mừng sinh nhật khách", event: "Ngày lễ hoặc sự kiện của quán" };
+export const ZALO_BUTTONS = { menu: "Xem menu", book: "Đặt bàn", call: "Gọi ngay", offer: "Nhận ưu đãi", map: "Chỉ đường" };
+/** "Gợi ý khuyến mãi": what the promotions should achieve. */
+export const PROMO_GOALS = { slow: "Kéo khách vào giờ vắng", bill: "Tăng giá trị mỗi đơn", launch: "Đẩy món mới hoặc món ít người gọi", return: "Kéo khách quen quay lại" };
 
 /** Google Business Profile post buttons (the "Add a button" choices in Google). */
 export const GBP_BUTTONS = { book: "Đặt bàn (Book)", order: "Đặt món online (Order online)", call: "Gọi ngay (Call now)", learn: "Xem thêm (Learn more)", offer: "Nhận ưu đãi (Offer)" };
@@ -720,6 +727,32 @@ function buildSpec(type, raw, refs) {
       ];
       if (details) sections.push(`Thông tin có thật của quán (chỉ dùng những gì ở đây cho giá, giờ, địa chỉ, ưu đãi):\n${details}`);
       return { agent: "writer", direct: "gbp-post", title: `Google Business · ${business.slice(0, 60)}`, input: { business, promote, details, button }, prompt: sections.join("\n\n") };
+    }
+
+    case "zalo-message": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const goal = ZALO_GOALS[raw.goal] ? raw.goal : "back";
+      const details = str(raw.details, "ưu đãi, món hoặc ngày (thông tin thật)", { required: goal === "offer" || goal === "new" || goal === "event", max: 800 });
+      const button = ZALO_BUTTONS[raw.button] ? raw.button : "menu";
+      const contact = str(raw.contact, "hotline hoặc link", { max: 200 });
+      const sections = ["Viết tin nhắn Zalo OA gửi khách quen theo skill zalo-message, bằng tiếng Việt.", `Quán: ${business}`, `Mục đích: ${ZALO_GOALS[goal]}`, `Nút bấm: ${ZALO_BUTTONS[button]}`];
+      if (details) sections.push(`Thông tin có thật (chỉ dùng những gì ở đây cho ưu đãi, giá, ngày, giờ):\n${details}`);
+      if (contact) sections.push(`Hotline hoặc link: ${contact}`);
+      return { agent: "writer", direct: "zalo-message", title: `Zalo · ${business.slice(0, 60)}`, input: { business, goal, details, button, contact }, prompt: sections.join("\n\n") };
+    }
+
+    case "promo-plan": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const goal = PROMO_GOALS[raw.goal] ? raw.goal : "slow";
+      const dishes = str(raw.dishes, "danh sách món", { required: true, max: 3000 });
+      const limits = str(raw.limits, "giới hạn", { max: 500 });
+      const table = parseDishTable(dishes);
+      if (table.dishes.length < 2) throw new InputError("Nhập ít nhất 2 món, mỗi dòng: Tên món - giá bán - giá vốn");
+      const unit = table.usd ? "USD" : "VND";
+      const rows = table.dishes.map((d) => `- ${d.name}: giá bán ${d.price}${d.cost != null ? `, giá vốn ${d.cost}` : ", chưa có giá vốn"}`);
+      const sections = ["Gợi ý khuyến mãi theo skill promo-plan.", `Quán: ${business}`, `Mục tiêu: ${PROMO_GOALS[goal]}`, `Bảng món (${unit}, chép đúng tên món khi dùng):\n${rows.join("\n")}`];
+      if (limits) sections.push(`Giới hạn của chủ quán: ${limits}`);
+      return { agent: "writer", direct: "promo-plan", title: `Khuyến mãi · ${business.slice(0, 60)}`, input: { business, goal, dishes, limits }, prompt: sections.join("\n\n") };
     }
 
     case "photo-fix": {

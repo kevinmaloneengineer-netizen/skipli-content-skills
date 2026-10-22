@@ -98,6 +98,8 @@ export default function App() {
                 <Route path="story-behind" element={<TextSkillPage config={TEXT_SKILLS["story-behind"]} />} />
                 <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />
                 <Route path="gbp-post" element={<TextSkillPage config={TEXT_SKILLS["gbp-post"]} />} />
+                <Route path="zalo-message" element={<TextSkillPage config={TEXT_SKILLS["zalo-message"]} />} />
+                <Route path="promo-plan" element={<TextSkillPage config={TEXT_SKILLS["promo-plan"]} />} />
                 <Route path="photo-fix" element={<PhotoFixPage />} />
                 <Route path="qr" element={<QrPage />} />
                 <Route path="menu-board" element={<MenuBoardPage />} />

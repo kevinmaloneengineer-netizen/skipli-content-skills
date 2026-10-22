@@ -587,6 +587,8 @@ export function Result({ job, onSave, edits, setEdits }) {
   if (job.type === "inbox") return <Variants job={job} onSave={onSave} prefix="Tình huống" edits={edits} setEdits={setEdits} />;
   if (job.type === "hashtag") return <Variants job={job} onSave={onSave} prefix="Bộ" edits={edits} setEdits={setEdits} />;
   if (job.type === "gbp-post") return <Variants job={job} onSave={onSave} prefix="Bài" edits={edits} setEdits={setEdits} />;
+  if (job.type === "zalo-message") return <Variants job={job} onSave={onSave} prefix="Tin" edits={edits} setEdits={setEdits} />;
+  if (job.type === "promo-plan") return <Variants job={job} onSave={onSave} edits={edits} />;
   if (job.type === "photo-fix" && job.photos) return <PhotoResult job={job} />;
   if (job.type === "maps" || job.type === "yelp") return <MapsResult job={job} />;
   if (job.type === "compare") return <CompareResult job={job} />;
