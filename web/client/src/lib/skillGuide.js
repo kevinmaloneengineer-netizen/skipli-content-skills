@@ -219,6 +219,69 @@ export const GUIDE = {
     ],
     output: ["3 tin nhắn theo 3 góc khác nhau", "Tiêu đề, nội dung ngắn và nút cho từng tin", "Gợi ý giờ gửi và số tin mỗi tuần"],
   },
+  "delivery-menu": {
+    perks: ["Cho app giao đồ ăn", "Không tự thêm món", "Gợi ý combo"],
+    steps: [
+      ["Dán danh sách món", "Tên món, giá và chi tiết bạn muốn khách biết."],
+      ["Chọn app", "DoorDash, Uber Eats, Grubhub hoặc cả ba."],
+      ["Dán vào app", "Sao chép tên món, mô tả và nhóm món vào trang quản lý menu của app."],
+    ],
+    output: ["Tên món và mô tả ngắn cho từng món", "Nhóm món và nhãn đúng sự thật", "Thứ tự nhóm món và combo gợi ý"],
+  },
+  "us-occasions": {
+    perks: ["Ngày do hệ thống tính", "Bài đăng tiếng Anh", "Gợi ý mẫu video"],
+    steps: [
+      ["Ghi quán bán gì", "Để AI chọn dịp hợp với món của quán."],
+      ["Chọn 30 hoặc 60 ngày", "Gồm ngày lễ Mỹ và các National Food Day phổ biến."],
+      ["Lên lịch đăng", "Mỗi dịp có lúc nên đăng; thêm vào Lịch đăng bài."],
+    ],
+    output: ["Các dịp sắp tới theo thứ tự ngày", "Bài đăng và ý khuyến mãi cho từng dịp", "Mẫu video nên dùng và lúc nên đăng"],
+  },
+  nearby: {
+    perks: ["Dữ liệu thật từ Google Maps", "Số liệu tính sẵn", "Biết quán bạn đứng đâu"],
+    steps: [
+      ["Gõ món và khu vực", "Như khách tìm trên Google Maps, ví dụ \"pho\" ở \"Milwaukee, WI\"."],
+      ["Thêm tên quán bạn", "Có trong danh sách thì biết quán bạn xếp thứ mấy về sao và lượt đánh giá."],
+      ["Xem khoảng trống", "Mở khuya, mức giá, quán bị chê nhiều: chỗ quán bạn có thể chen vào."],
+    ],
+    output: ["Bảng các quán: sao, lượt đánh giá, tỉ lệ 1-2 sao, giá, giờ đóng cửa", "Đối thủ đáng chú ý và khoảng trống", "3 việc nên làm tuần này"],
+  },
+  "review-compare": {
+    perks: ["2 đến 5 quán cạnh nhau", "Trích dẫn đúng nguyên văn", "Có quán của bạn"],
+    steps: [
+      ["Dán link các quán", "Mỗi dòng một link Google Maps, hoặc tên quán kèm thành phố."],
+      ["Thêm quán bạn", "Để biết khách so bạn với đối thủ ra sao."],
+      ["Đọc so sánh", "Mỗi quán bị chê và được khen gì, điểm yếu chung của khu vực."],
+    ],
+    output: ["Bảng sao, lượt đánh giá, tỉ lệ chủ quán trả lời đánh giá xấu", "Điểm bị chê và được khen của từng quán", "Cơ hội cho quán bạn"],
+  },
+  trends: {
+    perks: ["Google Trends 12 tháng", "Theo bang hoặc cả nước", "Số liệu tính sẵn"],
+    steps: [
+      ["Gõ tối đa 5 món", "Như khách tìm trên Google, quán ở Mỹ thì gõ tiếng Anh."],
+      ["Chọn khu vực", "Cả nước Mỹ, một bang, hoặc Việt Nam."],
+      ["Lên kế hoạch", "Đẩy món vào tháng khách tìm nhiều, khuyến mãi vào tháng vắng."],
+    ],
+    output: ["Mức tìm kiếm, 4 tuần gần nhất, so với năm trước", "Tháng tìm nhiều và ít, từ khoá đang tăng nhanh", "Việc nên làm với menu, bài đăng và khuyến mãi"],
+  },
+  "nextdoor-post": {
+    perks: ["Cho Nextdoor", "Giọng hàng xóm", "Không bịa chi tiết"],
+    steps: [
+      ["Ghi khu phố", "Tên khu và chi tiết thật nơi quán ở."],
+      ["Chọn mục đích", "Giới thiệu, khai trương, sự kiện, ưu đãi hoặc cảm ơn."],
+      ["Đăng từ trang doanh nghiệp", "Dán tiêu đề và nội dung, trả lời bình luận trong ngày."],
+    ],
+    output: ["3 bài theo 3 góc khác nhau", "Tiêu đề ngắn cho từng bài", "Lưu ý khi đăng"],
+  },
+  "sales-insight": {
+    perks: ["Dùng file thật của quán", "Số liệu tính sẵn", "Không đoán"],
+    steps: [
+      ["Xuất file Excel", "Từ phần mềm bán hàng, sheet có tên món, số lượng, thành tiền và giờ bán."],
+      ["Chọn cột", "Phần mềm kiểm tra giúp bạn cột nào là gì, sửa nếu sai."],
+      ["Xem gợi ý", "Món nên đăng, món nên khuyến mãi, giờ đông và giờ vắng, cùng một bài mẫu."],
+    ],
+    output: ["Món bán chạy và bán chậm", "Giờ đông và giờ vắng", "Bài đăng và ý khuyến mãi từ số liệu thật"],
+  },
   "promo-plan": {
     perks: ["Tính sẵn tiền lãi", "3 kiểu khuyến mãi", "Dùng giá của bạn"],
     steps: [

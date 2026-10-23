@@ -539,6 +539,82 @@ function ZaloArt() {
   );
 }
 
+/** Menu app giao đồ ăn: a phone with dish rows and a delivery bag. */
+function DeliveryArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(70 12)">
+        <rect width="92" height="126" rx="16" className="art-card" />
+        {[0, 1, 2].map((i) => (
+          <g key={i} transform={`translate(12 ${18 + i * 34})`}>
+            <rect width="22" height="22" rx="6" className={i === 0 ? "art-hi" : "art-mid"} />
+            <rect x="30" y="3" width="38" height="7" rx="3.5" className="art-mid" />
+            <rect x="30" y="14" width="26" height="6" rx="3" className="art-mid" />
+          </g>
+        ))}
+      </g>
+      <g transform="translate(190 50)">
+        <rect width="64" height="58" rx="10" className="art-hi" />
+        <path d="M18 0 v-12 a14 14 0 0 1 28 0 v12" fill="none" strokeWidth="6" className="art-stroke" />
+      </g>
+    </svg>
+  );
+}
+
+/** Dịp lễ Mỹ: a calendar page with marked days. */
+function OccasionsArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(86 16)">
+        <rect width="148" height="118" rx="14" className="art-card" />
+        <rect width="148" height="28" rx="14" className="art-hi" />
+        {Array.from({ length: 12 }, (_, i) => (
+          <rect key={i} x={14 + (i % 4) * 32} y={40 + Math.floor(i / 4) * 24} width="22" height="16" rx="5" className={i === 5 || i === 10 ? "art-hi" : "art-mid"} />
+        ))}
+      </g>
+    </svg>
+  );
+}
+
+/** Nextdoor: two small houses and a speech bubble. */
+function NextdoorArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      {[0, 1].map((i) => (
+        <g key={i} transform={`translate(${70 + i * 80} 60)`}>
+          <path d="M0 30 L34 0 L68 30 Z" className={i === 0 ? "art-hi" : "art-mid"} />
+          <rect x="8" y="30" width="52" height="46" rx="4" className="art-card" />
+          <rect x="26" y="50" width="16" height="26" rx="3" className="art-mid" />
+        </g>
+      ))}
+      <g transform="translate(220 22)">
+        <rect width="70" height="40" rx="14" className="art-hi" />
+        <path d="M14 40 l0 14 l14 -14 z" className="art-hi" />
+      </g>
+    </svg>
+  );
+}
+
+/** Đọc file bán hàng: a spreadsheet grid with bars on the best sellers. */
+function SalesArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(60 22)">
+        <rect width="150" height="106" rx="12" className="art-card" />
+        <rect x="0" y="0" width="150" height="26" rx="12" className="art-hi" />
+        <rect x="14" y="40" width="46" height="8" rx="4" className="art-mid" />
+        <rect x="14" y="58" width="36" height="8" rx="4" className="art-mid" />
+        <rect x="14" y="76" width="52" height="8" rx="4" className="art-mid" />
+      </g>
+      <g transform="translate(232 40)">
+        <rect x="0" y="62" width="16" height="30" rx="5" className="art-mid" />
+        <rect x="24" y="36" width="16" height="56" rx="5" className="art-mid" />
+        <rect x="48" y="8" width="16" height="84" rx="5" className="art-hi" />
+      </g>
+    </svg>
+  );
+}
+
 /** Gợi ý khuyến mãi: a coupon with a percent sign and profit bars. */
 function PromoArt() {
   return (
@@ -711,7 +787,52 @@ function LiveRecap() {
   );
 }
 
-const ART = { "zalo-message": ZaloArt, "promo-plan": PromoArt, combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+/** Đối thủ quanh quán: a map with pins, one of them highlighted. */
+function NearbyArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <rect x="50" y="18" width="220" height="114" rx="16" className="art-card" />
+      <path d="M50 92 C110 70 150 110 270 74" className="art-stroke" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+      {[[96, 52, 0], [150, 84, 1], [206, 44, 0], [232, 96, 0]].map(([x, y, hi]) => (
+        <g key={`${x}-${y}`} transform={`translate(${x} ${y})`}>
+          <path d="M0 22 C-12 8 -12 -6 0 -6 C12 -6 12 8 0 22 Z" className={hi ? "art-hi" : "art-mid"} />
+          <circle cx="0" cy="3" r="4" className="art-card" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** So sánh review: three score cards with stars of different lengths. */
+function ReviewCompareArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <g key={i} transform={`translate(${52 + i * 76} ${30 + (i === 1 ? -8 : 0)})`}>
+          <rect width="64" height="96" rx="12" className={i === 1 ? "art-hi" : "art-card"} />
+          {Array.from({ length: [3, 5, 4][i] }, (_, k) => (
+            <rect key={k} x="10" y={14 + k * 15} width={[40, 44, 36, 30, 22][k]} height="8" rx="4" className={i === 1 ? "art-card" : "art-mid"} />
+          ))}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** Xu hướng tìm kiếm: a search bar over a rising line. */
+function TrendsArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <rect x="60" y="16" width="200" height="30" rx="15" className="art-card" />
+      <circle cx="80" cy="31" r="6" className="art-mid" />
+      <rect x="94" y="27" width="90" height="8" rx="4" className="art-mid" />
+      <path d="M62 128 L100 104 L134 114 L170 82 L204 92 L258 56" className="art-stroke" fill="none" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="258" cy="56" r="7" className="art-hi" />
+    </svg>
+  );
+}
+
+const ART = { nearby: NearbyArt, "review-compare": ReviewCompareArt, trends: TrendsArt, "delivery-menu": DeliveryArt, "us-occasions": OccasionsArt, "nextdoor-post": NextdoorArt, "sales-insight": SalesArt, "zalo-message": ZaloArt, "promo-plan": PromoArt, combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

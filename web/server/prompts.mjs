@@ -1,8 +1,10 @@
 // Validate job input from the UI and turn it into the agent prompt.
 // Prompts are written so the right skill triggers; the skill owns the method.
 
+import { upcoming } from "./usDays.mjs";
 import { parseDishTable } from "./promo.mjs";
 import { cleanTexts } from "../shared/templateTexts.js";
+import { TREND_AREAS } from "../shared/trendAreas.js";
 import { isMapsLink } from "./sources/osm.mjs";
 import { instagramUser, yelpUrl } from "./sources/socialApify.mjs";
 
@@ -70,7 +72,7 @@ function facebookUrl(raw) {
   return u.toString();
 }
 
-export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee", "news", "chalk", "map", "coupon"]);
+export const SLIDE_TEMPLATES = new Set(["collage", "single", "top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee", "news", "chalk", "map", "coupon", "stamp", "week", "score"]);
 // Templates built around the user's deal: they need the offer line (a real one, never made up).
 export const OFFER_TEMPLATES = new Set(["promo", "coupon"]);
 const BASE_ROLES = ["ext", "int", "table", "medium", "close", "side"];
@@ -112,6 +114,7 @@ export function parseDishes(raw) {
 export const TIME_ZONES = { "Asia/Ho_Chi_Minh": "giờ Việt Nam", "America/New_York": "giờ miền Đông Mỹ (ET)", "America/Chicago": "giờ miền Trung Mỹ (CT)", "America/Denver": "giờ miền Núi Mỹ (MT)", "America/Los_Angeles": "giờ miền Tây Mỹ (PT)" };
 const timeZone = (v) => (TIME_ZONES[v] ? v : "Asia/Ho_Chi_Minh");
 
+export const MAPS_LINK = /google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./i;
 const isSingleVideo = (url) => /fb\.watch|\/reel\/\d|\/videos\/|\/watch\/?\?v=|\/share\/(r|v)\//i.test(url);
 
 /**
@@ -130,11 +133,15 @@ export function buildJob(type, raw, refs = {}) {
 }
 
 /** Job types whose result is copy for customers (scan reports stay in Vietnamese for the owner). */
-const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan"]);
+const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan", "delivery-menu", "us-occasions", "nextdoor-post"]);
 
 /** Zalo OA messages: what the message is for, and the button under it. */
 export const ZALO_GOALS = { back: "Mời khách quen lâu chưa ghé quay lại", offer: "Báo ưu đãi đang có", new: "Giới thiệu món mới", birthday: "Chúc mừng sinh nhật khách", event: "Ngày lễ hoặc sự kiện của quán" };
 export const ZALO_BUTTONS = { menu: "Xem menu", book: "Đặt bàn", call: "Gọi ngay", offer: "Nhận ưu đãi", map: "Chỉ đường" };
+/** US delivery apps the menu is written for. */
+export const DELIVERY_APPS = { all: "DoorDash, Uber Eats and Grubhub", doordash: "DoorDash", ubereats: "Uber Eats", grubhub: "Grubhub" };
+/** Nextdoor posts: what the post is for. */
+export const NEXTDOOR_GOALS = { intro: "Introduce the restaurant to the neighborhood", opening: "Opening or reopening", event: "An event at the restaurant", offer: "An offer for neighbors", thanks: "Thank the neighborhood" };
 /** "Gợi ý khuyến mãi": what the promotions should achieve. */
 export const PROMO_GOALS = { slow: "Kéo khách vào giờ vắng", bill: "Tăng giá trị mỗi đơn", launch: "Đẩy món mới hoặc món ít người gọi", return: "Kéo khách quen quay lại" };
 
@@ -574,7 +581,7 @@ function buildSpec(type, raw, refs) {
       const place = str(raw.place, "quán cần phân tích", { required: true, max: 300 });
       const focus = str(raw.focus, "điều muốn tìm hiểu", { max: 300 });
       const isLink = /^https?:\/\//i.test(place);
-      if (isLink && !/google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\./i.test(place)) throw new InputError("Link phải là link Google Maps của quán");
+      if (isLink && !MAPS_LINK.test(place)) throw new InputError("Link phải là link Google Maps của quán");
       return {
         agent: "scout",
         direct: "review-analyzer",
@@ -753,6 +760,93 @@ function buildSpec(type, raw, refs) {
       const sections = ["Gợi ý khuyến mãi theo skill promo-plan.", `Quán: ${business}`, `Mục tiêu: ${PROMO_GOALS[goal]}`, `Bảng món (${unit}, chép đúng tên món khi dùng):\n${rows.join("\n")}`];
       if (limits) sections.push(`Giới hạn của chủ quán: ${limits}`);
       return { agent: "writer", direct: "promo-plan", title: `Khuyến mãi · ${business.slice(0, 60)}`, input: { business, goal, dishes, limits }, prompt: sections.join("\n\n") };
+    }
+
+    case "delivery-menu": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const dishes = str(raw.dishes, "danh sách món", { required: true, max: 3000 });
+      const app = DELIVERY_APPS[raw.app] ? raw.app : "all";
+      const notes = str(raw.notes, "ghi chú", { max: 600 });
+      const sections = ["Write the delivery app menu with the skill delivery-menu.", `Restaurant: ${business}`, `App: ${DELIVERY_APPS[app]}`, `Dishes (name - price - details, as the owner wrote them):\n${dishes}`];
+      if (notes) sections.push(`Owner's notes: ${notes}`);
+      return { agent: "writer", direct: "delivery-menu", title: `Delivery menu · ${business.slice(0, 60)}`, input: { business, dishes, app, notes }, prompt: sections.join("\n\n") };
+    }
+
+    case "us-occasions": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const serves = str(raw.serves, "món quán bán", { required: true, max: 600 });
+      const days = Number(raw.days) === 30 ? 30 : 60;
+      // The dates are worked out here (usDays.mjs); the model only plans around them.
+      const list = upcoming(refs.now?.() ?? new Date(), days);
+      if (!list.length) throw new InputError("Không có dịp nào trong thời gian này");
+      const lines = list.map((o) => `- ${o.date}: ${o.name} (${o.kind === "food" ? "unofficial National Food Day" : "holiday"}${o.note ? `; ${o.note}` : ""})`);
+      return {
+        agent: "writer",
+        direct: "us-occasions",
+        title: `US occasions · ${business.slice(0, 60)}`,
+        input: { business, serves, days, occasions: list.map((o) => `${o.date} ${o.name}`).join("\n") },
+        prompt: [`Plan the coming ${days} days with the skill us-occasions.`, `Restaurant: ${business}`, `It serves: ${serves}`, `Occasions (dates already worked out, use them exactly):\n${lines.join("\n")}`].join("\n\n"),
+      };
+    }
+
+    case "nextdoor-post": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const neighborhood = str(raw.neighborhood, "khu phố", { required: true, max: 200 });
+      const goal = NEXTDOOR_GOALS[raw.goal] ? raw.goal : "intro";
+      const details = str(raw.details, "thông tin thật (ngày, ưu đãi, giờ mở cửa)", { required: goal === "event" || goal === "offer" || goal === "opening", max: 800 });
+      const sections = ["Write Nextdoor posts with the skill nextdoor-post.", `Restaurant: ${business}`, `Neighborhood: ${neighborhood}`, `Purpose: ${NEXTDOOR_GOALS[goal]}`];
+      if (details) sections.push(`Real facts (use only these for dates, offers, hours, address):\n${details}`);
+      return { agent: "writer", direct: "nextdoor-post", title: `Nextdoor · ${business.slice(0, 60)}`, input: { business, neighborhood, goal, details }, prompt: sections.join("\n\n") };
+    }
+
+    case "nearby": {
+      const query = str(raw.query, "món hoặc loại quán", { required: true, max: 80 });
+      const location = str(raw.location, "khu vực", { required: true, max: 120 });
+      const mine = str(raw.mine, "tên quán của bạn", { max: 120 });
+      const count = Number(raw.count) === 25 ? 25 : 15;
+      return {
+        agent: "scout",
+        direct: "nearby-competitors",
+        title: `Đối thủ quanh quán · ${query} · ${location}`.slice(0, 120),
+        input: { query, location, mine, count },
+        prompt: "", // filled by prepare.mjs once the places are read
+      };
+    }
+
+    case "review-compare": {
+      const one = (p) => {
+        if (/^https?:\/\//i.test(p) && !MAPS_LINK.test(p)) throw new InputError(`Link phải là link Google Maps của quán: ${p.slice(0, 60)}`);
+        return p;
+      };
+      const mine = raw.mine ? one(str(raw.mine, "quán của bạn", { max: 300 })) : "";
+      // One per line (links are longer than list() allows, and names may hold commas: "Pho 99, Milwaukee").
+      const lines = [...new Set(String(raw.places ?? "").split("\n").map((l) => l.trim()).filter(Boolean))];
+      if (lines.length > 4) throw new InputError("Tối đa 4 quán đối thủ");
+      const places = lines.map((l) => one(str(l, "quán đối thủ", { max: 300 })));
+      if (!places.length || places.length + (mine ? 1 : 0) < 2) throw new InputError("Nhập ít nhất 2 quán để so sánh (mỗi dòng một link Google Maps hoặc tên quán kèm thành phố)");
+      const label = (p) => (/^https?:\/\//i.test(p) ? null : p.split(",")[0].trim().slice(0, 30));
+      const names = places.map(label).filter(Boolean);
+      return {
+        agent: "scout",
+        direct: "review-compare",
+        title: `So sánh review · ${names.length === places.length ? names.join(" · ") : `${places.length + (mine ? 1 : 0)} quán`}`.slice(0, 120),
+        input: { mine, places },
+        prompt: "", // filled by prepare.mjs once the reviews are read
+      };
+    }
+
+    case "trends": {
+      const terms = list(raw.terms, "từ khoá", 5).map((t) => t.slice(0, 60));
+      if (!terms.length) throw new InputError("Nhập ít nhất một món hoặc từ khoá");
+      const geo = TREND_AREAS.some(([code]) => code === raw.geo) ? raw.geo : "US";
+      const business = str(raw.business, "quán của bạn", { max: 200 });
+      return {
+        agent: "scout",
+        direct: "search-trends",
+        title: `Xu hướng tìm kiếm · ${terms.join(", ")}`.slice(0, 120),
+        input: { terms, geo, business },
+        prompt: "", // filled by prepare.mjs once Google Trends is read
+      };
     }
 
     case "photo-fix": {

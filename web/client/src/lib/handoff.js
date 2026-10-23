@@ -19,7 +19,7 @@ export function useFromJob() {
 }
 
 /** The variant prefix each writing tool uses in its result ("## Phương án 1: …", "## Bài 1: …"). */
-const PREFIX = { write: "Phương án", "gbp-post": "Bài", "zalo-message": "Tin", "promo-plan": "Phương án", menu: "Món", inbox: "Tình huống", hashtag: "Bộ", review: "Phương án" };
+const PREFIX = { write: "Phương án", "gbp-post": "Bài", "zalo-message": "Tin", "promo-plan": "Phương án", "delivery-menu": "Món", "us-occasions": "Dịp", "nextdoor-post": "Bài", menu: "Món", inbox: "Tình huống", hashtag: "Bộ", review: "Phương án" };
 
 /** The first post of a writing result, without its heading and the notes under it. */
 export function firstPost(job) {

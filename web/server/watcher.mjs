@@ -1,9 +1,12 @@
 // Competitor watch: re-read each followed Facebook channel on a schedule (no model tokens) and, when
-// it posted new reels, record a finished "watch" job. Finished jobs show up in the bell and history,
+// it posted new reels, record a finished "watch" job. Google Maps places (kind "maps") are watched the
+// same way for their stars and new reviews ("rating-watch" jobs). Finished jobs show up in the bell and history,
 // so the user is told without any extra notification system.
 
 import { randomUUID } from "node:crypto";
 import { reelLine, runScript } from "./scanners.mjs";
+import { readPlace } from "./sources/places.mjs";
+import { fetchNewestReviews } from "./sources/mapsApify.mjs";
 
 const HOURS = Number(process.env.WATCH_INTERVAL_HOURS) || 168; // weekly
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n));
@@ -11,8 +14,46 @@ const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1
 export function createWatcher({ store, log = console }) {
   let busy = false;
 
+  /**
+   * A Google Maps place: its stars and number of reviews; when reviews came in, read the new ones and
+   * record a "rating-watch" job (the 1 to 3 star ones first, they are the ones to answer).
+   */
+  async function checkPlace(item) {
+    const place = await readPlace(item.url);
+    const prev = item.history?.at(-1);
+    const fresh = prev ? Math.max(0, place.reviews - prev.reviews) : 0; // first check only sets the baseline
+    const reviews = fresh ? await fetchNewestReviews(item.url, Math.min(fresh, 20)) : [];
+    const low = reviews.filter((r) => r.stars <= 3);
+    const point = { at: new Date().toISOString(), rating: place.rating, reviews: place.reviews, fresh, low: low.length };
+    const history = [...(item.history ?? []), point].slice(-52);
+    await store.updateWatch(item.id, { name: place.name || item.name, lastCheckedAt: point.at, lastNew: fresh, lastError: null, history });
+    const moved = prev && prev.rating != null && place.rating != null && place.rating !== prev.rating;
+    if (!fresh && !moved) return { fresh: 0, low: 0 };
+
+    const stars = (n) => String(n ?? "?").replace(".", ",");
+    const line = (r) => `- (${r.stars} sao, ${r.when}${r.ownerReplied ? ", chủ quán đã trả lời" : ""}) ${r.text || "_(không có chữ)_"}`;
+    const high = reviews.filter((r) => r.stars > 3);
+    const result = [
+      `**${place.name}** có **${fresh} đánh giá mới** kể từ lần kiểm tra trước.${moved ? ` Điểm Google đổi từ ${stars(prev.rating)} thành **${stars(place.rating)} sao** (${place.rating > prev.rating ? "▲" : "▼"} ${stars(Math.abs(Math.round((place.rating - prev.rating) * 10) / 10))}).` : ` Điểm vẫn là ${stars(place.rating)} sao.`}`,
+      low.length ? `## Đánh giá mới 1-3 sao (${low.length})\n${low.map(line).join("\n")}` : "",
+      high.length ? `## Đánh giá mới 4-5 sao (${high.length})\n${high.slice(0, 8).map(line).join("\n")}` : "",
+      fresh > reviews.length ? `_Đã đọc ${reviews.length} trong ${fresh} đánh giá mới (mới nhất trước)._` : "",
+      low.length ? "Nếu đây là quán của bạn, bấm **Trả lời review khách** để soạn câu trả lời cho các đánh giá ít sao." : "",
+      place.url ? `[Mở quán trên Google Maps](${place.url})` : "",
+    ].filter(Boolean).join("\n\n");
+    const now = new Date().toISOString();
+    await store.addJob({
+      id: randomUUID(), ...(item.userId ? { userId: item.userId } : {}), type: "rating-watch", agent: null, direct: null,
+      title: `Theo dõi sao · ${place.name} · ${fresh} đánh giá mới${low.length ? ` · ${low.length} ít sao` : ""}`.slice(0, 120),
+      input: { url: item.url, watchId: item.id }, prompt: null, status: "done", result, error: null, usage: null,
+      createdAt: now, startedAt: now, finishedAt: now,
+    });
+    return { fresh, low: low.length };
+  }
+
   /** Read the channel, compare with the reels seen last time, record a job when something is new. */
   async function check(item) {
+    if (item.kind === "maps") return checkPlace(item);
     const data = await runScript("fb-reel-reader", "list_reels.py", [item.url, "--count", "30", "--stats", "--limit", "30"], { timeoutMs: 180_000 });
     const reels = data.reels ?? [];
     const known = new Set(item.knownIds);

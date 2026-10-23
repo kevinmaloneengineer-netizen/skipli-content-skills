@@ -1359,10 +1359,150 @@ def scene_coupon(spec, w, h, u, color, accent, logo, photos, add):
         add(text_block(lines, f, (60, 56, 50, 255), w), "sub", 0, y - pad + card.height + int(2 * u), "fade", 0.8)
 
 
+def scene_stamp(spec, w, h, u, color, accent, logo, photos, add):
+    """A loyalty card: the shop's name, ten stamp circles (the first ones stamped), the reward line under them."""
+    u = roomy(u, w, h)
+    add(solid(w, h, tint(accent, 0.84)), "bg", 0, 0, "none")
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    cw = int(w * (0.84 if h >= w else 0.6))
+    ch = int(cw * (1.25 if h >= w else 0.72))
+    card = Image.new("RGBA", (cw, ch), (255, 252, 244, 255))
+    d = ImageDraw.Draw(card)
+    pad = int(cw * 0.07)
+    name = str(spec.get("name", "")).strip().upper() or "TÊN QUÁN"
+    lines, f = fit_lines(probe, name, "Bold", 5.2 * u, 3.4 * u, cw - 2 * pad)
+    y = pad
+    for line in lines:
+        d.text((pad, y), line, font=f, fill=accent)
+        y += int(f.size * 1.1)
+    fs = font("Medium", max(10, 3.1 * u))
+    sub = str(spec.get("sub", "")).strip()
+    if sub:
+        for line in wrap(probe, sub, fs, cw - 2 * pad, 2):
+            d.text((pad, y + int(0.6 * u)), line, font=fs, fill=(110, 104, 93, 255))
+            y += int(fs.size * 1.35)
+    cols = 5
+    gap = (cw - 2 * pad) / cols
+    r = int(gap * 0.36)
+    top = y + int(gap * 0.9)
+    stamped = max(0, min(10, int(spec.get("stamped", 4))))
+    for k in range(10):
+        cx = int(pad + gap * (k % cols + 0.5))
+        cy = int(top + (k // cols) * gap * 1.1 + gap * 0.5)
+        if k < stamped:
+            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=accent)
+            d.line([(cx - r * 0.45, cy), (cx - r * 0.1, cy + r * 0.38), (cx + r * 0.5, cy - r * 0.38)], fill=(255, 255, 255, 255), width=max(2, int(0.9 * u)), joint="curve")
+        else:
+            d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=tint(accent, 0.45), width=max(2, int(0.45 * u)))
+    reward = str(spec.get("reward", "")).strip().upper()
+    if reward:
+        fr = font("Bold", 4.2 * u)
+        rl = wrap(probe, reward, fr, cw - 2 * pad, 2)
+        yy = ch - pad - int(len(rl) * fr.size * 1.1)
+        for line in rl:
+            d.text((pad, yy), line, font=fr, fill=accent)
+            yy += int(fr.size * 1.1)
+    card, sp = with_shadow(card, blur=14, alpha=90, drop=10)
+    add(card, "card", (w - card.width) // 2, (h - card.height) // 2, "rise", 0.1)
+    if logo is not None:
+        add(chip_logo(logo, u, 16 * u, 10 * u), "logo", (w - int(16 * u)) // 2, int(h * 0.06), "down", 0.0)
+
+
+def scene_week(spec, w, h, u, color, accent, logo, photos, add):
+    """One dish per day of the week: a title, then a row per day (its label chip, the dish name, its price)."""
+    u = roomy(u, w, h)
+    add(solid(w, h, tint(accent, 0.9)), "bg", 0, 0, "none")
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    m = int(6 * u)
+    title = str(spec.get("title", "")).strip().upper()
+    y = int(h * 0.1)
+    if title:
+        lines, f = fit_lines(probe, title, "Bold", 9 * u, 5.5 * u, w - 2 * m)
+        blk = text_block(lines, f, accent, w, gap=1.02)
+        add(blk, "title", 0, y, "fade", 0.05)
+        y += blk.height + int(5 * u)
+    rows = [r for r in spec.get("rows", []) if r.get("name")][:7]
+    if not rows:
+        return
+    # Rows share the space left under the title, but never grow past a comfortable height.
+    gap_r = int(1.6 * u)
+    rh = min(int(15 * u), int((h * 0.9 - y) / len(rows)) - gap_r)
+    # The list sits in the middle of the space under the title, so a short list is not stuck at the top.
+    block = len(rows) * (rh + gap_r) - gap_r
+    y = max(y, (h - block) // 2)
+    rw = w - 2 * m
+    chip_w = int(rh * 1.5)
+    for k, row in enumerate(rows):
+        img = Image.new("RGBA", (rw, rh), (0, 0, 0, 0))
+        ImageDraw.Draw(img).rounded_rectangle((0, 0, rw - 1, rh - 1), radius=int(rh * 0.28), fill=(255, 255, 255, 255))
+        chip = Image.new("RGBA", (chip_w, rh), (0, 0, 0, 0))
+        ImageDraw.Draw(chip).rounded_rectangle((0, 0, chip_w - 1, rh - 1), radius=int(rh * 0.28), fill=accent)
+        fd = font("Bold", rh * 0.36)
+        ImageDraw.Draw(chip).text((chip_w // 2, rh // 2), str(row.get("day", "")).upper(), font=fd, fill=(255, 255, 255, 255), anchor="mm")
+        img.alpha_composite(chip, (0, 0))
+        price = str(row.get("price", ""))
+        fp = font("Bold", rh * 0.36)
+        room = rw - chip_w - int(3 * u) - (text_w(probe, price, fp) + int(4 * u) if price else 0)
+        fn = font("SemiBold", rh * 0.36)
+        label = str(row["name"])
+        while text_w(probe, label, fn) > room and len(label) > 3:
+            label = label[:-2].rstrip() + "…"
+        d = ImageDraw.Draw(img)
+        d.text((chip_w + int(3 * u), rh // 2), label, font=fn, fill=(28, 26, 22, 255), anchor="lm")
+        if price:
+            d.text((rw - int(3 * u), rh // 2), price, font=fp, fill=accent, anchor="rm")
+        add(img, f"day{k}", m, y + k * (rh + gap_r), "left" if k % 2 == 0 else "right", 0.15 + 0.12 * k)
+
+
+def scene_score(spec, w, h, u, color, accent, logo, photos, add):
+    """Match night: a photo behind, a scoreboard with the two teams, the kick-off time left to fill in."""
+    u = roomy(u, w, h)
+    if photos:
+        add(cover(photos[0], w, h).convert("RGBA"), "photo", 0, 0, "none")
+    else:
+        add(solid(w, h, (20, 22, 30, 255)), "photo", 0, 0, "none")
+    add(gradient(w, h, 60, 200, (10, 12, 18)), "shade", 0, 0, "none")
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    white, gold = (255, 255, 255, 255), (242, 193, 78, 255)
+    label = str(spec.get("title", "")).upper()
+    y = int(h * (0.16 if h >= w else 0.14))
+    if label:
+        f = font("Bold", 4.6 * u)
+        chip = Image.new("RGBA", (int(text_w(probe, label, f) + 8 * u), int(f.size * 2.1)), accent)
+        ImageDraw.Draw(chip).text((chip.width // 2, chip.height // 2), label, font=f, fill=white, anchor="mm")
+        add(chip, "label", (w - chip.width) // 2, y, "down", 0.05)
+        y += chip.height + int(5 * u)
+    bw = int(w * 0.86)
+    bh = int(bw * 0.42)
+    board = Image.new("RGBA", (bw, bh), (14, 16, 22, 232))
+    bd = ImageDraw.Draw(board)
+    bd.rounded_rectangle((0, 0, bw - 1, bh - 1), radius=int(3 * u), outline=gold, width=max(2, int(0.5 * u)))
+    half = bw // 2
+    for x0, text in ((0, spec.get("home", "")), (half, spec.get("away", ""))):
+        lines, fn = fit_lines(probe, str(text).upper(), "Bold", 6.4 * u, 4 * u, half - int(6 * u))
+        blk = text_block(lines, fn, white, half - int(6 * u), gap=1.0)
+        board.alpha_composite(blk, (x0 + int(3 * u), (bh - blk.height) // 2))
+    fvs = font("Bold", 4.2 * u)
+    bd.text((half, bh // 2), "VS", font=fvs, fill=gold, anchor="mm")
+    add(board, "board", (w - bw) // 2, y, "up", 0.2)
+    y += bh + int(4 * u)
+    when = str(spec.get("when", "")).strip()
+    if when:
+        add(text_block([when.upper()], font("SemiBold", 4.6 * u), white, w), "when", 0, y, "fade", 0.5)
+        y += int(7 * u)
+    offer = str(spec.get("offer", "")).strip()
+    if offer:
+        lines, fo = fit_lines(probe, offer.upper(), "Bold", 4.2 * u, 3 * u, w - 16 * u)
+        add(text_block(lines, fo, gold, w, gap=1.05), "offer", 0, y, "fade", 0.7)
+    if logo is not None:
+        add(chip_logo(logo, u, 16 * u, 10 * u), "logo", int(5 * u), int(5 * u), "down", 0.1)
+
+
 MARKETING = {
     "title": scene_title, "countdown": scene_countdown, "menu": scene_menu, "offer": scene_offer, "ribbon": scene_ribbon, "polaroids": scene_polaroids, "word": scene_word,
     "film": scene_film, "cover": scene_cover, "grid9": scene_grid9, "story": scene_story, "receipt": scene_receipt, "neon": scene_neon, "postcard": scene_postcard,
     "circle": scene_circle, "marquee": scene_marquee, "news": scene_news, "chalk": scene_chalk, "map": scene_map, "coupon": scene_coupon,
+    "stamp": scene_stamp, "week": scene_week, "score": scene_score,
 }
 
 

@@ -12,6 +12,7 @@ import { ACTIVE, SKILLS, skillByType } from "../lib/constants.js";
 import { duration } from "../lib/format.js";
 import { BackLink } from "../components/SkillShell.jsx";
 import { businessOf } from "../lib/handoff.js";
+import { safeHref } from "../lib/safeUrl.js";
 
 /** A picture the run made (photo fix, AI image, video still), for the row thumbnail. */
 const thumbOf = (j) => j.photos?.items?.[0]?.file ?? j.images?.items?.[0]?.file ?? j.video?.shots?.find((s) => s.image)?.image ?? j.slides?.find((s) => s.image)?.image ?? null;
@@ -94,6 +95,43 @@ function Trend({ history = [] }) {
   );
 }
 
+/** Weekly trend of a watched Google Maps place: its stars (line) and new reviews per check (bars). */
+function RatingTrend({ history = [] }) {
+  const points = history.filter((h) => h.rating != null);
+  if (points.length < 2) return <p className="trend-empty">Biểu đồ số sao hiện sau lần kiểm tra thứ 2.</p>;
+  const W = 280, H = 70, pad = 6;
+  // Stars move by tenths: the scale is the range seen, not 0 to 5, or the line would look flat.
+  const lo = Math.min(...points.map((h) => h.rating)) - 0.1;
+  const hi = Math.max(...points.map((h) => h.rating)) + 0.1;
+  const maxNew = Math.max(1, ...points.map((h) => h.fresh ?? 0));
+  const x = (i) => pad + (i * (W - 2 * pad)) / (points.length - 1);
+  const y = (v) => H - pad - ((v - lo) / (hi - lo)) * (H - 2 * pad - 10);
+  const line = points.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(h.rating).toFixed(1)}`).join(" ");
+  const last = points.at(-1);
+  const change = Math.round((last.rating - points.at(-2).rating) * 10) / 10;
+  const day = (iso) => new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+  const star = (n) => n.toFixed(1).replace(".", ",");
+  return (
+    <figure className="trend">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Số sao qua ${points.length} lần kiểm tra`}>
+        {points.map((h, i) => {
+          const bh = ((h.fresh ?? 0) / maxNew) * 22;
+          return <rect key={`b${i}`} className="trend-bar" x={x(i) - 4} y={H - pad - bh} width="8" height={bh} rx="2"><title>{`${day(h.at)}: ${h.fresh ?? 0} đánh giá mới${h.low ? `, ${h.low} bài 1-3 sao` : ""}`}</title></rect>;
+        })}
+        <path className="trend-line" d={line} pathLength="1" />
+        {points.map((h, i) => (
+          <circle key={`d${i}`} className="trend-dot" cx={x(i)} cy={y(h.rating)} r="3"><title>{`${day(h.at)}: ${star(h.rating)} sao, ${h.reviews} đánh giá`}</title></circle>
+        ))}
+      </svg>
+      <figcaption>
+        <span>Số sao: <b>{star(last.rating)}</b> · {last.reviews.toLocaleString("vi-VN")} đánh giá</span>
+        {change !== 0 && <span className={change > 0 ? "up" : "down"}>{change > 0 ? "▲" : "▼"} {star(Math.abs(change))} so với lần trước</span>}
+        <span className="trend-key"><i className="k-line" />số sao <i className="k-bar" />đánh giá mới</span>
+      </figcaption>
+    </figure>
+  );
+}
+
 function Watchlist() {
   const [items, setItems] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -120,16 +158,16 @@ function Watchlist() {
   return (
     <section className="watchlist aside-card">
       <h2>Đang theo dõi đối thủ</h2>
-      <p className="hint">Mỗi tuần hệ thống đọc lại các kênh này. Có reel mới thì báo ở chuông và thêm vào lịch sử.</p>
+      <p className="hint">Mỗi tuần hệ thống đọc lại các kênh và quán này. Có reel mới hay đánh giá mới thì báo ở chuông và thêm vào lịch sử.</p>
       <ul>
         {items.map((w) => (
           <li key={w.id}>
-            <a href={w.url} target="_blank" rel="noopener noreferrer"><b>@{w.name}</b></a>
+            <a href={safeHref(w.url)} target="_blank" rel="noopener noreferrer"><b>{w.kind === "maps" ? `★ ${w.name}` : `@${w.name}`}</b></a>
             <small>
               {w.lastCheckedAt ? `Kiểm tra lần cuối ${new Date(w.lastCheckedAt).toLocaleString("vi-VN")}` : "Đang đọc lần đầu…"}
-              {w.lastError ? ` · lỗi: ${w.lastError}` : typeof w.lastNew === "number" && w.lastCheckedAt ? ` · lần trước có ${w.lastNew} reel mới` : ""}
+              {w.lastError ? ` · lỗi: ${w.lastError}` : typeof w.lastNew === "number" && w.lastCheckedAt ? ` · lần trước có ${w.lastNew} ${w.kind === "maps" ? "đánh giá" : "reel"} mới` : ""}
             </small>
-            <Trend history={w.history} />
+            {w.kind === "maps" ? <RatingTrend history={w.history} /> : <Trend history={w.history} />}
             <span className="watch-actions">
               <button type="button" className="btn small" disabled={busy === w.id} onClick={() => check(w.id)}>{busy === w.id ? "Đang kiểm tra…" : "Kiểm tra ngay"}</button>
               <button type="button" className="btn small ghost" onClick={() => remove(w.id)}>Bỏ theo dõi</button>
@@ -140,6 +178,10 @@ function Watchlist() {
     </section>
   );
 }
+
+// Jobs the weekly watch records ("watch": new reels, "rating-watch": a place's stars), counted under their skill.
+const WATCH_TYPES = new Set(["watch", "rating-watch"]);
+const ofSkill = (j, type) => j.type === type || (type === "fb-reels" && j.type === "watch") || (type === "maps" && j.type === "rating-watch");
 
 const DAY = 86_400_000;
 const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -164,7 +206,7 @@ function Overview({ jobs }) {
     const count = (st) => list.filter((j) => j.status === st).length;
     const bySkill = {};
     for (const j of list) {
-      const name = j.type === "watch" ? "Theo dõi đối thủ" : skillByType(j.type)?.short ?? j.type;
+      const name = WATCH_TYPES.has(j.type) ? "Theo dõi đối thủ" : skillByType(j.type)?.short ?? j.type;
       bySkill[name] = (bySkill[name] ?? 0) + 1;
     }
     return {
@@ -248,7 +290,7 @@ function Overview({ jobs }) {
 /** Skills used the most, as a clickable ranking (sets the skill filter). */
 function TopSkills({ jobs, onPick, active }) {
   const counts = SKILLS.filter((s) => s.type)
-    .map((s) => ({ s, n: jobs.filter((j) => j.type === s.type || (s.type === "fb-reels" && j.type === "watch")).length }))
+    .map((s) => ({ s, n: jobs.filter((j) => ofSkill(j, s.type)).length }))
     .filter((x) => x.n)
     .sort((a, b) => b.n - a.n)
     .slice(0, 5);
@@ -281,7 +323,7 @@ function HistoryRow({ job }) {
   const time = new Date(job.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
   const secs = secondsOf(job);
   // The server refuses to delete a run that is still going; watch rows belong to the watchlist.
-  const deletable = job.type !== "watch" && !["queued", "running"].includes(job.status);
+  const deletable = !WATCH_TYPES.has(job.type) && !["queued", "running"].includes(job.status);
   async function remove() {
     setBusy(true);
     try {
@@ -303,7 +345,7 @@ function HistoryRow({ job }) {
           <span className="hist-thumb" aria-hidden="true"><SkillArt id={skill?.id} /></span>
         )}
         <span className="hist-row-main">
-          <span className="hist-row-skill">{job.type === "watch" ? "Theo dõi đối thủ" : skill?.short}{shopOf(job) && <em className="hist-row-shop">{shopOf(job)}</em>}</span>
+          <span className="hist-row-skill">{WATCH_TYPES.has(job.type) ? "Theo dõi đối thủ" : skill?.short}{shopOf(job) && <em className="hist-row-shop">{shopOf(job)}</em>}</span>
           <span className="hist-row-title">{job.title}</span>
           {job.status === "failed" && job.error && <span className="hist-row-err">{job.error.slice(0, 120)}</span>}
         </span>
@@ -341,7 +383,7 @@ export default function HistoryPage() {
   const [shop, setShop] = useState("");
   const setType = (v) => setParams(v ? { type: v } : {});
 
-  const used = SKILLS.filter((s) => s.type && jobs.some((j) => j.type === s.type || (s.type === "fb-reels" && j.type === "watch")));
+  const used = SKILLS.filter((s) => s.type && jobs.some((j) => ofSkill(j, s.type)));
   // Restaurants named in the runs (the business / name / place typed in each form), most used first.
   const shops = Object.values(
     jobs.reduce((acc, j) => {
@@ -353,7 +395,7 @@ export default function HistoryPage() {
   const q = query.trim().toLowerCase();
   const list = jobs.filter(
     (j) =>
-      (!type || j.type === type || (type === "fb-reels" && j.type === "watch")) &&
+      (!type || ofSkill(j, type)) &&
       (!status || (status === "active" ? ACTIVE.has(j.status) : status === "failed" ? j.status === "failed" || j.status === "canceled" : j.status === status)) &&
       (!shop || shopKey(shopOf(j)) === shop) &&
       (!q || j.title.toLowerCase().includes(q)),
@@ -389,7 +431,7 @@ export default function HistoryPage() {
             <button type="button" className={!type ? "on" : undefined} onClick={() => setType("")}>Tất cả <small>{jobs.length}</small></button>
             {used.map((s) => (
               <button key={s.type} type="button" data-tone={s.tone} className={type === s.type ? "on" : undefined} onClick={() => setType(type === s.type ? "" : s.type)}>
-                <i aria-hidden="true" />{s.short} <small>{jobs.filter((j) => j.type === s.type || (s.type === "fb-reels" && j.type === "watch")).length}</small>
+                <i aria-hidden="true" />{s.short} <small>{jobs.filter((j) => ofSkill(j, s.type)).length}</small>
               </button>
             ))}
           </div>

@@ -33,6 +33,7 @@ const CombosPage = lazy(() => import("./pages/CombosPage.jsx"));
 const QrPage = lazy(() => import("./pages/QrPage.jsx"));
 const MenuBoardPage = lazy(() => import("./pages/MenuBoardPage.jsx"));
 const BannerPage = lazy(() => import("./pages/BannerPage.jsx"));
+const SalesPage = lazy(() => import("./pages/SalesPage.jsx"));
 const PublicMenuPage = lazy(() => import("./pages/PublicMenuPage.jsx"));
 const PhotoFixPage = lazy(() => import("./pages/PhotoFixPage.jsx"));
 const LegalPage = lazy(() => import("./pages/LegalPage.jsx"));
@@ -99,6 +100,13 @@ export default function App() {
                 <Route path="weather-post" element={<TextSkillPage config={TEXT_SKILLS["weather-post"]} />} />
                 <Route path="gbp-post" element={<TextSkillPage config={TEXT_SKILLS["gbp-post"]} />} />
                 <Route path="zalo-message" element={<TextSkillPage config={TEXT_SKILLS["zalo-message"]} />} />
+                <Route path="sales-insight" element={<SalesPage />} />
+                <Route path="delivery-menu" element={<TextSkillPage config={TEXT_SKILLS["delivery-menu"]} />} />
+                <Route path="us-occasions" element={<TextSkillPage config={TEXT_SKILLS["us-occasions"]} />} />
+                <Route path="nextdoor-post" element={<TextSkillPage config={TEXT_SKILLS["nextdoor-post"]} />} />
+                <Route path="nearby" element={<TextSkillPage config={TEXT_SKILLS.nearby} />} />
+                <Route path="review-compare" element={<TextSkillPage config={TEXT_SKILLS["review-compare"]} />} />
+                <Route path="trends" element={<TextSkillPage config={TEXT_SKILLS.trends} />} />
                 <Route path="promo-plan" element={<TextSkillPage config={TEXT_SKILLS["promo-plan"]} />} />
                 <Route path="photo-fix" element={<PhotoFixPage />} />
                 <Route path="qr" element={<QrPage />} />

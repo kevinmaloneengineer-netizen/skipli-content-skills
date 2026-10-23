@@ -207,6 +207,14 @@ async function readAloud(texts, voice, dir) {
 
 const mediaLength = async (file) => Number((await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file])).stdout) || 0;
 
+/** The real type of a picture from its first bytes (PNG, JPEG, WebP), null for anything else. */
+export function imageKind(buf) {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+
 export function createVideoService({ dataDir, timeoutMs, mock, log = console }) {
   const dirs = { videos: path.join(dataDir, "videos"), uploads: path.join(dataDir, "uploads"), images: path.join(dataDir, "images") };
   const settingsFile = path.join(dataDir, "video-worker.json");
@@ -272,6 +280,8 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     if (!m) throw new VideoError("Chỉ nhận ảnh PNG, JPG hoặc WEBP");
     const buf = Buffer.from(m[2], "base64");
     if (buf.length > MAX_UPLOAD) throw new VideoError("Ảnh lớn quá 6MB");
+    // The bytes must be the picture the label says, not just any file sent as "image/png".
+    if (imageKind(buf) !== m[1]) throw new VideoError("File không phải ảnh PNG, JPG hoặc WEBP");
     const id = `${randomUUID()}.${IMAGE_TYPES[m[1]]}`;
     await writeFile(path.join(dirs.uploads, id), buf);
     return id;
@@ -738,6 +748,8 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       }
     }
     // "AI làm đẹp": the GPU lightly repaints the photo for light and color; the result is then framed.
+    // A GPU notebook older than this step answers 404: the photo is still graded here, and the result says so.
+    let aiNote = "";
     if (PHOTO_AI[ai]) {
       const tmp = path.join(dirs.images, `.${job.id}`);
       await mkdir(tmp, { recursive: true });
@@ -747,10 +759,16 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       } else {
         await setPhase?.("AI đang làm đẹp ánh sáng và màu…");
         const image = (await readFile(path.join(dirs.uploads, photoId))).toString("base64");
-        const res = await onGpu("/enhance", { image, strength: PHOTO_AI[ai], prompt: label }, "AI làm đẹp");
-        await writeFile(touched, Buffer.from(res.image, "base64"));
+        try {
+          const res = await onGpu("/enhance", { image, strength: PHOTO_AI[ai], prompt: label }, "AI làm đẹp");
+          await writeFile(touched, Buffer.from(res.image, "base64"));
+        } catch (e) {
+          if (!/lỗi 404/.test(e.message)) throw e;
+          aiNote = " Bước AI làm đẹp chưa chạy vì GPU đang dùng notebook cũ (chưa có chức năng này), ảnh được chỉnh màu không dùng AI. Quản trị viên import lại notebook mới để bật lại.";
+          log.warn?.("photo-fix: the GPU worker has no /enhance (old notebook), graded without AI");
+        }
       }
-      extra.push(`ai:${touched}`);
+      if (!aiNote) extra.push(`ai:${touched}`);
     }
     // A new surface: the GPU cuts the dish out (its pixels untouched) and draws the surface; then the
     // two are put together here, with a shadow, before the color grade.
@@ -774,7 +792,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     const { stdout } = await run(process.env.PYTHON ?? "python3", [PHOTO_SCRIPT, path.join(dirs.uploads, photoId), dirs.images, job.id, look, ratios.join(","), ...extra], { timeout: 120_000 });
     await rm(path.join(dirs.images, `.${job.id}`), { recursive: true, force: true });
     const photos = JSON.parse(stdout.trim().split("\n").at(-1));
-    return { result: `Đã chỉnh ${photos.items.length} ảnh: ${photos.items.map((x) => x.ratio).join(", ")}.`, fields: { photos: { ...photos, look, background, ai } } };
+    return { result: `Đã chỉnh ${photos.items.length} ảnh: ${photos.items.map((x) => x.ratio).join(", ")}.${aiNote}`, fields: { photos: { ...photos, look, background, ai: aiNote ? "off" : ai } } };
   }
 
   /** A picture the app made (a fixed dish photo) as an upload, so another tool (a slideshow) can use it. */

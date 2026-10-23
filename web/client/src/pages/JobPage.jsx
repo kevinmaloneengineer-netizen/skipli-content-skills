@@ -28,6 +28,7 @@ import TemplateTexts from "../components/TemplateTexts.jsx";
 import { DISH_TEMPLATES, FEATURED, OFFER_TEMPLATES, SAMPLE_VERSION, TEMPLATES, sampleOf } from "../lib/videoTemplates.js";
 
 import { blanksOf, fillBlanks, useJobEdits } from "../lib/edits.js";
+import { safeHref } from "../lib/safeUrl.js";
 
 /** Results that are a post, which the next tools can take on ("Làm tiếp với…"). */
 const WRITTEN = new Set(["write", "gbp-post", "weather-post", "story-behind", "dish-riddle", "post-score", "menu"]);
@@ -522,8 +523,11 @@ function VideoResult({ job }) {
   );
 }
 
-/** Follow a competitor channel: re-checked weekly, new or viral reels arrive as a notification. */
-function FollowButton({ url }) {
+/**
+ * Follow a competitor channel: re-checked weekly, new or viral reels arrive as a notification.
+ * With `place` (a Google Maps place): its stars and new reviews are re-checked weekly instead.
+ */
+function FollowButton({ url, place = null }) {
   const toast = useToast();
   const [state, setState] = useState("idle");
   useEffect(() => {
@@ -532,9 +536,9 @@ function FollowButton({ url }) {
   async function follow() {
     setState("busy");
     try {
-      await api("/watch", { method: "POST", body: { url } });
+      await api("/watch", { method: "POST", body: { url, ...(place ? { name: place } : {}) } });
       setState("on");
-      toast("Đã theo dõi. Mỗi tuần hệ thống kiểm tra lại kênh, có reel mới hay viral sẽ báo ở chuông.", { to: "/history" });
+      toast(place ? "Đã theo dõi. Mỗi tuần hệ thống xem lại số sao và đánh giá mới của quán, có đánh giá mới sẽ báo ở chuông." : "Đã theo dõi. Mỗi tuần hệ thống kiểm tra lại kênh, có reel mới hay viral sẽ báo ở chuông.", { to: "/history" });
     } catch (e) {
       setState("idle");
       toast(e.message, { kind: "error" });
@@ -544,8 +548,8 @@ function FollowButton({ url }) {
     <button type="button" className={state === "on" ? "follow-btn on" : "follow-btn"} disabled={state !== "idle"} onClick={follow}>
       <span aria-hidden="true">{state === "on" ? "✓" : "🔔"}</span>
       <span>
-        <b>{state === "on" ? "Đang theo dõi kênh này" : "Theo dõi kênh này mỗi tuần"}</b>
-        <small>{state === "on" ? "Quản lý ở trang Lịch sử" : "Báo khi đối thủ có reel mới hoặc reel viral"}</small>
+        <b>{state === "on" ? (place ? "Đang theo dõi quán này" : "Đang theo dõi kênh này") : place ? "Theo dõi sao của quán mỗi tuần" : "Theo dõi kênh này mỗi tuần"}</b>
+        <small>{state === "on" ? "Quản lý ở trang Lịch sử" : place ? "Báo khi quán có đánh giá mới hoặc đổi số sao" : "Báo khi đối thủ có reel mới hoặc reel viral"}</small>
       </span>
     </button>
   );
@@ -589,6 +593,9 @@ export function Result({ job, onSave, edits, setEdits }) {
   if (job.type === "gbp-post") return <Variants job={job} onSave={onSave} prefix="Bài" edits={edits} setEdits={setEdits} />;
   if (job.type === "zalo-message") return <Variants job={job} onSave={onSave} prefix="Tin" edits={edits} setEdits={setEdits} />;
   if (job.type === "promo-plan") return <Variants job={job} onSave={onSave} edits={edits} />;
+  if (job.type === "delivery-menu") return <Variants job={job} onSave={onSave} prefix="Món" edits={edits} setEdits={setEdits} />;
+  if (job.type === "us-occasions") return <Variants job={job} onSave={onSave} prefix="Dịp" edits={edits} setEdits={setEdits} />;
+  if (job.type === "nextdoor-post") return <Variants job={job} onSave={onSave} prefix="Bài" edits={edits} setEdits={setEdits} />;
   if (job.type === "photo-fix" && job.photos) return <PhotoResult job={job} />;
   if (job.type === "maps" || job.type === "yelp") return <MapsResult job={job} />;
   if (job.type === "compare") return <CompareResult job={job} />;
@@ -605,7 +612,7 @@ export function Result({ job, onSave, edits, setEdits }) {
             <ol>
               {job.learned.map((r) => (
                 <li key={r.url}>
-                  <a href={r.url} target="_blank" rel="noopener noreferrer">{r.caption || "Xem reel"}</a>
+                  <a href={safeHref(r.url)} target="_blank" rel="noopener noreferrer">{r.caption || "Xem reel"}</a>
                   <small>{r.engagement?.toLocaleString("vi-VN")} tương tác · {r.source === "video" ? "AI đã xem video" : r.source === "lời thoại" ? "AI đã nghe lời thoại" : "chỉ đọc caption"}</small>
                 </li>
               ))}
@@ -704,7 +711,10 @@ export default function JobPage() {
   const channel = (job.type === "fb-reels" && job.input?.mode === "channel") || job.type === "fanpage";
   const next = done
     ? [
-        ["fb-reels", "threads", "fanpage", "tiktok", "maps", "yelp", "instagram", "compare", "watch"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
+        ["fb-reels", "threads", "fanpage", "tiktok", "maps", "yelp", "instagram", "compare", "watch", "nearby", "review-compare", "trends"].includes(job.type) && { to: `/write?ref=${job.id}`, label: "Viết content từ kết quả này", hint: "AI viết bài theo đúng những gì đang hiệu quả", primary: true },
+        job.type === "nearby" && { to: "/review-compare", label: "So sánh review các đối thủ này", hint: "Dán link 2 đến 4 quán trong bảng để xem khách chê, khen gì" },
+        job.type === "trends" && { to: "/us-occasions", label: "Lên lịch dịp lễ cho các món này", hint: "Ngày lễ và National Food Days sắp tới" },
+        job.type === "rating-watch" && { to: "/review", label: "Trả lời review khách", hint: "Soạn câu trả lời cho các đánh giá ít sao", primary: true },
         channel && { to: `/clone?url=${url}`, label: "Nhân bản kênh này", hint: "Viết hàng loạt bài mới học từ kênh này" },
         job.type === "fb-reels" && job.input?.mode === "channel" && { to: `/fanpage?url=${url}`, label: "Phân tích fanpage này", hint: "Ngày giờ đăng, độ dài video, chủ đề ăn khách" },
         (job.type === "maps" || job.type === "yelp") && { to: `/review?from=${job.id}`, label: "Trả lời các điểm khách chê", hint: "Điền sẵn những điểm khách hay chê trong báo cáo" },
@@ -774,6 +784,7 @@ export default function JobPage() {
             <section className="aside-card">
               <h2>Bước tiếp theo</h2>
               {channel && <FollowButton url={job.input.url} />}
+              {job.type === "maps" && /^https:\/\//.test(job.place?.url ?? "") && <FollowButton url={job.place.url} place={job.place.name || "Quán trên Google Maps"} />}
               <div className="next-list">
                 {next.map((n) => (
                   <Link key={n.to} className={n.primary ? "next-item primary" : "next-item"} to={n.to}>

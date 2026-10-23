@@ -3409,3 +3409,10 @@ select:disabled { cursor: not-allowed; opacity: .6; }
 /* ---- Chụp menu giấy ---- */
 .mb-scan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px; border-radius: 14px; background: var(--ok-soft); }
 .mb-scan small { flex: 1 1 260px; color: var(--muted); }
+
+/* ---- Đọc file bán hàng ---- */
+.sales-preview { overflow-x: auto; margin-top: 10px; border-radius: 12px; border: 1px solid var(--line); }
+.sales-preview table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sales-preview th, .sales-preview td { padding: 6px 9px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.sales-preview th { background: var(--surface-2); font-weight: 700; }
+

@@ -1,6 +1,7 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import Markdown from "./Markdown.jsx";
 import { api } from "../lib/api.js";
+import { safeHref } from "../lib/safeUrl.js";
 
 const THREADS_URL = /https:\/\/(?:www\.)?threads\.(?:com|net)\/@[\w.]+\/post\/[\w-]+/;
 export const REEL_URL = /https:\/\/(?:www\.|m\.)?(?:facebook\.com\/(?:reel\/\d{6,25}|[^\s/)]+\/videos\/\d{6,25}|watch\/?\?v=\d{6,25})|instagram\.com\/(?:[\w.]+\/)?(?:p|reel)\/[\w-]+)[^\s)]*/;
@@ -17,7 +18,7 @@ function InstagramCard({ url, post, compact }) {
   const [broken, setBroken] = useState(false);
   const isVideo = /video|reel/i.test(post?.kind ?? "") || /\/reel\//.test(url);
   return (
-    <a className={compact ? "ig-card compact" : "ig-card"} href={url} target="_blank" rel="noopener noreferrer" title="Mở trên Instagram">
+    <a className={compact ? "ig-card compact" : "ig-card"} href={safeHref(url)} target="_blank" rel="noopener noreferrer" title="Mở trên Instagram">
       <span className="ig-media">
         {post?.image && !broken ? <img src={`/media/thumbs/${post.image}`} alt={post.caption || "Bài Instagram"} loading="lazy" onError={() => setBroken(true)} /> : <span className="ig-noimg" aria-hidden="true" />}
         <span className="ig-kind">{isVideo ? "▶ Reel" : post?.kind === "album nhiều ảnh" ? "❐ Album" : "Ảnh"}</span>
@@ -72,7 +73,7 @@ function FacebookPlayer({ url, compact }) {
     <div ref={box} className={compact ? "reel-player compact" : "reel-player"}>
       {clip ? <video className="tt-video" src={`/media/clips/${clip}.mp4`} controls autoPlay playsInline /> : !width ? <div className="reel-poster" /> : <iframe src={src} title="Reel Facebook" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />}
       <span className="reel-links">
-        <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên Facebook ↗</a>
+        <a className="reel-open" href={safeHref(url)} target="_blank" rel="noopener noreferrer">Mở trên Facebook ↗</a>
         {!clip && (
           <button type="button" className="reel-fallback" disabled={state === "loading"} onClick={fallback}>
             {state === "loading" ? "Đang tải…" : state === "failed" ? "Không tải được" : "Không xem được? Phát bản tải về"}
@@ -120,7 +121,7 @@ function TiktokPlayer({ url, section, clip: kept }) {
     return (
       <div className="reel-player tiktok-player">
         <video className="tt-video" src={`/media/clips/${clip}.mp4`} controls autoPlay playsInline />
-        <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
+        <a className="reel-open" href={safeHref(url)} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
       </div>
     );
   }
@@ -128,7 +129,7 @@ function TiktokPlayer({ url, section, clip: kept }) {
     return (
       <div className="reel-player tiktok-player">
         <iframe src={`https://www.tiktok.com/embed/v2/${id}?lang=vi-VN&autoplay=1`} title="Video TikTok" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen />
-        <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
+        <a className="reel-open" href={safeHref(url)} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
       </div>
     );
   }
@@ -146,7 +147,7 @@ function TiktokPlayer({ url, section, clip: kept }) {
         </span>
         {views && <span className="tt-views"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>{views} lượt xem</span>}
       </button>
-      <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
+      <a className="reel-open" href={safeHref(url)} target="_blank" rel="noopener noreferrer">Mở trên TikTok ↗</a>
     </div>
   );
 }
@@ -176,7 +177,7 @@ function ThreadsCard({ section, url }) {
   const hue = [...author].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
   return (
     <div className="reel-player thread-player">
-      <a className="thread-card" href={url} target="_blank" rel="noopener noreferrer" aria-label={`Bài của @${author} trên Threads`}>
+      <a className="thread-card" href={safeHref(url)} target="_blank" rel="noopener noreferrer" aria-label={`Bài của @${author} trên Threads`}>
         <div className="thread-top">
           <span className="thread-avatar" style={{ background: `hsl(${hue} 55% 52%)` }}>{author[0].toUpperCase()}</span>
           <span className="thread-who">
@@ -192,7 +193,7 @@ function ThreadsCard({ section, url }) {
           {reposts && <span><svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3" /></svg>{reposts}</span>}
         </div>
       </a>
-      <a className="reel-open" href={url} target="_blank" rel="noopener noreferrer">Mở trên Threads ↗</a>
+      <a className="reel-open" href={safeHref(url)} target="_blank" rel="noopener noreferrer">Mở trên Threads ↗</a>
     </div>
   );
 }

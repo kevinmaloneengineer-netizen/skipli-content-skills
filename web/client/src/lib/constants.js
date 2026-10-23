@@ -365,6 +365,50 @@ export const SKILLS = [
     etaLong: "Thường dưới 1 phút.",
   },
   {
+    id: "delivery-menu",
+    type: "delivery-menu",
+    path: "/delivery-menu",
+    tone: "coral",
+    title: "Menu cho DoorDash, Uber Eats, Grubhub",
+    short: "Menu app giao",
+    pitch: "Tên món, mô tả ngắn, nhóm món và nhãn đúng kiểu app giao đồ ăn ở Mỹ, kèm gợi ý combo từ món của quán.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút.",
+  },
+  {
+    id: "us-occasions",
+    type: "us-occasions",
+    path: "/us-occasions",
+    tone: "blue",
+    title: "Lịch dịp lễ và National Food Days",
+    short: "Dịp lễ Mỹ",
+    pitch: "Các dịp trong 30 đến 60 ngày tới (Thanksgiving, Black Friday, National Taco Day…), mỗi dịp có bài đăng, khuyến mãi và mẫu video.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút. Ngày do hệ thống tính.",
+  },
+  {
+    id: "nextdoor-post",
+    type: "nextdoor-post",
+    path: "/nextdoor-post",
+    tone: "mint",
+    title: "Bài đăng Nextdoor",
+    short: "Nextdoor",
+    pitch: "3 bài cho mạng hàng xóm Nextdoor: giới thiệu quán, khai trương, sự kiện hay ưu đãi, giọng như người hàng xóm.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút.",
+  },
+  {
+    id: "sales-insight",
+    type: "sales-insight",
+    path: "/sales-insight",
+    tone: "mint",
+    title: "Đọc file bán hàng ra gợi ý",
+    short: "Đọc doanh số",
+    pitch: "Tải file Excel từ phần mềm bán hàng: biết món nào bán chạy, món nào nên khuyến mãi, giờ nào đông và vắng, rồi nhận bài đăng gợi ý.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút. Số liệu tính trên máy chủ.",
+  },
+  {
     id: "promo-plan",
     type: "promo-plan",
     path: "/promo-plan",
@@ -374,6 +418,39 @@ export const SKILLS = [
     pitch: "Nhập món, giá bán và giá vốn: nhận 3 khuyến mãi kèm giá thường, giá khuyến mãi và tiền lãi mỗi đơn.",
     eta: "dưới 1 phút",
     etaLong: "Thường dưới 1 phút.",
+  },
+  {
+    id: "nearby",
+    type: "nearby",
+    path: "/nearby",
+    tone: "brick",
+    title: "Đối thủ quanh quán",
+    short: "Đối thủ quanh quán",
+    pitch: "Đọc các quán cùng loại quanh bạn trên Google Maps: ai mạnh nhất, ai bị chê nhiều, ai mở khuya, quán bạn đứng thứ mấy, và khoảng trống bạn có thể chiếm.",
+    eta: "1 đến 2 phút",
+    etaLong: "Đọc Google Maps mất khoảng 20 đến 40 giây, AI phân tích thêm chưa tới 1 phút.",
+  },
+  {
+    id: "review-compare",
+    type: "review-compare",
+    path: "/review-compare",
+    tone: "brick",
+    title: "So sánh review nhiều quán",
+    short: "So sánh review",
+    pitch: "Đặt đánh giá Google Maps của 2 đến 5 quán cạnh nhau: mỗi quán bị chê gì, được khen gì, chủ quán có trả lời không, và quán bạn nên làm gì.",
+    eta: "2 đến 3 phút",
+    etaLong: "Mỗi quán đọc đánh giá khoảng 30 giây, AI so sánh thêm khoảng 1 phút.",
+  },
+  {
+    id: "trends",
+    type: "trends",
+    path: "/trends",
+    tone: "blue",
+    title: "Nhu cầu tìm kiếm theo khu vực",
+    short: "Xu hướng tìm kiếm",
+    pitch: "Google Trends 12 tháng cho các món của bạn ở bang hoặc cả nước Mỹ: món nào đang lên, tháng nào khách tìm nhiều, khách tìm kèm chữ gì.",
+    eta: "dưới 1 phút",
+    etaLong: "Đọc Google Trends khoảng 15 giây, AI đọc số liệu thêm vài giây.",
   },
   {
     id: "photo-fix",
@@ -397,7 +474,7 @@ export const CATEGORIES = [
     word: "NGHIÊN CỨU",
     dark: true,
     desc: "Biết đối thủ đang làm gì hiệu quả, bài nào viral và vì sao viral, trước khi bạn viết chữ nào.",
-    skills: ["reels", "threads", "tiktok", "fanpage", "instagram", "compare", "maps", "yelp"],
+    skills: ["reels", "threads", "tiktok", "fanpage", "instagram", "compare", "maps", "yelp", "nearby", "review-compare", "trends"],
     deco: ["search", "chart", "heart", "eye", "play", "trend", "comment", "search"],
   },
   {
@@ -416,7 +493,7 @@ export const CATEGORIES = [
     title: "Đăng bài & chăm khách",
     word: "CHĂM KHÁCH",
     desc: "Giữ lại mẫu hay, xếp lịch đăng đúng giờ, trả lời review và tin nhắn để khách quay lại.",
-    skills: ["library", "schedule", "gbp-post", "zalo-message", "promo-plan", "menu-board", "qr", "hashtag", "review", "inbox"],
+    skills: ["library", "schedule", "gbp-post", "zalo-message", "nextdoor-post", "delivery-menu", "us-occasions", "promo-plan", "sales-insight", "menu-board", "qr", "hashtag", "review", "inbox"],
     deco: ["calendar", "clock", "bookmark", "check", "folder", "bell", "check", "clock"],
   },
 ];
@@ -424,7 +501,8 @@ export const CATEGORIES = [
 export const skillById = (id) => SKILLS.find((s) => s.id === id);
 
 // "watch" jobs are reel lists from the competitor watch: they look and act like a reels scan.
-export const skillByType = (type) => SKILLS.find((s) => s.type === (type === "watch" ? "fb-reels" : type));
+// "rating-watch" jobs are the weekly stars and new reviews of a followed Google Maps place.
+export const skillByType = (type) => SKILLS.find((s) => s.type === (type === "watch" ? "fb-reels" : type === "rating-watch" ? "maps" : type));
 
 export const PLATFORMS = { facebook: "Facebook", threads: "Threads", tiktok: "Video ngắn", ads: "Quảng cáo" };
 

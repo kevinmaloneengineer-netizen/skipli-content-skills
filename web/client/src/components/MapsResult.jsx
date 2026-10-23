@@ -2,6 +2,7 @@ import Markdown from "./Markdown.jsx";
 import { Link } from "react-router-dom";
 import { DoDont, parseTable, toNumber } from "./FanpageResult.jsx";
 import { CountUp } from "./CountUp.jsx";
+import { safeHref } from "../lib/safeUrl.js";
 
 /** Link to the review replier with this review filled in. */
 const replyLink = (text, stars, business) => `/review?${new URLSearchParams({ review: text, ...(stars ? { stars: String(stars) } : {}), ...(business ? { business } : {}) })}`;
@@ -76,7 +77,7 @@ function Scorecard({ place, summary, site }) {
         </span>
         <h2 className="mp-name">{place.name}</h2>
         {place.address && <p className="mp-addr">{place.address.replace(/[\ue000-\uf8ff]/g, "").trim()}</p>}
-        {place.url && <a className="mp-link" href={place.url} target="_blank" rel="noopener noreferrer">Mở trên {site} ↗</a>}
+        {place.url && <a className="mp-link" href={safeHref(place.url)} target="_blank" rel="noopener noreferrer">Mở trên {site} ↗</a>}
         {place.url && site === "Yelp" && <small className="mp-hint">Yelp có thể chặn truy cập từ Việt Nam (lỗi 403): bật VPN đặt ở Mỹ để mở.</small>}
       </div>
       {!hasCounts && (

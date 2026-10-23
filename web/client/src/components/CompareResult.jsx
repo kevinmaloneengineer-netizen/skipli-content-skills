@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Markdown from "./Markdown.jsx";
 import { ReelPlayer } from "./ReelsResult.jsx";
+import { safeHref } from "../lib/safeUrl.js";
 
 const COLORS = ["#e25d33", "#2f5bd3", "#2e8f5b"];
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -102,7 +103,7 @@ export default function CompareResult({ job }) {
       <section className="card cmp-hero">
         <div className="cmp-podium">
           {podium.map((p) => (
-            <a key={p.url} href={p.url} target="_blank" rel="noopener noreferrer" className="cmp-rank" data-rank={p.rank} style={{ "--c": p.color }}>
+            <a key={p.url} href={safeHref(p.url)} target="_blank" rel="noopener noreferrer" className="cmp-rank" data-rank={p.rank} style={{ "--c": p.color }}>
               <span className="cmp-medal" aria-hidden="true">{MEDALS[p.rank]}</span>
               <span className="cmp-avatar" aria-hidden="true">{p.name[0].toUpperCase()}</span>
               <b>@{p.name}</b>

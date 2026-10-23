@@ -34,6 +34,13 @@ export const CREDIT_COST = {
   "menu-scan": 1, // a menu photo read by Gemini, taken only when dishes come back
   "zalo-message": 1,
   "promo-plan": 1,
+  "sales-insight": 1,
+  "delivery-menu": 1,
+  "us-occasions": 1,
+  "nextdoor-post": 1,
+  nearby: 2, // 15 to 25 places read on Google Maps
+  "review-compare": 3, // two review reads per place, up to 5 places
+  trends: 2, // two Google Trends reads
 };
 export const costOf = (type) => CREDIT_COST[type] ?? 1;
 

@@ -7,23 +7,15 @@
 //   Instagram: apify/instagram-post-scraper (~$0.0017 a post)
 
 import { apifyReviewsEnabled } from "./mapsApify.mjs";
+import { runActor as runApify } from "./apify.mjs";
 
 const YELP_ACTOR = process.env.APIFY_YELP_ACTOR ?? "delicious_zebu~yelp-reviews-scraper";
 const IG_ACTOR = process.env.APIFY_INSTAGRAM_ACTOR ?? "apify~instagram-post-scraper";
 
 export const socialEnabled = apifyReviewsEnabled;
 
-async function runActor(actor, input, signal) {
-  const res = await fetch(`https://api.apify.com/v2/acts/${actor}/run-sync-get-dataset-items?timeout=240&format=json&clean=true`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.APIFY_REVIEWS_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(280_000)]) : AbortSignal.timeout(280_000),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !Array.isArray(data)) throw new Error(`Apify lỗi: ${data?.error?.message ?? res.statusText}`);
-  return data;
-}
+// Started and followed (see apify.mjs), so a network blip during the wait does not fail the scan.
+const runActor = (actor, input, signal) => runApify({ actor, token: process.env.APIFY_REVIEWS_TOKEN, input, signal });
 
 /** "https://www.yelp.com/biz/franklin-barbecue-austin?osq=…" → the canonical business URL. */
 export function yelpUrl(raw) {

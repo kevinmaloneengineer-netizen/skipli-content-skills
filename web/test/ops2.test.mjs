@@ -90,9 +90,10 @@ test("restyle: only finished slideshows, a real template; 1 credit, given back w
     assert.equal(app.store.getUser(uid).credits, 9);
     // The photos do not exist here, so the render fails and the credit comes back.
     let job;
-    for (let i = 0; i < 100; i++) {
+    // A restyle waits its turn on the job queue first ("queued"), then renders ("running").
+    for (let i = 0; i < 400; i++) {
       job = app.store.cachedJob(made.body.job.id);
-      if (job.status !== "running") break;
+      if (!["queued", "running"].includes(job.status)) break;
       await sleep(50);
     }
     assert.equal(job.status, "failed");

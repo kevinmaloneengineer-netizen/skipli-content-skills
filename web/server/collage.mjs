@@ -181,8 +181,11 @@ Object.assign(LABELS.en, { showing: "Now showing", issue: "Special issue", from:
 Object.assign(LABELS.vi, { showing: "Đang chiếu", issue: "Số đặc biệt", from: "Gửi từ", receipt: "Hoá đơn", thanks: "Cảm ơn quý khách!", now: "vừa xong", spotlight: "Món nổi bật" });
 Object.assign(LABELS.en, { breaking: "Breaking", live: "Live", mustTry: "Must try", today: "Today's specials", findUs: "Find us here", coupon: "Coupon" });
 Object.assign(LABELS.vi, { breaking: "Tin nóng", live: "Trực tiếp", mustTry: "Món nên thử", today: "Hôm nay có", findUs: "Quán ở đây", coupon: "Phiếu ưu đãi" });
+// The three newer templates: their default words (each one can be changed on the form, see shared/templateTexts.js).
+Object.assign(LABELS.en, { sub: "Each visit, one stamp", reward: "[REWARD]", title: "This week", watch: "Watch the match here", home: "HOME", away: "OPPONENT", when: "[KICK-OFF TIME]", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] });
+Object.assign(LABELS.vi, { sub: "Mỗi lần ghé, đóng một dấu", reward: "[QUÀ TẶNG]", title: "Tuần này", watch: "Xem bóng đá tại quán", home: "ĐỘI NHÀ", away: "ĐỐI THỦ", when: "[GIỜ BÓNG LĂN]", days: ["T2", "T3", "T4", "T5", "T6", "T7", "CN"] });
 /** Templates that open on their own hook instead of the search bar (all but the Canva-like collage). */
-const OWN_HOOK = new Set(["top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee", "news", "chalk", "map", "coupon"]);
+const OWN_HOOK = new Set(["top3", "menu", "promo", "polaroid", "bold", "film", "magazine", "grid", "story", "receipt", "neon", "postcard", "spotlight", "marquee", "news", "chalk", "map", "coupon", "stamp", "week", "score"]);
 
 /**
  * Scene list of a template (durations are rough; they are scaled to the requested length).
@@ -325,6 +328,26 @@ function planFor(template, { seconds, hasCard, portrait, top, name, city, addres
       plan.push({ kind: "tilted", roles: ["ext", "side"], d: 4 });
       plan.push({ kind: "layers", spec: { kind: "coupon", mode: "photo", label: L.coupon, offer, place: name || city }, roles: ["table"], d: 4 });
     }
+  } else if (template === "stamp") {
+    // A loyalty card, then the card on a photo of the place: the reward is the offer when there is one.
+    // The reward the owner typed wins; otherwise the deal line; otherwise the placeholder.
+    const typed = L.reward !== LABELS.vi.reward && L.reward !== LABELS.en.reward;
+    const reward = typed ? L.reward : offer || L.reward;
+    plan.push({ kind: "layers", spec: { kind: "stamp", name: name || tagline, sub: L.sub, stamped: 4, reward }, roles: [], d: long ? 5 : 4 });
+    plan.push({ kind: "layers", spec: { kind: "stamp", name: name || tagline, sub: L.sub, stamped: 9, reward }, roles: [], d: long ? 4.6 : 3.6 });
+    plan.push({ kind: "full", role: "ext", card: top, d: 3.2 });
+    if (long) plan.push({ kind: "layout", layout: "split", roles: ["int", "table"], d: 4 });
+  } else if (template === "week") {
+    // The owner's dish list, one line per day from Monday; the order of the list is the order of the days.
+    const rows = dishes.slice(0, 7).map((d, k) => ({ day: L.days[k], name: d.name, price: d.price }));
+    plan.push({ kind: "layers", spec: { kind: "week", title: L.title, rows }, roles: [], d: long ? 6 : 5 });
+    plan.push({ kind: "full", role: "ext", card: top, d: 3 });
+    plan.push({ kind: "layout", layout: "trio", roles: ["close", "table", "int"], d: 3.8 });
+  } else if (template === "score") {
+    const home = L.home, away = L.away;
+    plan.push({ kind: "layers", spec: { kind: "score", title: L.watch, home, away, when: L.when, offer }, roles: ["ext"], d: long ? 6 : 5 });
+    plan.push({ kind: "layout", layout: "split", roles: ["int", "table"], d: 3.6 });
+    if (long) plan.push({ kind: "layers", spec: { kind: "score", title: L.watch, home, away, when: L.when, offer }, roles: ["medium"], d: 4.6 });
   } else {
     // "collage": the Canva-like layouts.
     if (hasCard && portrait) plan.push({ kind: "landing", roles: ["close", "int", "medium", "table"], d: 4.8 });

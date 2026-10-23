@@ -12,6 +12,7 @@ import { createFacebookSource } from "./sources/facebook.mjs";
 import { cleanTexts } from "../shared/templateTexts.js";
 import { isMapsLink, MapLinkError, placeFromLink } from "./sources/osm.mjs";
 import { buildJob, cleanHashtags, InputError, OFFER_TEMPLATES, parseDishes, SLIDE_TEMPLATES } from "./prompts.mjs";
+import { placesEnabled } from "./sources/places.mjs";
 import { CHECKED_TYPES, checkFacts, englishBlanks } from "./facts.mjs";
 import { reviewsIn, verifyQuotes } from "./quotes.mjs";
 import { complete, directEnabled, fixDashes } from "./llm.mjs";
@@ -37,6 +38,8 @@ import { cleanUploads, createStorage, filesOf } from "./storage.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 import { readMenu } from "./vision.mjs";
 import { promoReport } from "./promo.mjs";
+import { detectMapping, MAX_SALES_BYTES, readSheet, salesStats, statsText } from "./sales.mjs";
+import { cleanOccasions } from "./usDays.mjs";
 
 const CLIENT_DIST = path.join(WEB_ROOT, "client", "dist");
 const LIBRARY_KINDS = new Set(["template", "saved"]);
@@ -106,7 +109,7 @@ function passwordGate(password) {
 
 /** Job without the heavy fields, for lists. */
 function summary(job, runner) {
-  const { prompt, result, ...rest } = job;
+  const { prompt, result, researchTable, ...rest } = job;
   return { ...rest, queuePosition: job.status === "queued" ? runner.position(job.id) : null };
 }
 
@@ -138,6 +141,8 @@ function nextMondayYmd() {
 }
 
 const SLOT_PLATFORMS = new Set(["facebook", "threads", "tiktok", "instagram"]);
+// Market research reports: a table counted by the code, then the model's reading (research.mjs).
+const RESEARCH_TYPES = new Set(["nearby", "review-compare", "trends"]);
 function slotFields(body, partial = false) {
   const out = {};
   const text = (field, max, required) => {
@@ -272,9 +277,16 @@ export async function createApp(config, adapter) {
     if (job.type === "hashtag") return { result: cleanHashtags(content, job.input) };
     // The money of each promotion is worked out here from the owner's prices, never taken from the model.
     if (job.type === "promo-plan") return { result: promoReport(content, job.input) };
+    // Offers the shop never chose are taken out of the posts; unknown ingredients are flagged (usDays.mjs).
+    if (job.type === "us-occasions") content = cleanOccasions(content, job.input?.serves);
     if (job.type === "reel-cut") return clipper.finishReels(job, content, ctx);
     if (job.type === "live-recap") return clipper.finishRecap(job, content, ctx);
     if (job.type === "dub") return clipper.finishDub(job, content, ctx);
+    if (RESEARCH_TYPES.has(job.type)) {
+      // The table the code counted goes on top; the model's reading follows (with its quotes checked).
+      const { text, fixed } = job.type === "review-compare" ? verifyQuotes(content, reviewsIn(job.prompt)) : { text: content, fixed: 0 };
+      return { result: job.researchTable ? `${job.researchTable}\n\n${text}` : text, fields: { quotesFixed: fixed } };
+    }
     if (job.type === "maps" || job.type === "yelp") {
       // Quotes must be word for word: a trimmed or reworded one is replaced by the review's own words.
       const { text, fixed } = verifyQuotes(content, reviewsIn(job.prompt));
@@ -749,6 +761,18 @@ export async function createApp(config, adapter) {
 
   api.post("/watch", async (req, res) => {
     let url;
+    // A Google Maps place: its stars and new reviews are read every week (watcher.mjs, kind "maps").
+    const raw = String(req.body?.url ?? "").trim();
+    if (/^https:\/\//i.test(raw) && isMapsLink(raw)) {
+      if (!placesEnabled()) throw new HttpError(400, "Chưa cấu hình APIFY_REVIEWS_TOKEN: theo dõi quán trên Google Maps cần Apify.");
+      if (raw.length > 600) throw new HttpError(400, "Link Google Maps dài quá");
+      const existing = store.listWatch().find((w) => w.url === raw && own(req, w));
+      if (existing) return res.json({ item: existing });
+      const name = String(req.body?.name ?? "").trim().slice(0, 120) || "Quán trên Google Maps";
+      const item = await store.addWatch({ url: raw, name, kind: "maps", ...(accounts ? { userId: req.user.id } : {}) });
+      watcher.check(item).catch((e) => store.updateWatch(item.id, { lastError: e.message }));
+      return res.status(201).json({ item });
+    }
     try {
       url = buildJob("fanpage", { url: req.body?.url }).input.url; // same link validation as the fanpage tool
     } catch (e) {
@@ -986,6 +1010,53 @@ export async function createApp(config, adapter) {
   api.get("/menus", (req, res) => {
     res.json({ menus: store.listLibrary().filter((x) => x.kind === "menu" && own(req, x)).map((x) => ({ id: x.id, title: x.title, menu: x.menu, updatedAt: x.updatedAt })) });
   });
+  // "Đọc file bán hàng": an Excel export from the POS. Step 1 reads the headers and guesses the columns (the
+  // owner confirms them on the page); step 2 counts the numbers here and queues the reading for the model.
+  const salesFile = (dataUrl) => {
+    const m = String(dataUrl ?? "").match(/^data:application\/(?:vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|vnd\.ms-excel|octet-stream);base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw new HttpError(400, "Chọn file Excel (.xlsx hoặc .xls)");
+    const buf = Buffer.from(m[1], "base64");
+    if (buf.length > MAX_SALES_BYTES) throw new HttpError(400, "File quá lớn (tối đa 5 MB)");
+    try {
+      return readSheet(buf);
+    } catch (e) {
+      throw new HttpError(400, e.message || "Không đọc được file Excel này");
+    }
+  };
+  api.post("/sales/read", express.json({ limit: "8mb" }), async (req, res) => {
+    const f = salesFile(req.body?.dataUrl);
+    res.json({ sheet: f.sheet, sheets: f.sheets, headers: f.headers, rows: f.rows.length, mapping: detectMapping(f.headers), preview: f.rows.slice(0, 5) });
+  });
+  api.post("/sales/analyze", express.json({ limit: "8mb" }), limits.jobs, async (req, res) => {
+    const f = salesFile(req.body?.dataUrl);
+    const map = req.body?.mapping ?? {};
+    const mapping = {};
+    for (const k of ["dish", "qty", "amount", "time", "date"]) {
+      const v = map[k];
+      if (v === "" || v == null) continue;
+      const i = Number(v);
+      if (!Number.isInteger(i) || i < 0 || i >= f.headers.length) throw new HttpError(400, "Cột đã chọn không hợp lệ");
+      mapping[k] = i;
+    }
+    let stats;
+    try {
+      stats = salesStats(f.rows, mapping);
+    } catch (e) {
+      throw new HttpError(400, e.message);
+    }
+    const business = String(req.body?.business ?? "").trim().slice(0, 120) || "quán";
+    const text = statsText(stats);
+    const spec = {
+      agent: "writer",
+      direct: "sales-insight",
+      title: `Đọc doanh số · ${business.slice(0, 60)}`,
+      input: { business, stats: { lines: stats.lines, dishCount: stats.dishCount, totalQty: stats.totalQty, totalAmount: stats.totalAmount }, summary: text },
+      prompt: `Gợi ý nội dung và khuyến mãi từ số liệu bán hàng theo skill sales-insight, bằng tiếng Việt.\n\nQuán: ${business}\n\nSố liệu (đã tính sẵn, chỉ dùng những số này):\n${text}`,
+    };
+    const job = await submitPaid(req, "sales-insight", spec);
+    res.status(201).json({ job: summary(job, runner) });
+  });
+
   // "Chụp menu giấy": a photo of the paper menu read into the menu text (the owner checks it before saving).
   // 1 credit, taken only when dishes were read.
   api.post("/menus/scan", express.json({ limit: "9mb" }), limits.jobs, async (req, res) => {

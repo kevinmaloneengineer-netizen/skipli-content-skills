@@ -22,13 +22,16 @@ export const TEMPLATES = [
   ["spotlight", "Món nổi bật", "Từng món trong khung tròn trên nền màu, tên món và giá"],
   ["marquee", "Chữ chạy", "Hai dải chữ chạy ngược chiều trên ảnh toàn khung"],
   ["chalk", "Bảng phấn", "Món hôm nay viết phấn trên bảng đen, ảnh món dán băng keo lên bảng"],
+  ["stamp", "Thẻ tích điểm", "Thẻ khách quen đóng dấu từng lần ghé, rồi quà khi đủ dấu"],
+  ["week", "Món theo tuần", "Mỗi ngày một món, từ thứ Hai đến Chủ nhật, kèm giá"],
+  ["score", "Xem bóng đá", "Bảng tỉ số trận đấu, mời khách xem bóng đá tại quán"],
   ["single", "Từng ảnh", "Mỗi cảnh một ảnh, chuyển cảnh mờ dần"],
 ];
 // Shown first with a "Nổi bật" tag, one per goal: be found (the real map), stop the scroll (the news frame),
 // show the dishes (Top 3 countdown), bring people in (the tear-off coupon).
 export const FEATURED = new Set(["map", "news", "top3", "coupon"]);
 // Templates that take the dish list (names, prices only when typed).
-export const DISH_TEMPLATES = { top3: "3 món phải thử (mỗi dòng một món, giá tuỳ chọn)", spotlight: "3 món nổi bật (mỗi dòng một món, giá tuỳ chọn)", menu: "Món và giá (tối đa 4 món, mỗi dòng một món)", receipt: "Món trên hoá đơn (tối đa 4 món, mỗi dòng một món, giá tuỳ chọn)", chalk: "Món trên bảng (tối đa 4 món, mỗi dòng một món, giá tuỳ chọn)" };
+export const DISH_TEMPLATES = { top3: "3 món phải thử (mỗi dòng một món, giá tuỳ chọn)", spotlight: "3 món nổi bật (mỗi dòng một món, giá tuỳ chọn)", menu: "Món và giá (tối đa 4 món, mỗi dòng một món)", receipt: "Món trên hoá đơn (tối đa 4 món, mỗi dòng một món, giá tuỳ chọn)", chalk: "Món trên bảng (tối đa 4 món, mỗi dòng một món, giá tuỳ chọn)", week: "Món theo tuần (mỗi dòng một món, dòng đầu là thứ Hai, tối đa 7 món, giá tuỳ chọn)" };
 // Templates built around a deal: they need the offer line.
 export const OFFER_TEMPLATES = new Set(["promo", "coupon"]);
 // Sample clip of a template (client/public/samples, rendered from the same code with stock photos).

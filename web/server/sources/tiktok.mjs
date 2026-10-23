@@ -1,6 +1,8 @@
 // TikTok videos without login or API key: find video links with a web search (DuckDuckGo HTML,
 // "site:tiktok.com …"), then read each video page, which embeds its stats in the rehydration JSON.
 
+import { safeFetch } from "../safeFetch.mjs";
+
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36";
 const timed = (signal, ms) => (signal ? AbortSignal.any([signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms));
 const VIDEO = /tiktok\.com\/@([\w.-]+)\/video\/(\d{15,20})/;
@@ -24,7 +26,8 @@ async function ddg(query, signal) {
  */
 export async function downloadVideo(url, file, signal) {
   const { writeFile } = await import("node:fs/promises");
-  const res = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "vi-VN,vi;q=0.9" }, signal: timed(signal, 20_000) });
+  // The video page and its mp4 address come from scraped data: fetched only on public https hosts.
+  const res = await safeFetch(url, { headers: { "User-Agent": UA, "Accept-Language": "vi-VN,vi;q=0.9" }, signal: timed(signal, 20_000) });
   if (!res.ok) return false;
   const cookies = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
   const json = (await res.text()).match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/)?.[1];
@@ -37,7 +40,7 @@ export async function downloadVideo(url, file, signal) {
   }
   const src = video?.playAddr || video?.downloadAddr;
   if (!src) return false;
-  const media = await fetch(src, { headers: { "User-Agent": UA, Referer: "https://www.tiktok.com/", Cookie: cookies }, signal: timed(signal, 90_000) });
+  const media = await safeFetch(src, { headers: { "User-Agent": UA, Referer: "https://www.tiktok.com/", Cookie: cookies }, signal: timed(signal, 90_000) });
   if (!media.ok) return false;
   const buf = Buffer.from(await media.arrayBuffer());
   if (buf.length < 10_000 || buf.length > 150 * 1024 * 1024) return false;
@@ -47,7 +50,7 @@ export async function downloadVideo(url, file, signal) {
 
 /** Stats and caption of one video, or null when TikTok does not serve the data. */
 export async function readVideo(url, signal) {
-  const res = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "vi-VN,vi;q=0.9" }, signal: timed(signal, 20_000) });
+  const res = await safeFetch(url, { headers: { "User-Agent": UA, "Accept-Language": "vi-VN,vi;q=0.9" }, signal: timed(signal, 20_000) });
   if (!res.ok) return null;
   const page = await res.text();
   const json = page.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/)?.[1];

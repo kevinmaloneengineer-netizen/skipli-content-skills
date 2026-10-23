@@ -56,6 +56,9 @@ const HEADINGS = {
   "Khách nhắn": "Customer says", "Trả lời": "Reply", "Nếu khách im lặng": "If they go quiet", "Mẹo chốt đơn qua inbox": "Tips to close in the inbox", "Xử lý từ chối": "Handling objections",
   "Mở màn": "Opening", "Mục tiêu": "Goal", "Lời thoại": "Script", "Hành động": "Action", "Câu chốt đơn": "Closing lines", "Chốt đơn và cảm ơn": "Close and thank", "Trả lời nhanh bình luận": "Quick comment replies",
   "Giờ đăng gợi ý": "Suggested posting times", "Ghi chú": "Notes", "Việc nên làm thêm": "Also worth doing", "Công thức chung": "The common formula", "Cách dùng": "How to use", "Thông tin": "Info",
+  "Đối thủ đáng chú ý": "Competitors to watch", "Quán bạn đang ở đâu": "Where your restaurant stands", "Khoảng trống bạn có thể chiếm": "Gaps you can fill", "Việc nên làm tuần này": "To do this week",
+  "Mỗi quán bị chê gì": "What each one is criticized for", "Mỗi quán được khen gì": "What each one is praised for", "Điểm yếu chung của khu vực": "Common weak spots in the area",
+  "Mùa của từng món": "Each dish's season", "Khách đang tìm gì": "What people search for", "Nên làm gì": "What to do", "Đánh giá mới 1-3 sao": "New 1-3 star reviews", "Đánh giá mới 4-5 sao": "New 4-5 star reviews",
   "Nên": "Do", "Tránh": "Avoid", "Nên làm": "Do", "Nên tránh": "Avoid", "Nội dung chính": "What happens", "Vì sao chọn": "Why it was picked",
 };
 // Numbered headings: "Phương án 2 · Chân thành", "Bộ 1 · Tiếp cận rộng", "Ngày 3 · 19:30 · Bán hàng: …".
@@ -73,7 +76,7 @@ const TZ = { "giờ Việt Nam": "Vietnam time", "giờ miền Đông Mỹ": "US
 // Job titles are written by the server in Vietnamese: translate their opening words.
 const TITLE_PREFIXES = [
   ["Video trình chiếu", "Slideshow video"], ["Video storyboard", "Storyboard video"], ["Video kể chuyện", "Story video"], ["Viết Facebook", "Facebook post"], ["Viết Threads", "Threads post"],
-  ["Review Google Maps", "Google Maps reviews"], ["Review Yelp", "Yelp reviews"], ["Phân tích Instagram", "Instagram analysis"], ["Phân tích fanpage", "Facebook page analysis"],
+  ["Review Google Maps", "Google Maps reviews"], ["Đối thủ quanh quán", "Nearby competitors"], ["So sánh review", "Review compare"], ["Xu hướng tìm kiếm", "Search trends"], ["Theo dõi sao", "Rating watch"], ["Review Yelp", "Yelp reviews"], ["Phân tích Instagram", "Instagram analysis"], ["Phân tích fanpage", "Facebook page analysis"],
   ["Phân tích reel", "Reel analysis"], ["So sánh", "Compare"], ["Kế hoạch", "Plan"], ["Kịch bản inbox", "Inbox scripts"], ["Kịch bản livestream", "Livestream script"],
   ["Hashtag & giờ đăng", "Hashtags & posting times"], ["Trả lời review", "Review replies"], ["Nhân bản", "Clone"], ["Chiến dịch", "Campaign"], ["Theo dõi", "Watch"],
   ["Ảnh", "Image"], ["Menu", "Menu"], ["Livestream", "Livestream"], ["Reels", "Reels"], ["TikTok", "TikTok"], ["Threads", "Threads"], ["Campaign", "Campaign"],

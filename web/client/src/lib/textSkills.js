@@ -1,4 +1,6 @@
 // Forms of the text-only skills, all on TextSkillPage: the fields the request needs and the page's notes.
+import { TREND_AREAS } from "../../../shared/trendAreas.js";
+
 export const TEXT_SKILLS = {
   "post-score": {
     type: "post-score",
@@ -93,6 +95,74 @@ export const TEXT_SKILLS = {
       { name: "limits", kind: "area", label: "Giới hạn của bạn (tuỳ chọn)", placeholder: "Không giảm quá 15%, chỉ chạy các ngày trong tuần" },
     ],
     notes: ["3 khuyến mãi khác kiểu nhau: combo, tặng món, giảm giá giờ vắng hoặc mua nhiều.", "Giá thường, giá vốn và tiền lãi do hệ thống tự tính từ giá bạn nhập, không để AI tự cộng.", "Mỗi khuyến mãi có câu quảng bá ngắn, dán vào mẫu video Phiếu ưu đãi hoặc Khuyến mãi."],
+  },
+  "delivery-menu": {
+    type: "delivery-menu",
+    label: "Viết menu app giao đồ ăn",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Pho Cali, Milwaukee", required: true },
+      { name: "app", kind: "select", label: "App", options: [["all", "DoorDash, Uber Eats và Grubhub"], ["doordash", "DoorDash"], ["ubereats", "Uber Eats"], ["grubhub", "Grubhub"]] },
+      { name: "dishes", kind: "area", label: "Món", hint: "Mỗi dòng một món: Tên món - giá - chi tiết (nguyên liệu, cỡ, độ cay, món chay…). AI chỉ dùng chi tiết bạn ghi, không tự thêm.", placeholder: "Phở Tái - $14.95 - rare beef, 12-hour broth\nGỏi Cuốn - $7 - shrimp, pork, peanut sauce\nVegetable Pho - $13.95 - vegan broth, tofu", required: true },
+      { name: "notes", label: "Ghi chú (tuỳ chọn)", placeholder: "Family-owned since 2015" },
+    ],
+    notes: ["Tên món rõ ràng, mô tả 1 đến 2 câu ngắn, nhóm món và nhãn (Spicy, Vegetarian…) chỉ khi bạn ghi.", "Gợi ý thứ tự nhóm món, món nên đặt đầu và combo từ chính các món của quán.", "Viết tiếng Anh theo kiểu app giao đồ ăn ở Mỹ."],
+  },
+  "us-occasions": {
+    type: "us-occasions",
+    label: "Lên lịch dịp lễ Mỹ",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Pho Cali, Milwaukee", required: true },
+      { name: "serves", kind: "area", label: "Quán bán gì", hint: "Món chính, đồ uống. AI chỉ gợi ý từ những món này.", placeholder: "Pho, banh mi, spring rolls, Vietnamese iced coffee, boba", required: true },
+      { name: "days", kind: "select", label: "Khoảng thời gian", options: [["60", "60 ngày tới"], ["30", "30 ngày tới"]] },
+    ],
+    notes: ["Ngày lễ và National Food Days do hệ thống tính, AI không tự đoán ngày.", "Mỗi dịp có: có hợp với quán không, bài đăng tiếng Anh, ý khuyến mãi, mẫu video nên dùng và lúc nên đăng.", "National Food Days là ngày không chính thức, nên kiểm tra lại trước khi chạy khuyến mãi."],
+  },
+  "nextdoor-post": {
+    type: "nextdoor-post",
+    label: "Viết bài Nextdoor",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Pho Cali", required: true },
+      { name: "neighborhood", label: "Khu phố", hint: "Tên khu và chi tiết thật của nơi quán ở (con đường, địa danh gần đó).", placeholder: "Bay View, on Kinnickinnic Ave", required: true },
+      { name: "goal", kind: "select", label: "Đăng để làm gì", options: [["intro", "Giới thiệu quán với hàng xóm"], ["opening", "Khai trương hoặc mở lại"], ["event", "Sự kiện tại quán"], ["offer", "Ưu đãi cho hàng xóm"], ["thanks", "Cảm ơn cộng đồng"]] },
+      { name: "details", kind: "area", label: "Thông tin thật (ngày, ưu đãi, giờ mở cửa)", hint: "Bắt buộc khi khai trương, sự kiện hoặc ưu đãi. Thiếu gì AI để chỗ trống như [DATE].", placeholder: "Grand opening Saturday Nov 7, 11am. Free spring roll with any pho that day." },
+    ],
+    notes: ["3 bài theo 3 góc khác nhau, mỗi bài có tiêu đề và 3 đến 5 câu.", "Giọng hàng xóm, không quảng cáo dồn dập, không hashtag.", "Đăng từ trang doanh nghiệp của quán trên Nextdoor."],
+  },
+  nearby: {
+    type: "nearby",
+    label: "Tìm đối thủ quanh quán",
+    eta: "1 đến 2 phút",
+    fields: [
+      { name: "query", label: "Món hoặc loại quán", hint: "Như khách gõ trên Google Maps. Quán ở Mỹ thì gõ tiếng Anh.", placeholder: "pho", required: true },
+      { name: "location", label: "Khu vực", hint: "Thành phố, khu hoặc mã bưu chính.", placeholder: "Milwaukee, WI", required: true },
+      { name: "mine", label: "Tên quán của bạn (tuỳ chọn)", hint: "Có trong danh sách thì báo cáo cho biết quán bạn đứng thứ mấy.", placeholder: "Pho Cali" },
+      { name: "count", kind: "select", label: "Số quán đọc", options: [["15", "15 quán đầu tiên"], ["25", "25 quán đầu tiên"]] },
+    ],
+    notes: ["Đọc các quán Google Maps hiện ra khi khách tìm món này ở khu của bạn: số sao, lượt đánh giá, tỉ lệ 1-2 sao, mức giá, giờ đóng cửa.", "Bảng xếp hạng và các con số do hệ thống tính, AI chỉ đọc và gợi ý việc nên làm.", "Đọc qua Apify, khoảng $0,06 đến $0,10 mỗi lần."],
+  },
+  "review-compare": {
+    type: "review-compare",
+    label: "So sánh review",
+    eta: "2 đến 3 phút",
+    fields: [
+      { name: "places", kind: "area", label: "Quán đối thủ (2 đến 4 quán)", hint: "Mỗi dòng một link Google Maps, hoặc tên quán kèm thành phố.", placeholder: "https://maps.app.goo.gl/…\nPho 99, Milwaukee WI", required: true },
+      { name: "mine", label: "Quán của bạn (tuỳ chọn)", hint: "Link Google Maps của quán bạn, để so các quán kia với quán bạn.", placeholder: "https://maps.app.goo.gl/…" },
+    ],
+    notes: ["Đọc 12 đánh giá ít sao và 12 đánh giá nhiều sao nhất của từng quán.", "Bảng so sánh: số sao, lượt đánh giá, tỉ lệ chủ quán trả lời đánh giá xấu (hệ thống tính).", "AI chỉ ra mỗi quán bị chê và được khen gì, kèm trích dẫn đúng nguyên văn, và cơ hội cho quán bạn."],
+  },
+  trends: {
+    type: "trends",
+    label: "Xem xu hướng",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "terms", label: "Món hoặc từ khoá (tối đa 5)", hint: "Cách nhau bằng dấu phẩy. Quán ở Mỹ thì gõ tiếng Anh, như khách tìm trên Google.", placeholder: "pho, ramen, banh mi", required: true },
+      { name: "geo", kind: "select", label: "Khu vực", options: TREND_AREAS },
+      { name: "business", label: "Quán của bạn (tuỳ chọn)", placeholder: "Pho Cali, Milwaukee" },
+    ],
+    notes: ["Mức tìm kiếm Google 12 tháng qua, theo thang 0 đến 100 của Google Trends (không phải số lượt tìm).", "Hệ thống tính: 4 tuần gần nhất so với trung bình và cùng kỳ năm trước, tháng tìm nhiều và ít, từ khoá đang tăng nhanh.", "AI gợi ý món nên đẩy, lúc nên khuyến mãi và chữ nên dùng trên menu, Google."],
   },
   "weather-post": {
     type: "weather-post",

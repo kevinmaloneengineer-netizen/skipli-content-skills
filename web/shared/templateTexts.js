@@ -20,6 +20,9 @@ export const TEMPLATE_TEXTS = {
   chalk: [["today", "Tiêu đề bảng", "Hôm nay có"]],
   map: [["findUs", "Nhãn trên bản đồ", "Quán ở đây"]],
   coupon: [["coupon", "Nhãn trên phiếu", "Phiếu ưu đãi"], ["onlyAt", "Chữ trước tên quán", "Chỉ có tại"]],
+  stamp: [["sub", "Dòng dưới tên quán", "Mỗi lần ghé, đóng một dấu"], ["reward", "Quà khi đủ dấu (để trống thì lấy câu ưu đãi)", "[QUÀ TẶNG]"]],
+  week: [["title", "Tiêu đề", "Tuần này"]],
+  score: [["watch", "Tiêu đề", "Xem bóng đá tại quán"], ["home", "Tên đội nhà", "ĐỘI NHÀ"], ["away", "Tên đội khách", "ĐỐI THỦ"], ["when", "Giờ bóng lăn", "[GIỜ BÓNG LĂN]"]],
 };
 
 const MAX = 40;

@@ -3,21 +3,15 @@
 // Paid per review (about $0.0003 each); APIFY_REVIEWS_TOKEN is kept apart from APIFY_TOKEN, which
 // turns on the paid Facebook reel list.
 
+import { runActor } from "./apify.mjs";
+
 const ACTOR = process.env.APIFY_REVIEWS_ACTOR ?? "compass~google-maps-reviews-scraper";
 
 export const apifyReviewsEnabled = () => !!process.env.APIFY_REVIEWS_TOKEN;
 
-async function run(url, sort, max, signal) {
-  const res = await fetch(`https://api.apify.com/v2/acts/${ACTOR}/run-sync-get-dataset-items?timeout=240&format=json&clean=true`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.APIFY_REVIEWS_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ startUrls: [{ url }], maxReviews: max, reviewsSort: sort, language: "vi", personalData: false }),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(280_000)]) : AbortSignal.timeout(280_000),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !Array.isArray(data)) throw new Error(`Apify lỗi: ${data?.error?.message ?? res.statusText}`);
-  return data;
-}
+// Started and followed (see apify.mjs), so a network blip during the wait does not fail the scan.
+const run = (url, sort, max, signal) =>
+  runActor({ actor: ACTOR, token: process.env.APIFY_REVIEWS_TOKEN, input: { startUrls: [{ url }], maxReviews: max, reviewsSort: sort, language: "vi", personalData: false }, signal });
 
 const clean = (r) => ({
   id: r.reviewId,
@@ -26,6 +20,11 @@ const clean = (r) => ({
   text: String(r.text ?? r.textTranslated ?? "").replace(/\s+/g, " ").trim(),
   ownerReplied: !!r.responseFromOwnerText,
 });
+
+/** The `max` newest reviews of one place (the weekly rating watch reads only what came in since last time). */
+export async function fetchNewestReviews(url, max, { signal } = {}) {
+  return (await run(url, "newest", max, signal)).map(clean).filter((r) => r.stars);
+}
 
 /**
  * The lowest and the highest rated reviews of one place, read in parallel.

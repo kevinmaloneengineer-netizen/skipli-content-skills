@@ -32,7 +32,8 @@ test("with object storage set up: uploads are copied up, and a file this server 
   await new Promise((r) => app.once("listening", r));
   const base = `http://127.0.0.1:${app.address().port}`;
   try {
-    const png = "data:image/png;base64," + Buffer.from("PNGDATA").toString("base64");
+    // A real PNG header: uploads are checked byte by byte, not only by the "image/png" label.
+    const png = "data:image/png;base64," + Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("PNGDATA")]).toString("base64");
     const up = await (await fetch(`${base}/api/uploads`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl: png }) })).json();
     assert.ok(puts.includes(`/skipli/uploads/${up.id}`), `upload copied up: ${puts.join(", ")}`);
 

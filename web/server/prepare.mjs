@@ -8,7 +8,12 @@ import { findVideos } from "./sources/tiktok.mjs";
 import { fetchInstagramPosts, fetchYelpReviews, socialEnabled } from "./sources/socialApify.mjs";
 import { complete, directEnabled } from "./llm.mjs";
 import { watchReel } from "./watch.mjs";
+import { safeFetch } from "./safeFetch.mjs";
 import { reelLine, runScript, threadLine } from "./scanners.mjs";
+import { placeLink, placesEnabled, searchPlaces } from "./sources/places.mjs";
+import { fetchTrends } from "./sources/trends.mjs";
+import { compareTable, nearbyReport, trendsReport } from "./research.mjs";
+import { TREND_AREAS } from "../shared/trendAreas.js";
 
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}K` : String(n));
 
@@ -111,7 +116,7 @@ async function campaignPrompt(job, { setPhase, signal }) {
 async function mapsPromptApify(input, { setPhase, signal }) {
   await setPhase("Đang lấy đánh giá ít sao và nhiều sao nhất trên Google Maps…");
   const [place, page] = await Promise.all([
-    fetchReviewsApify(input.place, { perSide: 30, signal }),
+    placeLink(input.place, { signal }).then((url) => fetchReviewsApify(url, { perSide: 30, signal })),
     fetchReviews(input.place, { max: 0, signal }).catch(() => null),
   ]);
   if (!place.low.length && !place.high.length) throw new Error(`Không đọc được bài đánh giá nào của ${place.name}.`);
@@ -151,11 +156,96 @@ async function yelpPrompt(input, { setPhase, signal }) {
   return reviewSides(place, { site: "Yelp", starCounts: place.starCounts, focus: input.focus });
 }
 
+const NEEDS_APIFY = "Chưa cấu hình APIFY_REVIEWS_TOKEN trong deploy/.env: skill này đọc Google qua Apify.";
+const TABLE_NOTE = "Người dùng đã thấy bảng trên ngay phía trên báo cáo: KHÔNG chép lại bảng, chỉ dùng các con số trong bảng và trong phần số liệu đã kiểm tra, không tự tính số mới.";
+
+/** Đối thủ quanh quán: the shops of one kind in one area, ranked and counted here; the model gives the advice. */
+async function nearbyPrompt(input, { setPhase, signal }) {
+  if (!placesEnabled()) throw new Error(NEEDS_APIFY);
+  await setPhase(`Đang tìm các quán "${input.query}" quanh ${input.location} trên Google Maps…`);
+  const language = /[àáảãạăâđèéẻẽẹêìíỉĩịòóỏõọôơùúủũụưỳýỷỹỵ]/i.test(`${input.query} ${input.location}`) ? "vi" : "en";
+  const places = await searchPlaces(input.query, input.location, { max: input.count, language, signal });
+  if (places.length < 2) throw new Error(`Google Maps chỉ thấy ${places.length} quán "${input.query}" quanh ${input.location}. Thử khu vực rộng hơn hoặc từ khoá khác.`);
+  await setPhase(`Đã đọc ${places.length} quán, AI đang phân tích…`);
+  const { table, facts, stats } = nearbyReport(places, { mine: input.mine });
+  return {
+    fields: { researchTable: table, nearby: stats },
+    prompt: [
+      `Phân tích ${places.length} quán "${input.query}" quanh ${input.location} trên Google Maps theo skill nearby-competitors, bằng tiếng Việt. Thứ tự là thứ tự Google Maps hiện khi khách tìm "${input.query}" ở khu này.`,
+      table,
+      `Số liệu đã kiểm tra, dùng đúng như sau:\n${facts}`,
+      TABLE_NOTE,
+    ].join("\n\n"),
+  };
+}
+
+/** So sánh review: the lowest and highest rated reviews of 2 to 5 places, side by side. */
+async function reviewComparePrompt(input, { setPhase, signal }) {
+  if (!placesEnabled()) throw new Error(NEEDS_APIFY);
+  const asked = [...(input.mine ? [{ place: input.mine, mine: true }] : []), ...input.places.map((place) => ({ place, mine: false }))];
+  const read = [];
+  // Two places at a time: each one is two Apify runs (low and high stars).
+  for (let i = 0; i < asked.length; i += 2) {
+    await setPhase(`Đang đọc đánh giá quán ${i + 1}${asked.length > i + 1 ? ` và ${i + 2}` : ""}/${asked.length}…`);
+    read.push(...(await Promise.all(asked.slice(i, i + 2).map(async ({ place, mine }) => {
+      try {
+        return { ...(await fetchReviewsApify(await placeLink(place, { signal }), { perSide: 12, signal })), mine };
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        return { error: e.message, place, mine };
+      }
+    }))));
+  }
+  const ok = read.filter((p) => !p.error && p.low.length + p.high.length > 0);
+  if (ok.length < 2) throw new Error(`Không đọc được đủ quán để so sánh (${read.filter((p) => p.error).map((p) => p.place.slice(0, 40)).join(", ") || "các quán chưa có đánh giá"}). Hãy dán link Google Maps của từng quán.`);
+  await setPhase(`Đã đọc đánh giá của ${ok.length} quán, AI đang so sánh…`);
+  const { table } = compareTable(ok);
+  const line = (r) => `- (${r.stars ?? "?"} sao, ${r.when}${r.ownerReplied ? ", chủ quán đã trả lời" : ""}) ${r.text.slice(0, 150)}`;
+  const failed = read.filter((p) => p.error);
+  return {
+    fields: { researchTable: table },
+    prompt: [
+      `So sánh đánh giá Google Maps của ${ok.length} quán dưới đây theo skill review-compare, bằng tiếng Việt.${ok.some((p) => p.mine) ? " Một quán được ghi QUÁN CỦA NGƯỜI DÙNG: so các quán kia với quán này." : ""}`,
+      table,
+      ...ok.map((p) => [
+        `### ${p.name}${p.mine ? " (QUÁN CỦA NGƯỜI DÙNG)" : ""}: ${p.rating || "?"} sao, ${p.total || "?"} đánh giá`,
+        `Ít sao nhất (${p.low.length} bài):`,
+        p.low.map(line).join("\n"),
+        `Nhiều sao nhất (${p.high.length} bài):`,
+        p.high.map(line).join("\n"),
+      ].join("\n")),
+      failed.length ? `Không đọc được: ${failed.map((p) => p.place.slice(0, 60)).join(", ")} (nói ngắn gọn ở Tổng quan).` : "",
+      `${TABLE_NOTE} Trích dẫn phải chép đúng từng chữ của một bài ở trên, giữ ngôn ngữ gốc. Chỉ nói một quán bị chê hay được khen điều gì khi có bài của chính quán đó nói vậy.`,
+    ].filter(Boolean).join("\n\n"),
+  };
+}
+
+/** Nhu cầu tìm kiếm: Google Trends for a few dishes in one area, counted here. */
+async function trendsPrompt(input, { setPhase, signal }) {
+  if (!placesEnabled()) throw new Error(NEEDS_APIFY);
+  const area = TREND_AREAS.find(([code]) => code === input.geo)?.[1] ?? input.geo;
+  await setPhase(`Đang đọc Google Trends 12 tháng qua (${area})…`);
+  const data = await fetchTrends(input.terms, input.geo, { signal });
+  await setPhase("AI đang đọc xu hướng…");
+  const { table, facts } = trendsReport(input.terms, data, { area });
+  return {
+    fields: { researchTable: table },
+    prompt: [
+      `Đọc xu hướng tìm kiếm trên Google của ${input.terms.map((t) => `"${t}"`).join(", ")} ở ${area} trong 12 tháng qua theo skill search-trends, bằng tiếng Việt.`,
+      table,
+      `Số liệu đã kiểm tra, dùng đúng như sau:\n${facts}`,
+      input.business ? `Quán của người dùng: ${input.business}` : "",
+      TABLE_NOTE,
+    ].filter(Boolean).join("\n\n"),
+  };
+}
+
 /** Copy a remote picture into the clips folder (served at /media/thumbs/<name>); null when it fails. */
 async function keepThumb(src, name, signal) {
   if (!src || !CLIPS_DIR) return null;
   try {
-    const res = await fetch(src, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(20_000)]) });
+    // The picture's address comes from scraped data: only public https hosts (see safeFetch.mjs).
+    const res = await safeFetch(src, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(20_000)]) });
     if (!res.ok || !/^image\//.test(res.headers.get("content-type") ?? "")) return null;
     const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(CLIPS_DIR, { recursive: true });
@@ -461,8 +551,11 @@ export function createPreparer({ facebook, mock = false, clipsDir = null, clippe
   return async function prepare(job, { setPhase, signal }) {
     const input = job.input ?? {};
     // Demo mode answers from canned replies: do not open Chrome, search the web or run scripts.
-    if (mock && ["tiktok", "maps", "compare", "campaign", "yelp", "instagram"].includes(job.type)) return { prompt: job.prompt || job.title };
+    if (mock && ["tiktok", "maps", "compare", "campaign", "yelp", "instagram", "nearby", "review-compare", "trends"].includes(job.type)) return { prompt: job.prompt || job.title };
     if (job.type === "tiktok") return tiktokPrompt(input, { setPhase, signal });
+    if (job.type === "nearby") return nearbyPrompt(input, { setPhase, signal });
+    if (job.type === "review-compare") return reviewComparePrompt(input, { setPhase, signal });
+    if (job.type === "trends") return trendsPrompt(input, { setPhase, signal });
     if (job.type === "yelp") return yelpPrompt(input, { setPhase, signal });
     if (job.type === "instagram") return instagramPrompt(input, { setPhase, signal });
     if (job.type === "maps") return mapsPrompt(input, { setPhase, signal });

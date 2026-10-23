@@ -4,7 +4,7 @@ import { directSkill } from "./prompts.mjs";
 
 export const ACTIVE = new Set(["queued", "running"]);
 
-const REPORT_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare"]);
+const REPORT_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare", "nearby", "review-compare", "trends"]);
 const ENGLISH_REPORT = "LANGUAGE: write the report in natural US English. Keep in Vietnamese ONLY the structure the app reads: the section headings (\"## Tổng quan\", \"## Khách khen gì\"…), the table header rows (\"| Điểm khen | Số bài nhắc |\"), star markers like \"(5 sao)\" and labels like \"- Vì sao viral:\". Everything else is English: every table row, every bullet, every sentence (the first sentence of Tổng quan may keep the template wording with the numbers). Quotes keep their original language.";
 
 /**
@@ -19,7 +19,7 @@ const ENGLISH_REPORT = "LANGUAGE: write the report in natural US English. Keep i
  * scans share one Chrome sidecar and one Apify account, and image / video jobs share the one GPU,
  * so those run one at a time each, without making the quick jobs wait behind them.
  */
-const SCAN_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare", "clone", "campaign", "watch"]);
+const SCAN_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare", "clone", "campaign", "watch", "nearby", "review-compare", "trends"]);
 export const laneOf = (job) => (job.type === "image" || job.type === "video" ? "gpu" : SCAN_TYPES.has(job.type) ? "scan" : "light");
 
 export function createJobRunner({ store, goclaw, agents, concurrency, lanes = null, timeoutMs, prepare = async (job) => ({ prompt: job.prompt }), finish = async () => null, onEnd = async () => {}, log = console }) {

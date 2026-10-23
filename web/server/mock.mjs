@@ -448,7 +448,55 @@ const PROMO = "```json\n" + JSON.stringify({ promos: [
   { title: "Tặng trà đá", kind: "gift", items: [{ dish: "Phở bò", qty: 1 }], gift: [{ dish: "Trà đá", qty: 1 }], price: 65000, when: "14h đến 17h", why: "Giờ chiều ít khách, quà nhỏ dễ kéo khách ghé.", post: "Chiều nay: gọi phở bò tặng trà đá." },
 ] }) + "\n```";
 
-const REPLIES = { "zalo-message": ZALO, "promo-plan": PROMO, "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const DELIVERY = `## Món 1: Phở Tái
+**Item name:** Phở Tái (Rare Beef Pho)
+**Description:** Rice noodle soup with thin slices of rare beef, cooked in the hot broth at the table.
+**Category:** Pho
+**Tags:** Popular
+
+## Món 2: Gỏi Cuốn
+**Item name:** Gỏi Cuốn (Fresh Spring Rolls)
+**Description:** Fresh rolls with shrimp, pork and herbs in rice paper, served with peanut sauce.
+**Category:** Appetizers
+**Tags:** none
+
+## Gợi ý sắp xếp
+- Appetizers first, then Pho, then Drinks.
+- Put Phở Tái first in Pho.
+- Combo: Phở Tái + Gỏi Cuốn.`;
+
+const OCCASIONS = `## Dịp 1: Halloween (2026-10-31)
+**Có hợp với quán không:** yes, an easy reason for a warm bowl after trick-or-treating.
+**Bài đăng:** Trick-or-treating done? Warm up with a big bowl of pho tonight.
+**Khuyến mãi gợi ý:** [OFFER] for kids in costume.
+**Mẫu video nên dùng:** Khuyến mãi
+**Đăng lúc nào:** 2 days before, around 5 pm.
+
+## Dịp 2: Thanksgiving (2026-11-26)
+**Có hợp với quán không:** yes, post the holiday hours.
+**Bài đăng:** We're thankful for every bowl we get to serve you. Our Thanksgiving hours: [HOURS].
+**Khuyến mãi gợi ý:** [OFFER] on family trays.
+**Mẫu video nên dùng:** Top 3 món phải thử
+**Đăng lúc nào:** 5 days before, in the morning.`;
+
+const NEXTDOOR = `## Bài 1: Introduce the place
+**Subject:** Your neighborhood pho spot on Main St
+Hi neighbors! We're Pho Cali on Main St. We make our broth every morning and love seeing familiar faces. Stop by and say hi.
+
+## Bài 2: A thank-you
+**Subject:** Thank you, neighbors
+Thank you for a great first year in the neighborhood. Your support keeps our kitchen going.
+
+## Bài 3: An easy invite
+**Subject:** Cold day? Pho is ready
+Cold day ahead. A hot bowl of pho is a few minutes away on Main St. Our hours: [HOURS].
+
+## Lưu ý khi đăng
+- Đăng từ trang doanh nghiệp của quán.
+- Trả lời mọi bình luận trong ngày.
+- Ưu đãi nên đơn giản, dễ dùng.`;
+
+const REPLIES = { "delivery-menu": DELIVERY, "us-occasions": OCCASIONS, "nextdoor-post": NEXTDOOR, "zalo-message": ZALO, "promo-plan": PROMO, "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 /** Canned report for the "Xem kết quả mẫu" page of a skill (null for skills whose result is media). */
 export const sampleReply = (type) => (type === "image" || type === "video" ? null : REPLIES[type] ?? null);
