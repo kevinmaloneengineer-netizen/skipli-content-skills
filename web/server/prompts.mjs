@@ -820,7 +820,8 @@ function buildSpec(type, raw, refs) {
       };
       const mine = raw.mine ? one(str(raw.mine, "quán của bạn", { max: 300 })) : "";
       // One per line (links are longer than list() allows, and names may hold commas: "Pho 99, Milwaukee").
-      const lines = [...new Set(String(raw.places ?? "").split("\n").map((l) => l.trim()).filter(Boolean))];
+      // "Chạy lại" sends back the list it already split: keep it as it is.
+      const lines = [...new Set((Array.isArray(raw.places) ? raw.places : String(raw.places ?? "").split("\n")).map((l) => String(l).trim()).filter(Boolean))];
       if (lines.length > 4) throw new InputError("Tối đa 4 quán đối thủ");
       const places = lines.map((l) => one(str(l, "quán đối thủ", { max: 300 })));
       if (!places.length || places.length + (mine ? 1 : 0) < 2) throw new InputError("Nhập ít nhất 2 quán để so sánh (mỗi dòng một link Google Maps hoặc tên quán kèm thành phố)");

@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -111,6 +112,20 @@ function passwordGate(password) {
 function summary(job, runner) {
   const { prompt, result, researchTable, ...rest } = job;
   return { ...rest, queuePosition: job.status === "queued" ? runner.position(job.id) : null };
+}
+
+// What a job page loads on its own (/jobs/:id) and the polled list never reads: 200 jobs with these came
+// to about 545 KB, fetched every 2.5 s while a job runs.
+const DETAIL_FIELDS = ["video", "images", "photos", "draft", "slides", "usage", "llm", "phases", "watch", "lowReviews", "igPosts", "compare", "learned", "steps", "clips", "place", "nearby", "factCheck", "quotesFixed", "igName"];
+
+/** A row of the polled job list: the summary, short input values only, and the row's thumbnail. */
+export function listItem(job, runner) {
+  const row = summary(job, runner);
+  for (const k of DETAIL_FIELDS) delete row[k];
+  // Long inputs (dish lists, pasted posts) are only read on the job page; names and links stay for the rows.
+  row.input = Object.fromEntries(Object.entries(job.input ?? {}).filter(([, v]) => (typeof v === "string" ? v.length <= 300 : typeof v === "number" || typeof v === "boolean")));
+  row.thumb = job.photos?.items?.[0]?.file ?? job.images?.items?.[0]?.file ?? job.video?.shots?.find((s) => s.image)?.image ?? job.slides?.find((s) => s.image)?.image ?? null;
+  return row;
 }
 
 function libraryFields(body, partial = false) {
@@ -759,15 +774,24 @@ export async function createApp(config, adapter) {
     res.json({ items: store.listWatch().filter((w) => own(req, w)) });
   });
 
+  // Each followed channel or place is read again every week for free (Apify, Facebook): a cap per account,
+  // and "Kiểm tra ngay" at most every 10 minutes per item.
+  const MAX_WATCH = 10;
+  const CHECK_GAP_MS = 10 * 60_000;
+  const checking = new Set();
+
   api.post("/watch", async (req, res) => {
     let url;
+    const mine = store.listWatch().filter((w) => own(req, w));
+    const full = () => mine.length >= MAX_WATCH && new HttpError(400, `Tối đa ${MAX_WATCH} kênh và quán đang theo dõi. Bỏ theo dõi bớt ở trang Lịch sử rồi thêm lại.`);
     // A Google Maps place: its stars and new reviews are read every week (watcher.mjs, kind "maps").
     const raw = String(req.body?.url ?? "").trim();
     if (/^https:\/\//i.test(raw) && isMapsLink(raw)) {
       if (!placesEnabled()) throw new HttpError(400, "Chưa cấu hình APIFY_REVIEWS_TOKEN: theo dõi quán trên Google Maps cần Apify.");
       if (raw.length > 600) throw new HttpError(400, "Link Google Maps dài quá");
-      const existing = store.listWatch().find((w) => w.url === raw && own(req, w));
+      const existing = mine.find((w) => w.url === raw);
       if (existing) return res.json({ item: existing });
+      if (full()) throw full();
       const name = String(req.body?.name ?? "").trim().slice(0, 120) || "Quán trên Google Maps";
       const item = await store.addWatch({ url: raw, name, kind: "maps", ...(accounts ? { userId: req.user.id } : {}) });
       watcher.check(item).catch((e) => store.updateWatch(item.id, { lastError: e.message }));
@@ -778,8 +802,9 @@ export async function createApp(config, adapter) {
     } catch (e) {
       throw new HttpError(400, e.message);
     }
-    const existing = store.listWatch().find((w) => w.url === url && own(req, w));
+    const existing = mine.find((w) => w.url === url);
     if (existing) return res.json({ item: existing });
+    if (full()) throw full();
     const name = new URL(url).pathname.split("/").filter(Boolean)[0] ?? url;
     const item = await store.addWatch({ url, name, ...(accounts ? { userId: req.user.id } : {}) });
     // First read sets the baseline, so the next check reports only reels posted after today.
@@ -790,10 +815,16 @@ export async function createApp(config, adapter) {
   api.post("/watch/:id/check", async (req, res) => {
     const item = store.getWatch(req.params.id);
     if (!item || !own(req, item)) throw new HttpError(404, "Không tìm thấy kênh đang theo dõi");
+    const last = Math.max(Date.parse(item.lastCheckedAt ?? "") || 0, Date.parse(item.lastAttemptAt ?? "") || 0);
+    if (checking.has(item.id) || Date.now() - last < CHECK_GAP_MS) throw new HttpError(429, "Vừa kiểm tra xong, thử lại sau ít phút nhé.");
+    checking.add(item.id);
     try {
       res.json({ ...(await watcher.check(item)), item: store.getWatch(item.id) });
     } catch (e) {
+      await store.updateWatch(item.id, { lastAttemptAt: new Date().toISOString() });
       throw new HttpError(502, `Không đọc được kênh: ${e.message}`);
+    } finally {
+      checking.delete(item.id);
     }
   });
 
@@ -822,7 +853,7 @@ export async function createApp(config, adapter) {
     const { type } = req.query;
     const limit = Math.min(200, Number(req.query.limit) || 50);
     const jobs = store.listJobs().filter((j) => own(req, j) && (!type || j.type === type)).slice(0, limit);
-    res.json({ jobs: jobs.map((j) => summary(j, runner)), credits: billing.metered(req.user) ? req.user.credits : null });
+    res.json({ jobs: jobs.map((j) => listItem(j, runner)), credits: billing.metered(req.user) ? req.user.credits : null });
   });
 
   /** Take the run's credits (customers on credits), then queue it; credits come back if queuing fails. */
@@ -1192,6 +1223,9 @@ export async function createApp(config, adapter) {
 
   const app = express();
   app.disable("x-powered-by");
+  // gzip for pages, scripts and API answers when no proxy does it (Caddy compresses on its own and skips
+  // what is already compressed). Videos, images and audio are compressed already: left alone by default.
+  app.use(compression());
   // Behind a reverse proxy (nginx, Cloudflare…) the visitor's IP is in X-Forwarded-For: TRUST_PROXY=1 reads it,
   // so the per-IP limits (sign-up, runs, chat) count visitors and not the proxy.
   if (config.trustProxy) app.set("trust proxy", config.trustProxy);
@@ -1235,7 +1269,17 @@ export async function createApp(config, adapter) {
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
     const csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com https://maps.google.com https://www.google.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
-    app.use(express.static(CLIENT_DIST, { index: false, setHeaders: (res) => res.set("X-Content-Type-Options", "nosniff") }));
+    app.use(express.static(CLIENT_DIST, {
+      index: false,
+      setHeaders: (res, file) => {
+        res.set("X-Content-Type-Options", "nosniff");
+        // Built files carry a content hash in their name: never asked for again. Sample videos and the
+        // rest of public/ change rarely: kept a day, so the template picker does not re-download them.
+        const rel = path.relative(CLIENT_DIST, file).split(path.sep).join("/");
+        if (rel.startsWith("assets/")) res.set("Cache-Control", "public, max-age=31536000, immutable");
+        else if (rel.startsWith("samples/")) res.set("Cache-Control", "public, max-age=86400");
+      },
+    }));
     app.get(/^(?!\/api\/).*/, (req, res) => {
       res.set({ "Content-Security-Policy": csp, "Cache-Control": "no-cache" }).sendFile(path.join(CLIENT_DIST, "index.html"));
     });

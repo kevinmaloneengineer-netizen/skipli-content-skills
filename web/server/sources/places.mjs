@@ -48,6 +48,17 @@ export async function readPlace(place, { language = "en", signal } = {}) {
   return cleanPlace(item);
 }
 
+// Words every shop name may or may not carry: "Quán Ốc Oanh" is the place Google calls "Ốc Oanh - Vĩnh Khánh".
+const GENERIC = new Set(["quan", "nha", "hang", "tiem", "cua", "the", "restaurant", "cafe", "kitchen", "and", "llc", "inc"]);
+const words = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !GENERIC.has(w));
+
+/** Whether a typed name and a Google Maps name are the same shop: every telling word of one is in the other. */
+export function sameName(typed, found) {
+  const a = words(typed), b = words(found);
+  if (!a.length || !b.length) return false;
+  return a.every((w) => b.includes(w)) || b.every((w) => a.includes(w));
+}
+
 /**
  * A Google Maps link for "name, area" ("Pho 99, Milwaukee WI"): searched in that area. A plain Maps search
  * by name has no area and picked a shop of the same name in another state (Harrisburg, PA). Links and
@@ -59,8 +70,7 @@ export async function placeLink(text, { signal } = {}) {
   if (/^https?:\/\//i.test(s) || comma < 1) return s;
   const name = s.slice(0, comma).trim();
   // Google fills the list with nearby shops when the name is not there: keep only a shop with that name.
-  const fold = (t) => String(t).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const hit = (await searchPlaces(name, s.slice(comma + 1).trim(), { max: 3, signal })).find((p) => fold(p.name).includes(fold(name)) || fold(name).includes(fold(p.name)));
+  const hit = (await searchPlaces(name, s.slice(comma + 1).trim(), { max: 3, signal })).find((p) => sameName(name, p.name));
   if (!hit?.url) throw new Error(`Không tìm thấy "${s}" trên Google Maps. Hãy dán link Google Maps của quán.`);
   return hit.url;
 }

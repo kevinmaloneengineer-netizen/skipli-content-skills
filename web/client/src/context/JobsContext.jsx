@@ -72,7 +72,9 @@ export function JobsProvider({ children }) {
       /* transient; retry on the next tick */
     }
     const active = list?.some((j) => ACTIVE.has(j.status));
-    timer.current = setTimeout(refresh, active ? 2500 : 15000);
+    // A hidden tab still announces finished jobs (browser notification), just less eagerly.
+    const hidden = typeof document !== "undefined" && document.hidden;
+    timer.current = setTimeout(refresh, active ? (hidden ? 10000 : 2500) : hidden ? 60000 : 15000);
   }, [toast]);
 
   useEffect(() => {
@@ -95,7 +97,13 @@ export function JobsProvider({ children }) {
       return undefined;
     }
     refresh();
-    return () => clearTimeout(timer.current);
+    // Back on the tab: catch up at once instead of waiting out the slow hidden-tab timer.
+    const onShow = () => !document.hidden && refresh();
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      clearTimeout(timer.current);
+      document.removeEventListener("visibilitychange", onShow);
+    };
   }, [refresh, guest]);
 
   /** Register a job the user just created so its completion is announced, then poll now. */

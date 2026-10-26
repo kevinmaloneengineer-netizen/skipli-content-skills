@@ -14,8 +14,8 @@ import { BackLink } from "../components/SkillShell.jsx";
 import { businessOf } from "../lib/handoff.js";
 import { safeHref } from "../lib/safeUrl.js";
 
-/** A picture the run made (photo fix, AI image, video still), for the row thumbnail. */
-const thumbOf = (j) => j.photos?.items?.[0]?.file ?? j.images?.items?.[0]?.file ?? j.video?.shots?.find((s) => s.image)?.image ?? j.slides?.find((s) => s.image)?.image ?? null;
+/** A picture the run made (photo fix, AI image, video still), for the row thumbnail (the list sends it as `thumb`). */
+const thumbOf = (j) => j.thumb ?? j.photos?.items?.[0]?.file ?? j.images?.items?.[0]?.file ?? j.video?.shots?.find((s) => s.image)?.image ?? j.slides?.find((s) => s.image)?.image ?? null;
 /** The restaurant a run was about, tidied for grouping ("Phở Cali " and "phở cali" are one). */
 const shopOf = (j) => businessOf(j).trim().replace(/\s+/g, " ").slice(0, 60);
 const shopKey = (name) => name.toLowerCase();
@@ -133,6 +133,7 @@ function RatingTrend({ history = [] }) {
 }
 
 function Watchlist() {
+  const toast = useToast();
   const [items, setItems] = useState(null);
   const [busy, setBusy] = useState(null);
   const { refresh } = useJobs();
@@ -147,6 +148,9 @@ function Watchlist() {
       await api(`/watch/${id}/check`, { method: "POST" });
       await load();
       refresh?.();
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+      load(); // the error is shown on the item too
     } finally {
       setBusy(null);
     }

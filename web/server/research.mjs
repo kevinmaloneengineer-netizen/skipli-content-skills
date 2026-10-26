@@ -2,6 +2,8 @@
 // counted here and shown as tables the code writes; the model only reads them and gives advice, the same
 // split as the promotion and sales reports.
 
+import { sameName } from "./sources/places.mjs";
+
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
@@ -36,7 +38,11 @@ const clock = (mins) => `${String(Math.floor(mins / 60) % 24).padStart(2, "0")}:
 export function findMine(places, mine) {
   const want = fold(mine);
   if (!want) return -1;
-  return places.findIndex((p) => fold(p.name).includes(want) || want.includes(fold(p.name)));
+  const exact = places.findIndex((p) => fold(p.name) === want);
+  if (exact >= 0) return exact;
+  // Otherwise the same telling words ("Pho Cali" is "Phở Cali Restaurant"), and only when one shop fits.
+  const like = places.map((p, i) => (sameName(mine, p.name) ? i : -1)).filter((i) => i >= 0);
+  return like.length === 1 ? like[0] : -1;
 }
 
 /**
@@ -143,16 +149,18 @@ export function aboutTerm(query, term) {
 export function trendsReport(terms, data, { now = Date.now(), area = "" } = {}) {
   const per = terms.map((term) => {
     // The running week is not finished: leave it out.
-    const weeks = (data.series[term] ?? []).filter((w) => w.start + 7 * 86_400_000 <= now);
+    const weeks = (data.series[term] ?? data.series[term.toLowerCase()] ?? []).filter((w) => w.start + 7 * 86_400_000 <= now);
     const values = weeks.map((w) => w.value);
     const months = {};
     for (const w of weeks) (months[new Date(w.start).getUTCMonth()] ??= []).push(w.value);
     const monthAvg = Object.entries(months).map(([m, xs]) => ({ month: Number(m), avg: mean(xs) })).sort((a, b) => b.avg - a.avg);
     const recent = mean(values.slice(-4));
     const yearAgo = weeks.length >= 50 ? mean(values.slice(0, 4)) : null;
-    const rel = data.related?.[term] ?? { top: [], rising: [] };
+    const rel = data.related?.[term] ?? data.related?.[term.toLowerCase()] ?? { top: [], rising: [] };
     return {
       term,
+      // Too few searches: Google Trends gives no points (or only zeros) for the term.
+      noData: values.every((v) => !v),
       avg: Math.round(mean(values)),
       recent: Math.round(recent),
       vsAvg: pct(recent, mean(values)),
@@ -174,7 +182,7 @@ export function trendsReport(terms, data, { now = Date.now(), area = "" } = {}) 
     `**Mức tìm kiếm 12 tháng qua${area ? ` (${area})` : ""}** (thang 0 đến 100 chung cho các từ khoá, 100 là tuần được tìm nhiều nhất)`,
     "| Từ khoá | Trung bình 12 tháng | 4 tuần gần nhất | So với trung bình | So với cùng kỳ năm trước | Tháng tìm nhiều | Tháng tìm ít |",
     "|---|---|---|---|---|---|---|",
-    ...per.map((p) => `| ${cell(p.term)} | ${p.avg} | ${p.recent} | ${signed(p.vsAvg)} | ${signed(p.vsYearAgo)} | ${p.best.join(", ") || "–"} | ${p.worst || "–"} |`),
+    ...per.map((p) => p.noData ? `| ${cell(p.term)} | Quá ít người tìm, Google chưa có số liệu | – | – | – | – | – |` : `| ${cell(p.term)} | ${p.avg} | ${p.recent} | ${signed(p.vsAvg)} | ${signed(p.vsYearAgo)} | ${p.best.join(", ") || "–"} | ${p.worst || "–"} |`),
     "",
     "**Người ta tìm kèm**",
     "| Từ khoá | Hay tìm cùng | Đang tăng nhanh |",
@@ -185,9 +193,10 @@ export function trendsReport(terms, data, { now = Date.now(), area = "" } = {}) 
     tables.push("", "**Bang nghiêng về từ khoá nào nhất** (phần trăm của từ khoá đó trong các từ khoá đã nhập, tại bang đó)", "| Từ khoá | Bang |", "|---|---|", ...per.map((p) => `| ${cell(p.term)} | ${p.states.map(cell).join(", ") || "–"} |`));
   }
   const lead = [...per].sort((a, b) => b.avg - a.avg)[0];
+  if (per.every((p) => p.noData)) throw new Error("Google Trends không có số liệu cho các từ khoá này ở khu vực đã chọn (quá ít người tìm). Thử từ khoá phổ biến hơn hoặc khu vực rộng hơn.");
   const facts = [
     terms.length > 1 ? `Được tìm nhiều nhất trong 12 tháng: "${lead.term}" (trung bình ${lead.avg}).` : "",
-    ...per.map((p) => `"${p.term}": trung bình ${p.avg}, 4 tuần gần nhất ${p.recent} (${signed(p.vsAvg)} so với trung bình${p.vsYearAgo == null ? "" : `, ${signed(p.vsYearAgo)} so với cùng kỳ năm trước`}); tìm nhiều vào ${p.best.join(" và ") || "không rõ"}, ít nhất vào ${p.worst || "không rõ"}.${p.top.length ? ` Hay tìm cùng: ${p.top.join(", ")}.` : ""}${p.rising.length ? ` Đang tăng nhanh: ${p.rising.map((q) => `${q.query} (${q.growth})`).join(", ")}.` : ""}${p.states.length ? ` Bang nghiêng về từ này nhất: ${p.states.join(", ")}.` : ""}`),
+    ...per.map((p) => p.noData ? `"${p.term}": Google Trends không có số liệu (quá ít người tìm ở khu vực này); không nhận xét xu hướng của từ này, chỉ nói rằng ít người tìm.` : `"${p.term}": trung bình ${p.avg}, 4 tuần gần nhất ${p.recent} (${signed(p.vsAvg)} so với trung bình${p.vsYearAgo == null ? "" : `, ${signed(p.vsYearAgo)} so với cùng kỳ năm trước`}); tìm nhiều vào ${p.best.join(" và ") || "không rõ"}, ít nhất vào ${p.worst || "không rõ"}.${p.top.length ? ` Hay tìm cùng: ${p.top.join(", ")}.` : ""}${p.rising.length ? ` Đang tăng nhanh: ${p.rising.map((q) => `${q.query} (${q.growth})`).join(", ")}.` : ""}${p.states.length ? ` Bang nghiêng về từ này nhất: ${p.states.join(", ")}.` : ""}`),
   ].filter(Boolean).join("\n");
   return { table: tables.join("\n"), facts, per };
 }

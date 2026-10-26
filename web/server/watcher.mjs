@@ -21,6 +21,8 @@ export function createWatcher({ store, log = console }) {
   async function checkPlace(item) {
     const place = await readPlace(item.url);
     const prev = item.history?.at(-1);
+    // A read without the numbers would be stored as 0 reviews, and the next one would report them all as new.
+    if (place.rating == null || (!place.reviews && prev?.reviews)) throw new Error("Google Maps chưa trả về số sao và lượt đánh giá, sẽ thử lại sau.");
     const fresh = prev ? Math.max(0, place.reviews - prev.reviews) : 0; // first check only sets the baseline
     const reviews = fresh ? await fetchNewestReviews(item.url, Math.min(fresh, 20)) : [];
     const low = reviews.filter((r) => r.stars <= 3);

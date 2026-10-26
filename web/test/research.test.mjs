@@ -139,3 +139,15 @@ test("research: a watched Google Maps place records its stars and its new low re
   assert.match(jobs[0].result, /## Đánh giá mới 1-3 sao \(1\)\n- \(2 sao, 2026-10-20\) Cold broth/);
   assert.deepEqual(watches[0].history.map((h) => [h.rating, h.reviews, h.fresh, h.low]), [[4.6, 100, 0, 0], [4.5, 102, 2, 1]]);
 });
+
+test("research: a term without Google Trends data is said so, not shown as zeros", () => {
+  const week = 7 * 86_400_000;
+  const start = Date.UTC(2025, 9, 19);
+  const now = start + 53 * week;
+  const series = { pho: Array.from({ length: 52 }, (_, i) => ({ start: start + i * week, value: 50 })) };
+  const { table, facts } = trendsReport(["Pho", "bun rieu"], { series, states: [], related: {} }, { now });
+  assert.match(table, /\| Pho \| 50 \|/); // found under its lower-case key
+  assert.match(table, /\| bun rieu \| Quá ít người tìm/);
+  assert.match(facts, /"bun rieu": Google Trends không có số liệu/);
+  assert.throws(() => trendsReport(["bun rieu"], { series: {}, states: [], related: {} }, { now }), /không có số liệu/);
+});
