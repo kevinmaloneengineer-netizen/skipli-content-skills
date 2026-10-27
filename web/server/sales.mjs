@@ -10,7 +10,7 @@ export const MAX_SALES_BYTES = 5 * 1024 * 1024;
 const FIELDS = {
   dish: /(tên\s*món|mon|món|item|product|sản\s*phẩm|san\s*pham|dish|name|tên)/i,
   qty: /(số\s*lượng|so\s*luong|sl|qty|quantity|sold|số\s*suất|suất)/i,
-  amount: /(thành\s*tiền|thanh\s*tien|doanh\s*thu|revenue|amount|total|tiền|tien|giá\s*trị|gia\s*tri)/i,
+  amount: /(thành\s*tiền|thanh\s*tien|doanh\s*thu|revenue|amount|total|sales|tiền|tien|giá\s*trị|gia\s*tri)/i,
   time: /(giờ|gio|hour|time|thời\s*gian|thoi\s*gian|datetime|ngày\s*giờ)/i,
   date: /(ngày|ngay|date)/i,
 };

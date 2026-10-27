@@ -6,6 +6,7 @@ import { addDays, at, dayLabel, fromYmd } from "../lib/dates.js";
 import { PILLARS, splitPlan, toPlainText } from "../lib/text.js";
 import { CopyIcon } from "./Icons.jsx";
 import Markdown from "./Markdown.jsx";
+import { OwnerOnly } from "../lib/sharedView.jsx";
 
 const PILLAR_NAME = Object.fromEntries([...PILLARS.map((p) => [p.id, p.name]), ["other", "Khác"]]);
 
@@ -44,8 +45,8 @@ export default function PlanBoard({ job }) {
       <div className="cb-bar">
         <p>{intro ? toPlainText(intro) : `${slots.length} bài cho ${days.length} ngày.`}</p>
         <div className="actions">
-          <Link className="btn" to={`/schedule?week=${job.input.start}`}>Mở lịch</Link>
-          <button className="btn primary" disabled={busy || !left.length} onClick={() => add(left)}>{left.length ? `Thêm tất cả vào lịch (${left.length})` : "Đã thêm hết"}</button>
+          <OwnerOnly><Link className="btn" to={`/schedule?week=${job.input.start}`}>Mở lịch</Link></OwnerOnly>
+          <OwnerOnly><button className="btn primary" disabled={busy || !left.length} onClick={() => add(left)}>{left.length ? `Thêm tất cả vào lịch (${left.length})` : "Đã thêm hết"}</button></OwnerOnly>
         </div>
       </div>
       <ol className="plan-days">
@@ -64,7 +65,7 @@ export default function PlanBoard({ job }) {
                     <h3>{s.title}</h3>
                     <div className="actions">
                       <button className="btn small" onClick={() => copy(toPlainText(s.body))}><CopyIcon />Sao chép</button>
-                      <button className="btn small" disabled={busy || added.has(keyOf(s))} onClick={() => add([s])}>{added.has(keyOf(s)) ? "Đã thêm ✓" : "Thêm vào lịch"}</button>
+                      <OwnerOnly><button className="btn small" disabled={busy || added.has(keyOf(s))} onClick={() => add([s])}>{added.has(keyOf(s)) ? "Đã thêm ✓" : "Thêm vào lịch"}</button></OwnerOnly>
                     </div>
                   </div>
                   <Markdown>{s.body}</Markdown>

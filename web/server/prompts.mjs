@@ -133,7 +133,7 @@ export function buildJob(type, raw, refs = {}) {
 }
 
 /** Job types whose result is copy for customers (scan reports stay in Vietnamese for the owner). */
-const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan", "delivery-menu", "us-occasions", "nextdoor-post"]);
+const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan", "delivery-menu", "us-occasions", "nextdoor-post", "post-score", "story-behind", "dish-riddle"]);
 
 /** Zalo OA messages: what the message is for, and the button under it. */
 export const ZALO_GOALS = { back: "Mời khách quen lâu chưa ghé quay lại", offer: "Báo ưu đãi đang có", new: "Giới thiệu món mới", birthday: "Chúc mừng sinh nhật khách", event: "Ngày lễ hoặc sự kiện của quán" };
@@ -161,11 +161,12 @@ export const PHOTO_BACKGROUNDS = {
   dark: "dark slate stone surface, moody restaurant lighting, deep shadows",
   linen: "beige linen tablecloth with soft folds, bright cafe by a window",
 };
-const ENGLISH_RULE = [
+export const ENGLISH_RULE = [
   "NGÔN NGỮ: thông tin được nhập bằng tiếng Anh, khách của quán nói tiếng Anh (thị trường Mỹ).",
   "Viết TOÀN BỘ nội dung dành cho khách (bài đăng, caption, câu trả lời, tin nhắn, mô tả món, lời thoại, chữ trên ảnh, hashtag) bằng tiếng Anh tự nhiên kiểu Mỹ. Tiền tệ là USD ($).",
   "GIỮ NGUYÊN các tiêu đề mục và nhãn theo mẫu của skill bằng tiếng Việt (ví dụ \"## Phương án 1: …\", \"## Món: …\", \"## Tình huống: …\", \"**Khách nhắn:**\", \"**Trả lời:**\", \"## Bộ 1 · …\", \"## Ngày 1 · 19:30 · …\") để ứng dụng hiển thị đúng; phần tên sau dấu \":\" được viết tiếng Anh.",
   "Ghi chú và giải thích cho chủ quán viết tiếng Việt. Chỗ chưa biết để dạng [PRICE], [LINK], [HOURS], [PHONE].",
+  "KHÔNG BỊA điều quán chưa nói: địa chỉ, giao hàng hay ship (phạm vi, thời gian), cách thanh toán, đổi trả hay hoàn tiền, chỗ đậu xe, món chay hay không gluten, mã giảm giá, giảm giá, quà tặng, nguồn nguyên liệu, giải thưởng. Chưa có thì để chỗ trống như [ADDRESS], [DELIVERY], [PAYMENT], [PARKING], [OFFER], hoặc khuyên khách hỏi quán. Điều chủ quán ĐÃ nhập (giá, ưu đãi, giờ, chính sách) thì dùng nguyên văn, không thay bằng chỗ trống.",
 ].join("\n");
 const VI_MARKS = /[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i;
 // Vietnamese typed without accents ("quan lau bo ngon") must not count as English.
@@ -492,6 +493,8 @@ function buildSpec(type, raw, refs) {
       else sections.push("Chưa có ưu đãi cụ thể: dùng chỗ trống [ƯU ĐÃI], không tự bịa giảm giá hay quà tặng.");
       if (audience) sections.push(`Khách hàng: ${audience}`);
       if (host) sections.push(`Phong cách người live: ${host}`);
+      // The objection and quick-reply tables kept inventing shipping, payment and refund rules.
+      sections.push(`Trong "Xử lý từ chối" và "Trả lời nhanh bình luận": câu hỏi về giao hàng, phí ship, thanh toán, đổi trả, món chay mà chủ quán chưa nhập thì trả lời bằng chỗ trống (${isEnglish(userText(raw)) ? "[DELIVERY], [PAYMENT], [RETURNS]" : "[GIAO HÀNG], [THANH TOÁN], [ĐỔI TRẢ]"}) hoặc mời khách nhắn tin cho quán, không tự hứa.`);
       const first = products.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
       return {
         agent: "writer",

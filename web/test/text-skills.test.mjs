@@ -41,3 +41,11 @@ test("parseDishes: typed lines and an already parsed list (a retried job) give t
   assert.deepEqual(retried.input.dishes, typed);
   assert.doesNotMatch(retried.prompt, /object Object/);
 });
+
+test("English input: post score, recipe story and dish riddle write the customer copy in English", () => {
+  const post = buildJob("post-score", { post: "NEW!!! Detroit pizza at Slice Society. Come try it #pizza #chicago", business: "Slice Society" });
+  assert.match(post.prompt, /NGÔN NGỮ: thông tin được nhập bằng tiếng Anh/);
+  assert.equal(post.input.lang, "en");
+  const story = buildJob("story-behind", { business: "La Güera Taqueria", answers: "Started as a food truck in 2014, her mom's al pastor marinade has eleven chiles." });
+  assert.equal(story.input.lang, "en");
+});

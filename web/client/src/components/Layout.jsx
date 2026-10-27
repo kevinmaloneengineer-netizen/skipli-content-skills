@@ -25,6 +25,9 @@ const Icon = ({ d }) => (
 const I = {
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   clock: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2",
+  target: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 11.5v1",
+  home: "M4 11l8-7 8 7v9h-5v-6H9v6H4z",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
   book: "M5 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM17 20h2V6",
   plus: "M12 5v14M5 12h14",
   menu: "M4 7h16M4 12h16M4 17h16",
@@ -166,6 +169,15 @@ export default function Layout() {
   useParallax();
 
   useEffect(() => setMenu(false), [pathname, search]);
+  // The home page's "Tìm công cụ" box opens the tools menu.
+  useEffect(() => {
+    const open = () => {
+      window.scrollTo({ top: 0 });
+      setMenu(true);
+    };
+    window.addEventListener("open-tools", open);
+    return () => window.removeEventListener("open-tools", open);
+  }, []);
   useEffect(() => {
     const ask = (e) => setNeedCredits(e.detail || "Bạn đã dùng hết credit.");
     window.addEventListener("need-credits", ask);
@@ -214,7 +226,7 @@ export default function Layout() {
   }, [menu]);
 
   return (
-    <div className="app">
+    <div className={guest ? "app" : "app has-tabbar"}>
       <Backdrop />
       <header ref={barRef} className={["topbar", scrolled && "is-scrolled", menu && "menu-open", !guest && "is-signed", credits !== null && "has-credits"].filter(Boolean).join(" ")}>
         <Link className="brand" to="/" onClick={() => pathname === "/" && window.scrollTo({ top: 0, behavior: "smooth" })}>
@@ -230,6 +242,7 @@ export default function Layout() {
           </button>
           <NavLink to="/dashboard">Tổng quan</NavLink>
           {!guest && <NavLink to="/history">Lịch sử</NavLink>}
+          {!guest && <NavLink to="/competitors">Đối thủ</NavLink>}
         </nav>
         <div className="topbar-right">
           {running > 0 && (
@@ -269,6 +282,7 @@ export default function Layout() {
                 <Link to="/dashboard" onClick={() => setMenu(false)}><Icon d={I.chart} />Tổng quan công cụ</Link>
                 {credits !== null && <Link to="/billing" onClick={() => setMenu(false)}><Icon d={I.bolt} />{credits} credit · Nạp thêm</Link>}
                 <Link to="/history" onClick={() => setMenu(false)}><Icon d={I.clock} />Lịch sử chạy</Link>
+                <Link to="/competitors" onClick={() => setMenu(false)}><Icon d={I.target} />Đối thủ</Link>
                 <Link to="/library" onClick={() => setMenu(false)}><Icon d={I.book} />Thư viện</Link>
                 <span><kbd>⌘</kbd><kbd>K</kbd> tìm cả kết quả cũ và bài đã lưu</span>
               </div>
@@ -282,6 +296,19 @@ export default function Layout() {
         </Suspense>
       </main>
       <Footer />
+      {/* Phones: the main places one thumb away (the top bar keeps only the brand, bell and menu). */}
+      {!guest && (
+        <nav className="tabbar" aria-label="Điều hướng nhanh">
+          <NavLink to="/" end onClick={() => setMenu(false)}><Icon d={I.home} /><span>Trang chủ</span></NavLink>
+          <button type="button" className={menu ? "active" : undefined} aria-expanded={menu} aria-controls="tool-menu" onClick={() => { setMenu((v) => !v); window.scrollTo({ top: 0 }); }}><Icon d={I.grid} /><span>Công cụ</span></button>
+          <NavLink to="/history" onClick={() => setMenu(false)}>
+            <Icon d={I.clock} /><span>Lịch sử</span>
+            {running > 0 && <i className="tabbar-badge" aria-label={`${running} đang chạy`}>{running}</i>}
+          </NavLink>
+          <NavLink to="/competitors" onClick={() => setMenu(false)}><Icon d={I.target} /><span>Đối thủ</span></NavLink>
+          <NavLink to="/account" onClick={() => setMenu(false)}><Icon d={I.user} /><span>Tài khoản</span></NavLink>
+        </nav>
+      )}
       {!guest && <Suspense fallback={null}><ChatWidget /></Suspense>}
       <StarterGuide />
       <CommandPalette open={palette} onClose={closePalette} onToggleTheme={toggle} />

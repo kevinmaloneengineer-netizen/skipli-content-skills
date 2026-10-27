@@ -3417,3 +3417,122 @@ select:disabled { cursor: not-allowed; opacity: .6; }
 .sales-preview th, .sales-preview td { padding: 6px 9px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
 .sales-preview th { background: var(--surface-2); font-weight: 700; }
 
+
+/* ---------- Đối thủ (competitors page) ---------- */
+.rivals { max-width: 1180px; margin: 0 auto; padding-top: 28px; }
+.rivals-hero { grid-template-areas: "text stats"; margin-bottom: 22px; }
+.rivals-hero .hist-stats small { font-size: 18px; opacity: .55; margin-left: 2px; }
+.rivals-filter { margin-bottom: 14px; }
+.rivals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 16px; align-items: start; }
+.rivals-empty { color: var(--muted); padding: 24px; }
+.rivals-empty.card { color: inherit; }
+.rivals-empty .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.rival { --kind: #8a8378; position: relative; display: grid; gap: 14px; padding: 20px 20px 16px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 1px 0 rgb(0 0 0 / .02); overflow: hidden; }
+.rival::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: var(--kind); opacity: .85; }
+.rival[data-kind="facebook"] { --kind: #3b6fd8; }
+.rival[data-kind="maps"] { --kind: #d0532f; }
+.rival[data-kind="instagram"] { --kind: #c2418a; }
+.rival[data-kind="yelp"] { --kind: #b8322a; }
+.rival.is-watched { border-color: color-mix(in srgb, var(--kind) 40%, var(--line)); }
+.rival-head { display: grid; gap: 4px; }
+.rival-head h2 { margin: 2px 0 0; font: 600 21px/1.2 var(--display); overflow-wrap: anywhere; }
+.rival-head h2 a { color: var(--ink); text-decoration: none; }
+.rival-head h2 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.rival-head small { color: var(--muted); font-size: 12.5px; }
+.rival-kind { justify-self: start; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--kind); background: color-mix(in srgb, var(--kind) 12%, transparent); }
+.rival-live { position: absolute; top: 20px; right: 20px; font-size: 12px; font-weight: 600; color: var(--kind); }
+.rival .trend { margin: 0; }
+.rival-block h3 { margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.rival-events, .rival-runs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rival-events a { display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 10px; background: color-mix(in srgb, var(--kind) 8%, var(--surface)); color: var(--ink); text-decoration: none; font-size: 14px; }
+.rival-events time, .rival-runs time { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rival-runs { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.rival-runs a { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); color: var(--ink); text-decoration: none; font-size: 13px; }
+.rival-runs a:hover, .rival-events a:hover { border-color: var(--line-strong); }
+.rival-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; border-top: 1px dashed var(--line); }
+
+/* ---------- phone tab bar ---------- */
+.tabbar { display: none; }
+@media (max-width: 820px) {
+  .app.has-tabbar { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 24; display: grid; grid-template-columns: repeat(5, 1fr); padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--line); }
+  .tabbar > a, .tabbar > button { position: relative; display: grid; justify-items: center; gap: 3px; padding: 6px 2px; border: 0; border-radius: 12px; background: none; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; text-decoration: none; cursor: pointer; }
+  .tabbar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar > a.active, .tabbar > button.active { color: var(--ink); background: var(--surface-2); }
+  .tabbar-badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px; background: #e25d33; color: #fff; font: 700 10.5px/17px var(--text); font-style: normal; }
+  /* The mascot and toasts sit above the bar. */
+  .app.has-tabbar .ai-fab { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .app.has-tabbar .ai-panel { bottom: calc(150px + env(safe-area-inset-bottom)); height: min(560px, calc(100dvh - 220px)); }
+  .toasts { bottom: calc(80px + env(safe-area-inset-bottom)); } /* rendered outside .app */
+  .rivals-hero { grid-template-areas: "text" "stats"; grid-template-columns: 1fr; padding: 26px 22px; }
+}
+@media print { .tabbar { display: none !important; } }
+
+/* ---------- shared result (/s/<token>) ---------- */
+.shared { min-height: 100dvh; background: var(--paper); }
+.shared-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px clamp(16px, 4vw, 40px); background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.shared-note { font-size: 13px; font-weight: 600; color: var(--muted); }
+.shared-main { max-width: 980px; margin: 0 auto; padding: 28px 16px 60px; display: grid; gap: 18px; }
+.shared-head h1 { margin: 10px 0 4px; font: 600 clamp(26px, 4vw, 40px)/1.1 var(--display); }
+.shared-head small { color: var(--muted); }
+.shared-gone { text-align: center; padding: 40px 24px; }
+.shared-gone .btn { margin-top: 12px; }
+.shared-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 22px; border-radius: 20px; background: var(--band-dark); color: #f3efe6; }
+.shared-cta div { display: grid; gap: 2px; }
+.shared-cta span { color: rgb(243 239 230 / .7); font-size: 14px; }
+.share-box .share-link { display: flex; gap: 6px; margin: 8px 0; }
+.share-box .share-link input { flex: 1; min-width: 0; font-size: 13px; }
+@media print { .shared-bar, .shared-cta { display: none; } }
+
+.hero-quick { display: none; }
+/* ---------- phones: lighter home and top bar ---------- */
+@media (max-width: 820px) {
+  /* Signed in, the tab bar already has Tools and Account: the top bar keeps the brand and the small icons. */
+  .app.has-tabbar .nav-burger, .app.has-tabbar .topbar .user-menu { display: none; }
+  .app.has-tabbar .brand span { display: inline; font-size: 18px; }
+  .app.has-tabbar .brand-logo { width: 32px; height: 32px; padding: 4px; }
+  .topbar-right { gap: 2px; }
+
+  /* Opening: left aligned, a search box and quick starts; the next band overlaps it with rounded corners. */
+  .scene-hero .sticker { display: none; }
+  .scene-hero .stage { padding: 28px var(--gutter, 16px) 64px; }
+  .hero-copy { text-align: left; max-width: none; padding: 0; }
+  .scene-hero .eyebrow { font-size: 11px; letter-spacing: .12em; margin-bottom: 10px; }
+  .hero-copy h1 { font-size: 42px; text-wrap: pretty; }
+  .hero-sub { font-size: 16px; margin: 12px 0 0; max-width: 34ch; text-wrap: pretty; }
+  .hero-quick { display: grid; gap: 10px; margin-top: 22px; }
+  .hero-find { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); color: var(--muted); font: 500 15px var(--text); text-align: left; cursor: pointer; box-shadow: 0 10px 24px -18px rgb(0 0 0 / .4); }
+  .hero-find svg { width: 20px; height: 20px; flex: none; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
+  .hero-quick-label { margin: 8px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .hero-starts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hero-starts a { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 75%, transparent); color: var(--ink); font: 600 14.5px var(--text); text-decoration: none; }
+  .hero-starts i { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--art-bg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--art-bg) 28%, transparent); }
+  .scene-cat:first-of-type, .scene-hero + .scene-cat { margin-top: -28px; border-radius: 28px 28px 0 0; overflow: hidden; position: relative; z-index: 1; }
+
+  /* Each category: title, count and one compact row per tool (the chips repeated the rows). */
+  .scene-cat .stage { padding: 36px 0 28px; gap: 16px; }
+  .cat-chips { display: none; }
+  .cat-head { gap: 6px; }
+  .cat-head h2 { font-size: 30px; line-height: 1.1; }
+  .cat-desc { font-size: 15px; }
+  .cat-meta { display: inline-flex; align-items: baseline; gap: 6px; font-size: 13px; }
+  .cat-meta strong { font: 700 15px var(--text); }
+  .track { gap: 10px; }
+  .track .skill-card { flex-direction: row; align-items: stretch; border-radius: 18px; min-height: 96px; }
+  .track .skill-art { flex: none; width: 96px; height: auto; }
+  .track .skill-art svg { width: 130%; height: 130%; max-width: none; }
+  .track .skill-body { gap: 4px; padding: 12px 14px; min-width: 0; }
+  .track .skill-index > span:first-child { display: none; }
+  .track .skill-index:not(:has(.skill-running)) { display: none; }
+  .track .skill-body h3 { font-size: 17px; }
+  .track .skill-body p { font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .track .skill-foot { padding-top: 6px; }
+  .track .skill-eta { font-size: 11.5px; padding: 2px 9px; }
+  .track .skill-go { min-width: 30px; height: 30px; padding: 0; font-size: 15px; border: 0; }
+  .track .skill-go .go-label { display: none; }
+
+  /* The mascot: smaller and without the greeting bubble covering the page. */
+  .app.has-tabbar .ai-fab { width: 64px; height: 64px; right: 10px; bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .app.has-tabbar .ai-fab .mascot { width: 64px; height: 64px; }
+  .app.has-tabbar .ai-nudge { display: none; }
+}

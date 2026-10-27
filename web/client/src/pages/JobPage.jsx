@@ -29,6 +29,7 @@ import { DISH_TEMPLATES, FEATURED, OFFER_TEMPLATES, SAMPLE_VERSION, TEMPLATES, s
 
 import { blanksOf, fillBlanks, useJobEdits } from "../lib/edits.js";
 import { safeHref } from "../lib/safeUrl.js";
+import { OwnerOnly } from "../lib/sharedView.jsx";
 
 /** Results that are a post, which the next tools can take on ("Làm tiếp với…"). */
 const WRITTEN = new Set(["write", "gbp-post", "weather-post", "story-behind", "dish-riddle", "post-score", "menu"]);
@@ -156,7 +157,7 @@ function Variants({ job, onSave, prefix, edits, setEdits }) {
                 <h2>{v.title}</h2>
                 <div className="actions">
                   <button className="btn small" onClick={() => copy(toPlainText(body))}><CopyIcon />Sao chép</button>
-                  <button className="btn small" onClick={() => onSave(`${name} · ${v.title}`, toPlainText(body))}><SaveIcon />Lưu</button>
+                  {onSave && <button className="btn small" onClick={() => onSave(`${name} · ${v.title}`, toPlainText(body))}><SaveIcon />Lưu</button>}
                 </div>
               </div>
               <Markdown key={body}>{body}</Markdown>
@@ -497,7 +498,7 @@ function VideoResult({ job }) {
           <a className="btn primary" href={src} download={`${(job.video.title || "video").slice(0, 60)}.mp4`}>Tải MP4</a>
         </div>
       </section>
-      {job.video.slideshow && Array.isArray(job.slides) && job.slides.length > 1 && <Restyle job={job} />}
+      {job.video.slideshow && Array.isArray(job.slides) && job.slides.length > 1 && <OwnerOnly><Restyle job={job} /></OwnerOnly>}
       <PostCaption caption={job.video.caption} hashtags={job.video.hashtags} />
       {job.video.slideshow ? (
         <section className="card">
@@ -631,6 +632,55 @@ export function Result({ job, onSave, edits, setEdits }) {
   if (job.type === "video" && job.video) return <VideoResult job={job} />;
   if (["reel-cut", "dub", "live-recap"].includes(job.type) && job.clips) return <ClipsResult job={job} />;
   return <Markdown className="card md">{job.result}</Markdown>;
+}
+
+/** A read-only link to this result for someone without an account; the owner can turn it off any time. */
+function ShareBox({ job }) {
+  const toast = useToast();
+  const copy = useCopy();
+  const [token, setToken] = useState(job.share?.secret ? `${job.id}.${job.share.secret}` : "");
+  const [busy, setBusy] = useState(false);
+  const link = token ? `${window.location.origin}/s/${token}` : "";
+  async function run(fn) {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      toast(e.message, { kind: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+  const create = () => run(async () => {
+    const { share } = await api(`/jobs/${job.id}/share`, { method: "POST" });
+    setToken(share.token);
+    copy(`${window.location.origin}/s/${share.token}`);
+  });
+  const stop = () => run(async () => {
+    await api(`/jobs/${job.id}/share`, { method: "DELETE" });
+    setToken("");
+    toast("Đã tắt link. Ai mở link cũ sẽ không xem được nữa.");
+  });
+  return (
+    <section className="aside-card share-box">
+      <h2>Chia sẻ</h2>
+      {token ? (
+        <>
+          <p className="hint">Ai có link đều xem được kết quả này (chỉ xem), không cần tài khoản.</p>
+          <div className="share-link">
+            <input readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Link chia sẻ" />
+            <button type="button" className="btn small" onClick={() => copy(link)}><CopyIcon />Sao chép</button>
+          </div>
+          <button type="button" className="btn small ghost" disabled={busy} onClick={stop}>Tắt link</button>
+        </>
+      ) : (
+        <>
+          <p className="hint">Tạo link chỉ xem để gửi cho chủ quán, đối tác hay sếp. Tắt link bất cứ lúc nào.</p>
+          <button type="button" className="btn" disabled={busy} onClick={create}>🔗 {busy ? "Đang tạo…" : "Tạo link chia sẻ"}</button>
+        </>
+      )}
+    </section>
+  );
 }
 
 export default function JobPage() {
@@ -780,6 +830,7 @@ export default function JobPage() {
               )}
             </div>
           </section>
+          {done && job.type !== "combo" && !job.sample && <ShareBox key={job.id} job={job} />}
           {next.length > 0 && (
             <section className="aside-card">
               <h2>Bước tiếp theo</h2>

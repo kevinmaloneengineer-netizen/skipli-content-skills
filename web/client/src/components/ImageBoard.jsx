@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useCopy, useToast } from "../context/ToastContext.jsx";
 import { api } from "../lib/api.js";
 import { CopyIcon, SaveIcon } from "./Icons.jsx";
+import { OwnerOnly } from "../lib/sharedView.jsx";
 
 const LAYOUTS = { top: "Trên", center: "Giữa", bottom: "Dưới" };
 const THEMES = { light: "Chữ trắng", dark: "Chữ đen", brand: "Nền màu" };
@@ -189,7 +190,7 @@ export default function ImageBoard({ job }) {
             <div className="actions ib-actions">
               <button className="btn primary small" onClick={() => dl(i)} disabled={busy === i}>{busy === i ? "Đang xuất…" : "Tải ảnh PNG"}</button>
               {x.caption && <button className="btn small" onClick={() => copy(x.caption)}><CopyIcon />Caption</button>}
-              <button className="btn small" onClick={() => save(i)}><SaveIcon />Lưu</button>
+              <OwnerOnly><button className="btn small" onClick={() => save(i)}><SaveIcon />Lưu</button></OwnerOnly>
             </div>
           </section>
         );

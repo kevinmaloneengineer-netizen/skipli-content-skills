@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Field, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 
 export default function MapsPage() {
-  const [place, setPlace] = useState("");
+  const [params] = useSearchParams();
+  const [place, setPlace] = useState(params.get("place") ?? ""); // "Phân tích lại" from the Đối thủ page
   const [focus, setFocus] = useState("");
   const [submit, busy, error] = useSubmitJob("maps");
 

@@ -220,14 +220,14 @@ export function createAccounts({ store, dataDir, signup = null }) {
       req.user = userOf(req);
       // An old account not confirmed yet: only the confirm calls (and the public pages).
       if (unconfirmed(req.user)) {
-        const allowed = ["/api/session", "/api/logout", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+        const allowed = ["/api/session", "/api/logout", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
         if (allowed) return next();
         return res.status(403).set("Cache-Control", "no-store").json({ error: "Xác nhận email trước khi dùng công cụ", verify: true });
       }
       if (req.user) return next();
       // Open without a login: the session and login calls, the page itself, and the canned sample results
       // shown on the home page (no customer data in them).
-      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");

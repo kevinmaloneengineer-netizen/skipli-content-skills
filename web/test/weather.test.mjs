@@ -11,7 +11,7 @@ const fake = (calls) => async (url) => {
 test("weather: city looked up, current conditions read, in Vietnamese", async () => {
   const calls = [];
   const w = await currentWeather("Hà Nội", { fetchFn: fake(calls) });
-  assert.deepEqual(w, { place: "Hà Nội, Việt Nam", temperature: 27, humidity: 81, rain: true, sky: "mưa nhẹ" });
+  assert.deepEqual(w, { place: "Hà Nội, Việt Nam", us: false, temperature: 27, humidity: 81, rain: true, sky: "mưa nhẹ" });
   assert.match(calls[0], /name=H%C3%A0%20N%E1%BB%99i/);
   assert.equal(weatherSentence(w), "Thời tiết hiện tại ở Hà Nội, Việt Nam: mưa nhẹ, 27°C, độ ẩm 81%, đang mưa.");
 });
@@ -21,4 +21,8 @@ test("weather: unknown city or empty name gives null, no call made", async () =>
   assert.equal(await currentWeather("", { fetchFn: fake(calls) }), null);
   assert.equal(await currentWeather("Thành phố không có", { fetchFn: async () => ({ json: async () => ({}) }) }), null);
   assert.equal(calls.length, 0);
+});
+
+test("weather: a US city is told in °F", () => {
+  assert.equal(weatherSentence({ place: "Chicago, Illinois, Hoa Kỳ", us: true, temperature: 13, humidity: 84, rain: false, sky: "trời quang" }), "Thời tiết hiện tại ở Chicago, Illinois, Hoa Kỳ: trời quang, 55°F, độ ẩm 84%.");
 });

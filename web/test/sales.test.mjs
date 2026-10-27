@@ -57,3 +57,8 @@ test("sales: a file with no dish column, or no sales rows, is refused with a rea
   assert.throws(() => salesStats([["", 0, 0]], { dish: 0, qty: 1 }), /Không đọc được dòng bán/);
   assert.throws(() => readSheet(book([["chỉ một cột"]])), /tiêu đề/);
 });
+
+test("sales: US POS headers (Toast, Square) find the money column", () => {
+  assert.deepEqual(detectMapping(["Date", "Time", "Item", "Qty", "Net Sales"]), { dish: 2, qty: 3, amount: 4, time: 1, date: 0 });
+  assert.deepEqual(detectMapping(["Menu Item", "Item Qty", "Gross Sales"]), { dish: 0, qty: 1, amount: 2 });
+});

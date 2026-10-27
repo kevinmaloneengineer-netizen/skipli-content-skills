@@ -35,7 +35,10 @@ export function cleanPlace(p) {
 
 /** Up to `max` places for a search ("pho") in an area ("Milwaukee, WI"), in Google's order, closed ones left out. */
 export async function searchPlaces(query, location, { max = 15, language = "en", signal } = {}) {
-  const items = await run({ searchStringsArray: [query], locationQuery: location, maxCrawledPlacesPerSearch: max, language, skipClosedPlaces: true }, signal);
+  let items = await run({ searchStringsArray: [query], locationQuery: location, maxCrawledPlacesPerSearch: max, language, skipClosedPlaces: true }, signal);
+  // The actor only geocodes cities: a neighborhood ("East End, Houston, TX") or a street address finds nothing.
+  // Google itself understands "tacos in East End, Houston, TX".
+  if (!items.length && location) items = await run({ searchStringsArray: [`${query} in ${location}`], maxCrawledPlacesPerSearch: max, language, skipClosedPlaces: true }, signal);
   const seen = new Set();
   return items.map(cleanPlace).filter((p) => p.name && !p.closed && !seen.has(p.placeId || p.name) && seen.add(p.placeId || p.name));
 }
@@ -70,7 +73,13 @@ export async function placeLink(text, { signal } = {}) {
   if (/^https?:\/\//i.test(s) || comma < 1) return s;
   const name = s.slice(0, comma).trim();
   // Google fills the list with nearby shops when the name is not there: keep only a shop with that name.
-  const hit = (await searchPlaces(name, s.slice(comma + 1).trim(), { max: 3, signal })).find((p) => sameName(name, p.name));
+  const area = s.slice(comma + 1).trim();
+  // A street address ("730 N Rush St, Chicago IL") is searched as one text with the name: a chain (Giordano's)
+  // has several shops and only that search puts the one at the typed address first.
+  const number = area.match(/^\d+\b/)?.[0];
+  const found = number ? await searchPlaces(`${name} ${area}`, undefined, { max: 3, signal }) : await searchPlaces(name, area, { max: 3, signal });
+  const hits = found.filter((p) => sameName(name, p.name));
+  const hit = (number && hits.find((p) => String(p.address ?? "").startsWith(`${number} `))) || hits[0];
   if (!hit?.url) throw new Error(`Không tìm thấy "${s}" trên Google Maps. Hãy dán link Google Maps của quán.`);
   return hit.url;
 }

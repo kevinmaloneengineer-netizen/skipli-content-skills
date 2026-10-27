@@ -305,7 +305,19 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
   }
 
   /** The worker's /image job: { images: [base64 PNG], width, height }. */
+  // The worker draws at most 6 pictures per call (its /image schema); longer lists go in batches, in order.
+  const GPU_BATCH = 6;
   async function drawOnGpu(body, signal) {
+    if (body.prompts.length <= GPU_BATCH) return drawBatch(body, signal);
+    let out;
+    for (let i = 0; i < body.prompts.length; i += GPU_BATCH) {
+      const res = await drawBatch({ ...body, prompts: body.prompts.slice(i, i + GPU_BATCH) }, signal);
+      out = out ? { ...out, images: [...out.images, ...res.images] } : res;
+    }
+    return out;
+  }
+
+  async function drawBatch(body, signal) {
     const { id } = await call("/image", { method: "POST", body, signal });
     const deadline = Date.now() + 20 * 60_000; // first call of a session may wait for the models to load
     for (;;) {
@@ -352,7 +364,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
     if (res?.width) [w, h] = [res.width, res.height]; // the worker decides the real size
     const images = plan.images.map((x, i) => ({ ...x, file: files[i] }));
     return {
-      result: images.map((x, i) => `### Ảnh ${i + 1}\n**${x.headline}**${x.sub ? `\n${x.sub}` : ""}${x.cta ? `\n[${x.cta}]` : ""}\n\n${x.caption ?? ""}`).join("\n\n"),
+      result: images.map((x, i) => `### Ảnh ${i + 1}${x.headline ? `\n**${x.headline}**` : ""}${x.sub ? `\n${x.sub}` : ""}${x.cta ? `\n[${x.cta}]` : ""}\n\n${x.caption ?? ""}`).join("\n\n"),
       fields: { images: { size: job.input.size, width: w, height: h, items: images } },
     };
   }

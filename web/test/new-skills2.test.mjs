@@ -92,7 +92,7 @@ test("menu photo API: nothing read → an error and no credit taken", async () =
     const before = (await req("GET", "/api/billing", null, a)).body.credits;
     assert.equal((await req("POST", "/api/menus/scan", { dataUrl: "data:text/plain;base64,aGk=" }, a)).status, 400);
     const r = await req("POST", "/api/menus/scan", { dataUrl: "data:image/jpeg;base64,/9j/4AAQ" }, a);
-    assert.equal(r.status, 422);
+    assert.equal(r.status, 503); // no model to read it: told as busy, not as a bad photo
     assert.equal((await req("GET", "/api/billing", null, a)).body.credits, before);
   } finally {
     s.close();
@@ -123,4 +123,11 @@ test("zalo and promo runs: messages split per message, promotions priced by the 
   } finally {
     s.close();
   }
+});
+
+test("promo plan: US prices typed without $ are read as dollars", () => {
+  const t = parseDishTable("Deep dish large - 32 - 11\nGarlic knots - 7 - 1.5\nFountain soda - 3 - 0.4");
+  assert.equal(t.usd, true);
+  assert.deepEqual(t.dishes.map((d) => d.cost), [11, 1.5, 0.4]);
+  assert.equal(parseDishTable("Bún chả - 45.000 - 20.000\nTrà đá - 3.000 - 500").usd, false);
 });

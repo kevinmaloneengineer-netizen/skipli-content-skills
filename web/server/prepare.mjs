@@ -1,7 +1,7 @@
 import { currentWeather, weatherSentence } from "./weather.mjs";
 import { describePhoto } from "./vision.mjs";
 import path from "node:path";
-import { channelPromptWithIds, TIME_ZONES } from "./prompts.mjs";
+import { channelPromptWithIds, ENGLISH_RULE, TIME_ZONES } from "./prompts.mjs";
 import { fetchReviews } from "./sources/maps.mjs";
 import { apifyReviewsEnabled, fetchReviewsApify } from "./sources/mapsApify.mjs";
 import { findVideos } from "./sources/tiktok.mjs";
@@ -417,7 +417,9 @@ async function weatherPrompt(job, { setPhase, signal }) {
   await setPhase("Đang xem thời tiết hôm nay…");
   const w = await currentWeather(job.input?.city, { signal }).catch((e) => { if (signal?.aborted) throw e; return null; });
   if (!w) return { prompt: job.prompt, notice: "Chưa lấy được thời tiết của thành phố này, bài sẽ viết theo mùa chung." };
-  return { prompt: `${job.prompt}\n\n${weatherSentence(w)}\nChỉ dùng đúng các thông tin thời tiết này, không thêm số liệu nào khác.` };
+  // A US city: the post is for English-speaking guests (°F, English copy).
+  const base = w.us ? job.prompt.replace(/,? bằng tiếng Việt/, " (ngôn ngữ theo mục NGÔN NGỮ cuối tin nhắn)") : job.prompt;
+  return { prompt: `${base}\n\n${weatherSentence(w)}\nChỉ dùng đúng các thông tin thời tiết này, không thêm số liệu nào khác.${w.us ? `\n\n${ENGLISH_RULE}` : ""}` };
 }
 
 /** Top reels to watch: by engagement, or (with a topic) the ones the model finds most on topic. */

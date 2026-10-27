@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect, useRef, useState } from "re
 import Markdown from "./Markdown.jsx";
 import { api } from "../lib/api.js";
 import { safeHref } from "../lib/safeUrl.js";
+import { OwnerOnly } from "../lib/sharedView.jsx";
 
 const THREADS_URL = /https:\/\/(?:www\.)?threads\.(?:com|net)\/@[\w.]+\/post\/[\w-]+/;
 export const REEL_URL = /https:\/\/(?:www\.|m\.)?(?:facebook\.com\/(?:reel\/\d{6,25}|[^\s/)]+\/videos\/\d{6,25}|watch\/?\?v=\d{6,25})|instagram\.com\/(?:[\w.]+\/)?(?:p|reel)\/[\w-]+)[^\s)]*/;
@@ -75,9 +76,11 @@ function FacebookPlayer({ url, compact }) {
       <span className="reel-links">
         <a className="reel-open" href={safeHref(url)} target="_blank" rel="noopener noreferrer">Mở trên Facebook ↗</a>
         {!clip && (
-          <button type="button" className="reel-fallback" disabled={state === "loading"} onClick={fallback}>
-            {state === "loading" ? "Đang tải…" : state === "failed" ? "Không tải được" : "Không xem được? Phát bản tải về"}
-          </button>
+          <OwnerOnly>
+            <button type="button" className="reel-fallback" disabled={state === "loading"} onClick={fallback}>
+              {state === "loading" ? "Đang tải…" : state === "failed" ? "Không tải được" : "Không xem được? Phát bản tải về"}
+            </button>
+          </OwnerOnly>
         )}
       </span>
     </div>

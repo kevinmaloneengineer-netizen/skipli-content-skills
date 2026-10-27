@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { DoDont, parseTable, toNumber } from "./FanpageResult.jsx";
 import { CountUp } from "./CountUp.jsx";
 import { safeHref } from "../lib/safeUrl.js";
+import { OwnerOnly } from "../lib/sharedView.jsx";
 
 /** Link to the review replier with this review filled in. */
 const replyLink = (text, stars, business) => `/review?${new URLSearchParams({ review: text, ...(stars ? { stars: String(stars) } : {}), ...(business ? { business } : {}) })}`;
@@ -134,7 +135,7 @@ function ThemeColumn({ kind, title, data, business }) {
             <blockquote key={i} className="mp-quote">
               {q.stars && <Stars value={q.stars} size={13} />}
               <p>{q.text}</p>
-              {kind === "bad" && <Link className="mp-reply" to={replyLink(q.text, q.stars, business)}>Soạn trả lời →</Link>}
+              {kind === "bad" && <OwnerOnly><Link className="mp-reply" to={replyLink(q.text, q.stars, business)}>Soạn trả lời →</Link></OwnerOnly>}
             </blockquote>
           ))}
         </div>
@@ -192,7 +193,7 @@ export default function MapsResult({ job }) {
                   {r.ownerReplied && <small className="mp-replied">Quán đã trả lời</small>}
                 </div>
                 <p>{r.text}</p>
-                <Link className="btn small" to={replyLink(r.text, r.stars, place.name)}>Soạn trả lời</Link>
+                <OwnerOnly><Link className="btn small" to={replyLink(r.text, r.stars, place.name)}>Soạn trả lời</Link></OwnerOnly>
               </li>
             ))}
           </ul>

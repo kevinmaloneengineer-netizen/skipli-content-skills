@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { WEB_ROOT } from "./config.mjs";
 import { createGoclawClient } from "./goclaw.mjs";
 import { createJobRunner, ACTIVE } from "./jobs.mjs";
@@ -19,6 +19,7 @@ import { reviewsIn, verifyQuotes } from "./quotes.mjs";
 import { complete, directEnabled, fixDashes } from "./llm.mjs";
 import { sampleReply } from "./mock.mjs";
 import { createWatcher } from "./watcher.mjs";
+import { competitorsOf } from "./competitors.mjs";
 import { makeClip } from "./watch.mjs";
 import { createLimits } from "./limits.mjs";
 import { pageConfigured, publishToPage } from "./facebookPage.mjs";
@@ -55,6 +56,17 @@ class HttpError extends Error {
 }
 
 const SESSION_COOKIE = "skipli_session";
+// Shared results (/s/<token>): the viewer has no account; this cookie (path /media) lets the result's
+// pictures and videos load. It holds the last few share tokens opened in this browser.
+const SHARE_COOKIE = "skipli_share";
+const MAX_SHARE_TOKENS = 5;
+/** "<job id>.<secret>" → { id, secret }, or null. */
+const parseShare = (token) => {
+  const m = String(token ?? "").match(/^([0-9a-f-]{36})\.([\w-]{20,40})$/);
+  return m ? { id: m[1], secret: m[2] } : null;
+};
+// What a shared result shows: the result and the data its view draws, never the owner, the prompt or the costs.
+const PRIVATE_FIELDS = ["userId", "prompt", "credits", "refunded", "usage", "llm", "error", "share", "phases", "notice", "agent", "direct"];
 const SESSION_DAYS = 30;
 /** Session token: derived from the password, so changing APP_PASSWORD logs everyone out. */
 const sessionToken = (password) => createHmac("sha256", password).update("skipli-content-session").digest("hex");
@@ -84,7 +96,7 @@ function passwordGate(password) {
     signedIn,
     middleware(req, res, next) {
       if (signedIn(req)) return next();
-      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/"));
+      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -812,11 +824,18 @@ export async function createApp(config, adapter) {
     res.status(201).json({ item });
   });
 
+  /** The "Đối thủ" page: competitors from the runs and the watch list (competitors.mjs). */
+  api.get("/competitors", (req, res) => {
+    const watches = store.listWatch().filter((w) => own(req, w));
+    res.json({ competitors: competitorsOf(watches, store.listJobs().filter((j) => own(req, j))), maxWatch: MAX_WATCH });
+  });
+
   api.post("/watch/:id/check", async (req, res) => {
     const item = store.getWatch(req.params.id);
     if (!item || !own(req, item)) throw new HttpError(404, "Không tìm thấy kênh đang theo dõi");
     const last = Math.max(Date.parse(item.lastCheckedAt ?? "") || 0, Date.parse(item.lastAttemptAt ?? "") || 0);
-    if (checking.has(item.id) || Date.now() - last < CHECK_GAP_MS) throw new HttpError(429, "Vừa kiểm tra xong, thử lại sau ít phút nhé.");
+    if (checking.has(item.id)) throw new HttpError(429, "Đang kiểm tra, chờ một chút rồi tải lại trang nhé.");
+    if (Date.now() - last < CHECK_GAP_MS) throw new HttpError(429, "Vừa kiểm tra xong, thử lại sau ít phút nhé.");
     checking.add(item.id);
     try {
       res.json({ ...(await watcher.check(item)), item: store.getWatch(item.id) });
@@ -918,6 +937,36 @@ export async function createApp(config, adapter) {
     if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
     const fresh = await submitPaid(req, job.type, spec);
     res.status(201).json({ job: summary(fresh, runner) });
+  });
+
+  // ---- shared results: a read-only link the owner can turn off ----
+  api.post("/jobs/:id/share", async (req, res) => {
+    const job = await loadJob(req);
+    if (job.status !== "done" || job.type === "combo") throw new HttpError(409, "Chỉ chia sẻ được kết quả đã xong");
+    const share = job.share?.secret ? job.share : { secret: randomBytes(18).toString("base64url"), at: new Date().toISOString() };
+    if (share !== job.share) await store.updateJob(job.id, { share });
+    res.json({ share: { token: `${job.id}.${share.secret}`, at: share.at } });
+  });
+  api.delete("/jobs/:id/share", async (req, res) => {
+    const job = await loadJob(req);
+    await store.updateJob(job.id, { share: null });
+    res.json({ ok: true });
+  });
+  /** The job a share token opens, or null when the link is wrong or turned off. */
+  async function sharedJob(token) {
+    const t = parseShare(token);
+    if (!t) return null;
+    const job = store.cachedJob(t.id) ?? (await store.getJob(t.id));
+    return job?.share?.secret && same(job.share.secret, t.secret) ? job : null;
+  }
+  api.get("/public/shared/:token", async (req, res) => {
+    const job = await sharedJob(req.params.token);
+    if (!job) throw new HttpError(404, "Link này không còn hoạt động. Người chia sẻ có thể đã tắt link.");
+    const view = { ...job, input: { ...(job.input ?? {}) } };
+    for (const k of PRIVATE_FIELDS) delete view[k];
+    const tokens = [req.params.token, ...cookieOf(req, SHARE_COOKIE).split("~").filter((t) => t && t !== req.params.token)].slice(0, MAX_SHARE_TOKENS);
+    const secure = req.secure || req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+    res.set({ "Set-Cookie": `${SHARE_COOKIE}=${tokens.join("~")}; Path=/media; HttpOnly; SameSite=Lax; Max-Age=${7 * 86_400}${secure}`, "X-Robots-Tag": "noindex" }).json({ job: view });
   });
 
   // ---- slideshow photo review (job status "review") ----
@@ -1095,6 +1144,7 @@ export async function createApp(config, adapter) {
     if (!m) throw new HttpError(400, "Chọn ảnh menu (JPG, PNG hoặc WebP)");
     await billingCall(async () => billing.check(req.user, "menu-scan"));
     const text = await readMenu({ data: Buffer.from(m[2], "base64"), mime: m[1] }).catch(() => null);
+    if (text === null) throw new HttpError(503, "AI đọc ảnh đang quá tải, thử lại sau ít phút (không bị trừ credit).");
     if (!text) throw new HttpError(422, "Chưa đọc được món nào từ ảnh này. Chụp thẳng, đủ sáng, rõ chữ rồi thử lại (không bị trừ credit).");
     const credits = await billingCall(() => billing.charge(req.user, "menu-scan"));
     res.json({ text, credits });
@@ -1229,11 +1279,28 @@ export async function createApp(config, adapter) {
   // Behind a reverse proxy (nginx, Cloudflare…) the visitor's IP is in X-Forwarded-For: TRUST_PROXY=1 reads it,
   // so the per-IP limits (sign-up, runs, chat) count visitors and not the proxy.
   if (config.trustProxy) app.set("trust proxy", config.trustProxy);
+  // Pictures and videos of the results this browser opened through a share link (see SHARE_COOKIE).
+  app.use("/media", async (req, res, next) => {
+    const tokens = cookieOf(req, SHARE_COOKIE).split("~").filter(Boolean).slice(0, MAX_SHARE_TOKENS);
+    if (tokens.length && req.method === "GET") {
+      const jobs = (await Promise.all(tokens.map((t) => sharedJob(t).catch(() => null)))).filter(Boolean);
+      if (jobs.length) req.sharedJobs = jobs;
+    }
+    next();
+  });
   app.use(gate.middleware);
+  /** A file of a shared result: its own, or one it shows from another run (a restyle keeps the first run's photos). */
+  const sharedMedia = (req, jobId, file) => (req.sharedJobs ?? []).some((j) => j.id === jobId || JSON.stringify(j).includes(file));
+  /** The owner (or, without accounts, anyone signed in) sees a run's files; a share-link viewer only that result's. */
+  const canSee = async (req, jobId, file) => {
+    const signed = accounts ? !!req.user : gate.signedIn?.(req) ?? true;
+    if (signed && (!accounts || own(req, store.cachedJob(jobId) ?? (await store.getJob(jobId))))) return true;
+    return sharedMedia(req, jobId, file);
+  };
   app.get("/media/videos/:file", async (req, res) => {
     // <job id>.mp4 for the job video, <job id>-clipN.mp4 or <job id>-dub.mp4 for the cut and dubbed files
     const m = req.params.file.match(/^([0-9a-f-]{36})(-clip\d+|-dub)?\.mp4$/);
-    if (accounts && m && !own(req, store.cachedJob(m[1]) ?? (await store.getJob(m[1])))) return res.status(404).send("Không tìm thấy video");
+    if (m && !(await canSee(req, m[1], req.params.file))) return res.status(404).send("Không tìm thấy video");
     const file = m && path.join(videoRoot, "videos", req.params.file);
     if (!file) return res.status(404).send("Không tìm thấy video");
     if (!existsSync(file)) return fromStorage(res, `videos/${req.params.file}`);
@@ -1255,7 +1322,7 @@ export async function createApp(config, adapter) {
   });
   app.get("/media/images/:file", async (req, res) => {
     const jobId = req.params.file.slice(0, 36);
-    if (accounts && !own(req, store.cachedJob(jobId) ?? (await store.getJob(jobId)))) return res.status(404).send("Không tìm thấy ảnh");
+    if (!(await canSee(req, jobId, req.params.file))) return res.status(404).send("Không tìm thấy ảnh");
     const file = video.imagePath(req.params.file);
     if (!file) return res.status(404).send("Không tìm thấy ảnh");
     if (!existsSync(file)) return fromStorage(res, `images/${req.params.file}`);

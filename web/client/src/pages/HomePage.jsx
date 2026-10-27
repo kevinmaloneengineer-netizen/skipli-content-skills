@@ -12,6 +12,8 @@ import { CATEGORIES, SKILLS, skillById } from "../lib/constants.js";
 import { useLive } from "../lib/live.js";
 import { useScenes } from "../lib/motion.js";
 
+const QUICK = ["write", "video", "maps", "image"];
+
 /**
  * Home = a scroll-driven film in five scenes:
  *   1. opening - title shrinks away, stickers burst out, a phone feed rises
@@ -39,6 +41,22 @@ export default function HomePage() {
               Hôm nay bạn muốn <span className="hl">làm gì</span>?
             </h1>
             <p className="hero-sub">Nghiên cứu đối thủ, viết bài, lên lịch: gói gọn trong {SKILLS.length} công cụ.</p>
+            {/* Phones only: a way in right away (the scroll film is off on small screens). */}
+            <div className="hero-quick">
+              <button type="button" className="hero-find" onClick={() => window.dispatchEvent(new Event("open-tools"))}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-3.5-3.5" /></svg>
+                Tìm công cụ: video, đối thủ, menu…
+              </button>
+              <p className="hero-quick-label">Bắt đầu nhanh</p>
+              <div className="hero-starts">
+                {QUICK.map(skillById).filter(Boolean).map((s) => (
+                  <Link key={s.id} to={s.path} data-tone={s.tone}>
+                    <i aria-hidden="true" />
+                    {s.short}
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
           <PhoneFeed live={live} />
           <HeroCategories live={live} />

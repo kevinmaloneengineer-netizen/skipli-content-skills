@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Field, Segmented, SubmitRow, useSubmitJob } from "../components/Form.jsx";
 import SkillShell, { Notes } from "../components/SkillShell.jsx";
 import { api } from "../lib/api.js";
@@ -7,7 +8,8 @@ const COUNTS = { 3: "3 reel", 5: "5 reel", 10: "10 reel" };
 const DEPTHS = { 100: "100 reel mới nhất", 10: "10 reel mới nhất" };
 
 export default function FbScanPage() {
-  const [url, setUrl] = useState("");
+  const [params] = useSearchParams();
+  const [url, setUrl] = useState(params.get("url") ?? ""); // "Quét reel" from the Đối thủ page
   const [topic, setTopic] = useState("");
   const [top, setTop] = useState("5");
   const [depth, setDepth] = useState("100");

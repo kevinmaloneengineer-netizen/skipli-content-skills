@@ -30,7 +30,8 @@ export default function AuthGate({ children }) {
     const out = () => {
       setSession((s) => (s && s.mode !== "open" ? { ...s, signedIn: false, user: null } : s));
       const here = window.location.pathname + window.location.search;
-      if (!here.startsWith("/login")) navigate(loginPath(here), { replace: true });
+      // Public pages (a shared result, the table QR menu) stay where they are: their viewers have no account.
+      if (!here.startsWith("/login") && !/^\/(s|m)\//.test(here)) navigate(loginPath(here), { replace: true });
     };
     window.addEventListener("auth-required", out);
     return () => window.removeEventListener("auth-required", out);

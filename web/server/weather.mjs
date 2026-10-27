@@ -23,6 +23,7 @@ export async function currentWeather(city, { fetchFn = fetch, signal } = {}) {
   if (!now) return null;
   return {
     place: [place.name, place.admin1, place.country].filter((x, i, a) => x && a.indexOf(x) === i).join(", "),
+    us: place.country_code === "US",
     temperature: Math.round(now.temperature_2m),
     humidity: Math.round(now.relative_humidity_2m),
     rain: now.precipitation > 0,
@@ -31,4 +32,4 @@ export async function currentWeather(city, { fetchFn = fetch, signal } = {}) {
 }
 
 /** The facts the post may use, one sentence: the model may not add anything to them. */
-export const weatherSentence = (w) => `Thời tiết hiện tại ở ${w.place}: ${w.sky}, ${w.temperature}°C, độ ẩm ${w.humidity}%${w.rain ? ", đang mưa" : ""}.`;
+export const weatherSentence = (w) => `Thời tiết hiện tại ở ${w.place}: ${w.sky}, ${w.us ? `${Math.round((w.temperature * 9) / 5 + 32)}°F` : `${w.temperature}°C`}, độ ẩm ${w.humidity}%${w.rain ? ", đang mưa" : ""}.`;

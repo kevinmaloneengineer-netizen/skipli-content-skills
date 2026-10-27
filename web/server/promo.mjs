@@ -31,7 +31,10 @@ export function parseMoney(text, usd = false) {
  */
 export function parseDishTable(text) {
   const lines = String(text ?? "").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
-  const usd = lines.some((l) => l.includes("$"));
+  // Dollars when a "$" is written, or when every price is under 1,000 with no "k"/"đ" ("Deep dish - 32 - 11"):
+  // no Vietnamese dish costs under 1.000đ.
+  const prices = lines.map((l) => l.split(/\s+[-–|]\s+/)[1]).filter(Boolean);
+  const usd = lines.some((l) => l.includes("$")) || (prices.length > 0 && !lines.some((l) => /\d\s*k\b|đ|vnd/i.test(l)) && prices.every((p) => (parseMoney(p) ?? 0) < 1000));
   const dishes = [];
   for (const line of lines.slice(0, 40)) {
     const [name, price, cost] = line.split(/\s+[-–|]\s+/).map((x) => x.trim());

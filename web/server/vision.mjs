@@ -48,7 +48,7 @@ export const MENU_ASK = [
   "Chữ nào mờ không đọc chắc chắn thì bỏ món đó, KHÔNG đoán. Không bịa món, giá hay mô tả. Không viết lời giải thích, không dùng ```.",
 ].join("\n");
 
-/** Menu lines read from a photo ("# Nhóm", "Tên - giá - mô tả"); null without a key or when nothing was read. */
+/** Menu lines read from a photo ("# Nhóm", "Tên - giá - mô tả"); "" when a model answered but read no dish, null without a key or when no model answered. */
 export async function readMenu({ data, mime }, { fetchFn = fetch, signal } = {}) {
   const key = process.env.GEMINI_API_KEY;
   if (!key || !Object.values(MIME).includes(mime)) return null;
@@ -56,6 +56,7 @@ export async function readMenu({ data, mime }, { fetchFn = fetch, signal } = {})
     contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: data.toString("base64") } }, { text: MENU_ASK }] }],
     generationConfig: { maxOutputTokens: 6000, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
   });
+  let answered = false;
   for (const model of MODELS) {
     try {
       const res = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
@@ -65,6 +66,7 @@ export async function readMenu({ data, mime }, { fetchFn = fetch, signal } = {})
         signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(90_000)]),
       });
       if (!res.ok) continue;
+      answered = true;
       const text = (await res.json()).candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
       const lines = cleanMenuText(text);
       if (lines) return lines;
@@ -72,7 +74,7 @@ export async function readMenu({ data, mime }, { fetchFn = fetch, signal } = {})
       if (signal?.aborted) throw e;
     }
   }
-  return null;
+  return answered ? "" : null; // "" = read but no dish found; null = no model answered (busy or down)
 }
 
 /** The model's answer kept to menu lines only: no fences, no chatter, at most 150 dishes. */

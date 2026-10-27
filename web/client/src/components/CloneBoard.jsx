@@ -4,6 +4,7 @@ import { api } from "../lib/api.js";
 import { PILLARS, splitClonePosts, toPlainText } from "../lib/text.js";
 import { CopyIcon, SaveIcon } from "./Icons.jsx";
 import Markdown from "./Markdown.jsx";
+import { OwnerOnly } from "../lib/sharedView.jsx";
 
 const PILLAR_NAME = Object.fromEntries([...PILLARS.map((p) => [p.id, p.name]), ["other", "Khác"]]);
 
@@ -136,7 +137,7 @@ function Editor({ post, index, total, text, edited, channel, onChange, onReset, 
           <div className="actions">
             {edited && <button className="btn ghost small" onClick={onReset}>Khôi phục bản AI</button>}
             <button className="btn small" onClick={() => copy(text)}><CopyIcon />Sao chép</button>
-            <button className="btn primary small" onClick={() => onSave(post, text)}><SaveIcon />Lưu</button>
+            <OwnerOnly><button className="btn primary small" onClick={() => onSave(post, text)}><SaveIcon />Lưu</button></OwnerOnly>
           </div>
         </footer>
       </div>
@@ -185,10 +186,12 @@ export default function CloneBoard({ job }) {
     <>
       <div className="cb-bar">
         <p>{intro ? toPlainText(intro) : `${posts.length} bài mới cho kênh của bạn.`} Bấm vào một bài để sửa và xem trước.</p>
+        <OwnerOnly>
         <button className="btn primary" disabled={saving || !unsaved.length} onClick={() => save(unsaved)}>
           <SaveIcon />
           {unsaved.length ? `Lưu tất cả (${unsaved.length})` : "Đã lưu hết"}
         </button>
+        </OwnerOnly>
       </div>
       <div className="cb-board" style={{ "--cols": columns.length }}>
         {columns.map((c) => (

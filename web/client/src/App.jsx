@@ -17,6 +17,8 @@ const ComingSoonPage = lazy(() => import("./pages/ComingSoonPage.jsx"));
 const FanpagePage = lazy(() => import("./pages/FanpagePage.jsx"));
 const FbScanPage = lazy(() => import("./pages/FbScanPage.jsx"));
 const HistoryPage = lazy(() => import("./pages/HistoryPage.jsx"));
+const CompetitorsPage = lazy(() => import("./pages/CompetitorsPage.jsx"));
+const SharedPage = lazy(() => import("./pages/SharedPage.jsx"));
 const ImagePage = lazy(() => import("./pages/ImagePage.jsx"));
 const JobPage = lazy(() => import("./pages/JobPage.jsx"));
 const LibraryPage = lazy(() => import("./pages/LibraryPage.jsx"));
@@ -64,6 +66,8 @@ export default function App() {
           <Routes>
             {/* The online menu guests open from a table QR: no navbar, no login. */}
             <Route path="m/:id" element={<Suspense fallback={null}><PublicMenuPage /></Suspense>} />
+            {/* A result shared by its owner: read only, no navbar, no login. */}
+            <Route path="s/:token" element={<Suspense fallback={null}><SharedPage /></Suspense>} />
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
               <Route path="samples/:type" element={<SamplePage />} />
@@ -116,6 +120,7 @@ export default function App() {
                 <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />
                 <Route path="library" element={<LibraryPage />} />
                 <Route path="history" element={<HistoryPage />} />
+                <Route path="competitors" element={<CompetitorsPage />} />
                 <Route path="jobs/:id" element={<JobPage />} />
                 <Route path="admin" element={<AdminPage />} />
                 <Route path="account" element={<AccountPage />} />

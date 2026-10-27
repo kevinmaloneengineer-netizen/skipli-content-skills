@@ -12,7 +12,6 @@ import { ACTIVE, SKILLS, skillByType } from "../lib/constants.js";
 import { duration } from "../lib/format.js";
 import { BackLink } from "../components/SkillShell.jsx";
 import { businessOf } from "../lib/handoff.js";
-import { safeHref } from "../lib/safeUrl.js";
 
 /** A picture the run made (photo fix, AI image, video still), for the row thumbnail (the list sends it as `thumb`). */
 const thumbOf = (j) => j.thumb ?? j.photos?.items?.[0]?.file ?? j.images?.items?.[0]?.file ?? j.video?.shots?.find((s) => s.image)?.image ?? j.slides?.find((s) => s.image)?.image ?? null;
@@ -58,131 +57,21 @@ function AiHealth() {
   );
 }
 
-/** Competitor channels being followed, with a manual re-check. */
-const short = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n)));
-
-/** Weekly trend of a watched channel: usual engagement per reel (line) and new reels per check (bars). */
-function Trend({ history = [] }) {
-  if (history.length < 2) return <p className="trend-empty">Biểu đồ xu hướng hiện sau lần kiểm tra thứ 2.</p>;
-  const W = 280, H = 70, pad = 6;
-  const max = Math.max(1, ...history.map((h) => h.median ?? 0));
-  const maxNew = Math.max(1, ...history.map((h) => h.fresh ?? 0));
-  const x = (i) => pad + (i * (W - 2 * pad)) / (history.length - 1);
-  const y = (v) => H - pad - ((v ?? 0) / max) * (H - 2 * pad - 10);
-  const line = history.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(h.median).toFixed(1)}`).join(" ");
-  const last = history.at(-1).median ?? 0;
-  const prev = history.at(-2).median ?? 0;
-  const change = prev ? Math.round(((last - prev) / prev) * 100) : 0;
-  const day = (iso) => new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
-  return (
-    <figure className="trend">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Tương tác trung vị qua ${history.length} lần kiểm tra`}>
-        {history.map((h, i) => {
-          const bh = ((h.fresh ?? 0) / maxNew) * 22;
-          return <rect key={`b${i}`} className="trend-bar" x={x(i) - 4} y={H - pad - bh} width="8" height={bh} rx="2"><title>{`${day(h.at)}: ${h.fresh ?? 0} reel mới`}</title></rect>;
-        })}
-        <path className="trend-line" d={line} pathLength="1" />
-        {history.map((h, i) => (
-          <circle key={`d${i}`} className="trend-dot" cx={x(i)} cy={y(h.median)} r="3"><title>{`${day(h.at)}: tương tác trung vị ${short(h.median ?? 0)}${h.viral ? `, ${h.viral} reel viral` : ""}`}</title></circle>
-        ))}
-      </svg>
-      <figcaption>
-        <span>Tương tác thường gặp mỗi reel: <b>{short(last)}</b></span>
-        {change !== 0 && <span className={change > 0 ? "up" : "down"}>{change > 0 ? "▲" : "▼"} {Math.abs(change)}% so với lần trước</span>}
-        <span className="trend-key"><i className="k-line" />trung vị <i className="k-bar" />reel mới</span>
-      </figcaption>
-    </figure>
-  );
-}
-
-/** Weekly trend of a watched Google Maps place: its stars (line) and new reviews per check (bars). */
-function RatingTrend({ history = [] }) {
-  const points = history.filter((h) => h.rating != null);
-  if (points.length < 2) return <p className="trend-empty">Biểu đồ số sao hiện sau lần kiểm tra thứ 2.</p>;
-  const W = 280, H = 70, pad = 6;
-  // Stars move by tenths: the scale is the range seen, not 0 to 5, or the line would look flat.
-  const lo = Math.min(...points.map((h) => h.rating)) - 0.1;
-  const hi = Math.max(...points.map((h) => h.rating)) + 0.1;
-  const maxNew = Math.max(1, ...points.map((h) => h.fresh ?? 0));
-  const x = (i) => pad + (i * (W - 2 * pad)) / (points.length - 1);
-  const y = (v) => H - pad - ((v - lo) / (hi - lo)) * (H - 2 * pad - 10);
-  const line = points.map((h, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(h.rating).toFixed(1)}`).join(" ");
-  const last = points.at(-1);
-  const change = Math.round((last.rating - points.at(-2).rating) * 10) / 10;
-  const day = (iso) => new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
-  const star = (n) => n.toFixed(1).replace(".", ",");
-  return (
-    <figure className="trend">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Số sao qua ${points.length} lần kiểm tra`}>
-        {points.map((h, i) => {
-          const bh = ((h.fresh ?? 0) / maxNew) * 22;
-          return <rect key={`b${i}`} className="trend-bar" x={x(i) - 4} y={H - pad - bh} width="8" height={bh} rx="2"><title>{`${day(h.at)}: ${h.fresh ?? 0} đánh giá mới${h.low ? `, ${h.low} bài 1-3 sao` : ""}`}</title></rect>;
-        })}
-        <path className="trend-line" d={line} pathLength="1" />
-        {points.map((h, i) => (
-          <circle key={`d${i}`} className="trend-dot" cx={x(i)} cy={y(h.rating)} r="3"><title>{`${day(h.at)}: ${star(h.rating)} sao, ${h.reviews} đánh giá`}</title></circle>
-        ))}
-      </svg>
-      <figcaption>
-        <span>Số sao: <b>{star(last.rating)}</b> · {last.reviews.toLocaleString("vi-VN")} đánh giá</span>
-        {change !== 0 && <span className={change > 0 ? "up" : "down"}>{change > 0 ? "▲" : "▼"} {star(Math.abs(change))} so với lần trước</span>}
-        <span className="trend-key"><i className="k-line" />số sao <i className="k-bar" />đánh giá mới</span>
-      </figcaption>
-    </figure>
-  );
-}
-
+/** The followed competitors moved to their own page: a pointer to it. */
 function Watchlist() {
-  const toast = useToast();
-  const [items, setItems] = useState(null);
-  const [busy, setBusy] = useState(null);
-  const { refresh } = useJobs();
-  const load = () => api("/watch").then(({ items }) => setItems(items), () => setItems([]));
+  const [count, setCount] = useState(null);
   useEffect(() => {
-    load();
+    api("/watch").then(({ items }) => setCount(items.length), () => setCount(0));
   }, []);
-  if (!items?.length) return null;
-  async function check(id) {
-    setBusy(id);
-    try {
-      await api(`/watch/${id}/check`, { method: "POST" });
-      await load();
-      refresh?.();
-    } catch (e) {
-      toast(e.message, { kind: "error" });
-      load(); // the error is shown on the item too
-    } finally {
-      setBusy(null);
-    }
-  }
-  async function remove(id) {
-    await api(`/watch/${id}`, { method: "DELETE" });
-    load();
-  }
+  if (!count) return null;
   return (
     <section className="watchlist aside-card">
       <h2>Đang theo dõi đối thủ</h2>
-      <p className="hint">Mỗi tuần hệ thống đọc lại các kênh và quán này. Có reel mới hay đánh giá mới thì báo ở chuông và thêm vào lịch sử.</p>
-      <ul>
-        {items.map((w) => (
-          <li key={w.id}>
-            <a href={safeHref(w.url)} target="_blank" rel="noopener noreferrer"><b>{w.kind === "maps" ? `★ ${w.name}` : `@${w.name}`}</b></a>
-            <small>
-              {w.lastCheckedAt ? `Kiểm tra lần cuối ${new Date(w.lastCheckedAt).toLocaleString("vi-VN")}` : "Đang đọc lần đầu…"}
-              {w.lastError ? ` · lỗi: ${w.lastError}` : typeof w.lastNew === "number" && w.lastCheckedAt ? ` · lần trước có ${w.lastNew} ${w.kind === "maps" ? "đánh giá" : "reel"} mới` : ""}
-            </small>
-            {w.kind === "maps" ? <RatingTrend history={w.history} /> : <Trend history={w.history} />}
-            <span className="watch-actions">
-              <button type="button" className="btn small" disabled={busy === w.id} onClick={() => check(w.id)}>{busy === w.id ? "Đang kiểm tra…" : "Kiểm tra ngay"}</button>
-              <button type="button" className="btn small ghost" onClick={() => remove(w.id)}>Bỏ theo dõi</button>
-            </span>
-          </li>
-        ))}
-      </ul>
+      <p className="hint">{count} kênh và quán được đọc lại mỗi tuần. Biểu đồ, lịch sử và các lần phân tích nằm ở trang Đối thủ.</p>
+      <Link className="btn small" to="/competitors">Mở trang Đối thủ →</Link>
     </section>
   );
 }
-
 // Jobs the weekly watch records ("watch": new reels, "rating-watch": a place's stars), counted under their skill.
 const WATCH_TYPES = new Set(["watch", "rating-watch"]);
 const ofSkill = (j, type) => j.type === type || (type === "fb-reels" && j.type === "watch") || (type === "maps" && j.type === "rating-watch");
