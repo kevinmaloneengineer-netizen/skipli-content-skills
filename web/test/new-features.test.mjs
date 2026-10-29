@@ -20,6 +20,14 @@ test("checkFacts: keeps stated numbers, replaces invented ones, flags gifts", ()
   assert.deepEqual(warnings, ["tặng tô bún miễn phí"]);
 });
 
+test("checkFacts: a share worked out from the data keeps its percent, a discount does not", () => {
+  const { text, replaced } = checkFacts("Horchata chiếm 117/408 ≈ 29% số phần bán ra. Giảm 15% vào giờ vắng. Al pastor makes up 20% of orders.", "");
+  assert.match(text, /≈ 29% số phần/);
+  assert.match(text, /makes up 20% of orders/);
+  assert.match(text, /Giảm \[ƯU ĐÃI\] vào giờ vắng/);
+  assert.equal(replaced, 1);
+});
+
 test("hashtags: seeds from the user's words, drops wrong city, district, meaning, spam, duplicates", () => {
   const tags = baseHashtags("Quán lẩu bò bình dân", "Quận 3, TP.HCM");
   assert.ok(tags.includes("#laubo") && tags.includes("#quan3") && tags.includes("#saigon"));

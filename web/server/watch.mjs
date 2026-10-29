@@ -44,9 +44,9 @@ async function geminiWatch(file, signal) {
   for (let attempt = 0; attempt < 2; attempt++) {
     for (const model of GEMINI_MODELS) {
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
           method: "POST",
-          headers: { "Content-Type": "application/json; charset=utf-8" },
+          headers: { "Content-Type": "application/json; charset=utf-8", "x-goog-api-key": key }, // in a header: the newer "AQ." keys are refused as ?key=
           body,
           signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(90_000)]),
         });

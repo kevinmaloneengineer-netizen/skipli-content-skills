@@ -66,8 +66,14 @@ export async function openStore(adapter, { templates = [], cacheSize = 1000 } = 
     userByPhone: (phone) => (phone ? users.find((u) => u.phone === phone) : undefined),
     async addUser(u) {
       const user = { id: randomUUID(), createdAt: now(), disabled: false, ...u, ...(u.email ? { email: u.email.trim().toLowerCase() } : {}) };
-      await adapter.saveUser(user);
+      // In memory first: a second request while Firestore saves (a double click on the sign-up code) sees the email taken.
       users.push(user);
+      try {
+        await adapter.saveUser(user);
+      } catch (e) {
+        users.splice(users.indexOf(user), 1);
+        throw e;
+      }
       return user;
     },
     async deleteUser(id) {

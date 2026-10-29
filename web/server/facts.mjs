@@ -21,6 +21,8 @@ const MONEY = /(?<![\d.,])(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?)\s*(k|K|nghìn|
 const USD = /\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?![\d])|(?<![\d.,$])(\d+(?:\.\d{1,2})?)\s?(?:USD|dollars?|bucks)\b/gi;
 const PERCENT = /(?<![\d.,])(\d{1,2})\s*%/g;
 const HOURS_CONTEXT = /(mở cửa|đóng cửa|giờ mở|giờ hoạt động|phục vụ từ|bán từ|mở từ|\bopen(?:s|ing)?\b|\bhours\b|\bclos(?:e|es|ing)\b|\bserving\b|\buntil\b)[^.\n]*$/i;
+// A share worked out from the data ("chiếm 117/408 ≈ 29%"), not a discount: the percent stays.
+const SHARE_CONTEXT = /(chiếm|tỉ lệ|tỷ lệ|≈|=|\bshare\b|\baccounts? for\b|\bmakes? up\b)[^.\n]{0,25}$/i;
 // 11h, 11h30, 11 giờ, 11:30, 11am, 9:30 pm (the minutes stay optional and never eat the following space).
 const TIME = /\b(\d{1,2})(?::(\d{2}))?\s?(am|pm|a\.m\.|p\.m\.)(?![\p{L}])|\b(\d{1,2})\s*(?:h|giờ|g)(\d{2})?\b|\b(\d{1,2}):(\d{2})\b/giu;
 const GIFT = /(?:[^.,!?\n]{0,30})\b(tặng kèm|tặng|miễn phí|free\s?ship|freeship|giảm giá|giảm ngay|mua \d+ tặng \d+|đồng giá|voucher|BOGO|buy one,? get one|giveaway|coupon|promo code|on the house|(?<![-\u2010-\u2015\w])free (?:drinks?|desserts?|delivery|sides?|appetizers?|meals?|refills?|shipping|fries))\b[^.,!?\n]{0,40}/gi; // with a little context on both sides
@@ -76,8 +78,8 @@ export function checkFacts(md, facts) {
         replaced++;
         return PH.price;
       });
-      out = out.replace(PERCENT, (all, n) => {
-        if (factPercent.has(n)) return all;
+      out = out.replace(PERCENT, (all, n, at) => {
+        if (factPercent.has(n) || SHARE_CONTEXT.test(out.slice(Math.max(0, at - 30), at))) return all;
         replaced++;
         return PH.deal;
       });

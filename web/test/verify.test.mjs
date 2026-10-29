@@ -132,3 +132,32 @@ test("sign-up without mail set up: no code, credits right away", async () => {
     s.close();
   }
 });
+
+test("sign-up: the code sent twice at once (double click) makes one account, not two with trial credits each", async () => {
+  const sent = [];
+  const mailer = { enabled: true, send: async (m) => sent.push(m) };
+  // Firestore takes a moment to save: the second click arrives while the first account is being written.
+  const adapter = memoryAdapter();
+  const save = adapter.saveUser.bind(adapter);
+  adapter.saveUser = async (u) => (await new Promise((r) => setTimeout(r, 150)), save(u));
+  const app = await createApp({ ...base, billingEnv: { TRIAL_CREDITS: "20" }, mailer }, adapter);
+  const s = app.app.listen(0, "127.0.0.1");
+  await new Promise((r) => s.once("listening", r));
+  const root = `http://127.0.0.1:${s.address().port}`;
+  const req = async (method, p, body, cookie) => {
+    const r = await fetch(root + p, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, body: await r.json().catch(() => null), cookie: r.headers.get("set-cookie")?.split(";")[0] };
+  };
+  try {
+    await req("POST", "/api/setup", { email: "boss@example.com", password: "admin-pass-1" });
+    const admin = await req("POST", "/api/login", { login: "boss@example.com", password: "admin-pass-1" });
+    const me = await req("POST", "/api/signup", { email: "twice@shop.com", password: "password-1" });
+    const code = sent[0].subject.slice(0, 6);
+    const [a, b] = await Promise.all([req("POST", "/api/verify", { code }, me.cookie), req("POST", "/api/verify", { code }, me.cookie)]);
+    assert.equal([a, b].filter((r) => r.status === 200).length, 1, "one click wins, the other is refused");
+    const users = (await req("GET", "/api/admin/users", null, admin.cookie)).body.users.filter((u) => u.email === "twice@shop.com");
+    assert.equal(users.length, 1);
+  } finally {
+    s.close();
+  }
+});
