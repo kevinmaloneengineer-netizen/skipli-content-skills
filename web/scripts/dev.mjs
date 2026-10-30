@@ -1,6 +1,16 @@
 // Start the API (watch mode) and the Vite dev server together.
 // Defaults to demo mode (GOCLAW_MOCK=1, STORE=memory) unless the env / deploy/.env says otherwise.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+// Read deploy/.env first (real env vars win), so its Firestore project and GoClaw token decide the mode.
+const envFile = process.env.ENV_FILE ?? fileURLToPath(new URL("../../deploy/.env", import.meta.url));
+if (existsSync(envFile)) {
+  const before = { ...process.env };
+  process.loadEnvFile(envFile);
+  Object.assign(process.env, before);
+}
 
 const API_PORT = process.env.API_PORT ?? "3001";
 const env = { ...process.env, PORT: API_PORT, API_PORT };
