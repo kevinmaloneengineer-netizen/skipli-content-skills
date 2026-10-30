@@ -502,7 +502,7 @@ export async function createApp(config, adapter) {
     if (!accounts) return res.json({ mode: config.appPassword ? "password" : "open", required: !!config.appPassword, signedIn: gate.signedIn(req) });
     const user = accounts.userOf(req);
     const waiting = !user && accounts.pendingOf(req); // signed up, code not entered yet
-    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled });
+    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, mfa: !user && accounts.mfaPending(req), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled });
   });
   api.post("/login", (req, res) => gate.login(req, res));
   api.post("/logout", (req, res) => gate.logout(req, res));
@@ -557,6 +557,11 @@ export async function createApp(config, adapter) {
     res.json({ paid: out.paid, added: out.added, credits: store.getUser(req.user.id).credits ?? null });
   }));
   api.put("/me/password", accountRoute((req, res) => accounts.changePassword(req, res)));
+  api.post("/login/mfa", accountRoute((req, res) => accounts.loginMfa(req, res)));
+  api.post("/me/logout-all", accountRoute((req, res) => accounts.logoutAll(req, res)));
+  api.post("/me/mfa/setup", accountRoute((req, res) => accounts.mfaSetup(req, res)));
+  api.post("/me/mfa/enable", accountRoute((req, res) => accounts.mfaEnable(req, res)));
+  api.post("/me/mfa/disable", accountRoute((req, res) => accounts.mfaDisable(req, res)));
   // ---- admin: errors, backups, settings ----
   api.get("/admin/errors", accountRoute(async (req, res) => {
     adminOnly(req);
@@ -641,7 +646,7 @@ export async function createApp(config, adapter) {
   }));
   api.put("/admin/users/:id", accountRoute(async (req, res) => {
     adminOnly(req);
-    res.json({ user: publicUser(await accounts.update(req.params.id, req.body ?? {})) });
+    res.json({ user: publicUser(await accounts.update(req.params.id, req.body ?? {}, req.user)) });
   }));
 
   api.get("/health", async (req, res) => {

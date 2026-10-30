@@ -3536,3 +3536,14 @@ select:disabled { cursor: not-allowed; opacity: .6; }
   .app.has-tabbar .ai-fab .mascot { width: 64px; height: 64px; }
   .app.has-tabbar .ai-nudge { display: none; }
 }
+
+/* Account page: 2-step login and signed-in devices */
+.account-card { margin-top: 22px; }
+.account-card h2 { display: flex; align-items: center; gap: 10px; }
+.account-note { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 18px; }
+.badge-on { font: 700 11px var(--text); letter-spacing: .06em; text-transform: uppercase; color: var(--ok); background: var(--ok-soft); padding: 4px 9px; border-radius: 999px; }
+.mfa-setup { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.mfa-setup img { border-radius: 14px; border: 1px solid var(--line); background: #fff; max-width: 100%; height: auto; }
+.mfa-setup .account-note { flex: 1 1 200px; margin: 0; }
+.mfa-secret { display: inline-block; margin-top: 6px; font: 600 14px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .04em; color: var(--ink); word-break: break-all; }
+.backup-codes { list-style: none; padding: 16px; margin: 0 0 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; background: var(--surface-2); border-radius: 14px; font: 600 15px/1.4 ui-monospace, Menlo, monospace; letter-spacing: .06em; }

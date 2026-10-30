@@ -41,7 +41,7 @@ export default function AuthGate({ children }) {
   // Signed up but the email code is not entered yet: still a guest everywhere, the login page asks for the code.
   const pendingVerify = !!session.signedIn && session.user?.verified === false;
   const guest = session.mode !== "open" && (!session.signedIn || pendingVerify);
-  const value = { mode: session.mode, user: session.user ?? null, signedIn: !guest, guest, setup: !!session.setup, signup: !!session.signup, billing: !!session.billing, trial: session.trial ?? null, codes: !!session.codes, pendingVerify, reload: load };
+  const value = { mode: session.mode, user: session.user ?? null, signedIn: !guest, guest, setup: !!session.setup, signup: !!session.signup, billing: !!session.billing, trial: session.trial ?? null, codes: !!session.codes, mfa: !!session.mfa, pendingVerify, reload: load };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
@@ -58,7 +58,7 @@ export function RequireAuth() {
  * With SIGNUP=1 a customer can create their own account here (/login?signup=1 opens that tab).
  */
 export function LoginPage() {
-  const { mode, guest, setup, signup, trial, codes, pendingVerify, user, reload } = useAuth();
+  const { mode, guest, setup, signup, trial, codes, mfa, pendingVerify, user, reload } = useAuth();
   const { search } = useLocation();
   const next = new URLSearchParams(search).get("next");
   const back = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
@@ -110,7 +110,7 @@ export function LoginPage() {
         <LoginShowcase signup={signup} trial={trial} />
       </Suspense>
       <div className="login-side">
-      {pendingVerify ? <VerifyCard email={user?.email} trial={trial} sendError={sendError} onDone={reload} /> : forgot ? <ForgotCard onBack={() => setForgot(false)} onDone={reload} /> : (
+      {pendingVerify ? <VerifyCard email={user?.email} trial={trial} sendError={sendError} onDone={reload} /> : mfa ? <MfaCard onDone={() => { setForgot(false); return reload(); }} /> : forgot ? <ForgotCard onBack={() => setForgot(false)} onDone={reload} /> : (
       <form className="login-card" onSubmit={submit}>
         <img src="/assistant/wave.png" alt="" className="login-mascot" onError={(e) => (e.currentTarget.hidden = true)} />
         <h1>{setup ? "Tạo tài khoản quản trị" : creating ? "Tạo tài khoản" : "Chào mừng trở lại"}</h1>
@@ -159,7 +159,7 @@ export function LoginPage() {
         {accounts && !setup && !creating && codes ? (
           <button type="button" className="verify-link login-forgot" onClick={() => { setForgot(true); setError(""); }}>Quên mật khẩu?</button>
         ) : (
-          <small>{creating ? "Phiên đăng nhập giữ trong 30 ngày trên trình duyệt này." : accounts && !setup ? (signup ? "Quên mật khẩu? Liên hệ quản trị viên." : "Chưa có tài khoản hoặc quên mật khẩu? Liên hệ quản trị viên.") : "Phiên đăng nhập giữ trong 30 ngày trên trình duyệt này."}</small>
+          <small>{creating ? "Phiên đăng nhập giữ trong 30 ngày trên trình duyệt này." : accounts && !setup ? (signup ? "Quên mật khẩu? Liên hệ quản trị viên." : "Chưa có tài khoản hoặc quên mật khẩu? Liên hệ quản trị viên.") : setup ? "Phiên quản trị giữ trong 7 ngày trên trình duyệt này." : "Phiên đăng nhập giữ trong 30 ngày trên trình duyệt này."}</small>
         )}
       </form>
       )}
@@ -251,6 +251,48 @@ function ForgotCard({ onBack, onDone }) {
       <div className="verify-actions">
         <button type="button" className="verify-link" onClick={() => send()} disabled={wait > 0 || busy}>{wait > 0 ? `Gửi lại mã sau ${wait}s` : "Gửi lại mã"}</button>
         <button type="button" className="verify-link" onClick={() => { setSentTo(null); setCode(""); setError(""); }}>Đổi email khác</button>
+      </div>
+    </form>
+  );
+}
+
+/** Admin with 2-step login: after the password, the code from the authenticator app (or a backup code). */
+function MfaCard({ onDone }) {
+  const [code, setCode] = useState("");
+  const [backup, setBackup] = useState(false); // typing a backup code instead
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api("/login/mfa", { method: "POST", body: { code } });
+      await onDone();
+    } catch (err) {
+      setError(err.message);
+      setCode("");
+      setBusy(false);
+    }
+  }
+  return (
+    <form className="login-card" onSubmit={submit}>
+      <img src="/assistant/wave.png" alt="" className="login-mascot" onError={(e) => (e.currentTarget.hidden = true)} />
+      <h1>Xác thực 2 lớp</h1>
+      <p>{backup ? "Nhập một mã dự phòng (dạng xxxx-xxxx). Mỗi mã chỉ dùng được một lần." : "Mở ứng dụng xác thực trên điện thoại và nhập mã 6 số đang hiện cho Skipli Content."}</p>
+      <label className="field">
+        <span className="field-label">{backup ? "Mã dự phòng" : "Mã xác thực"}</span>
+        {backup ? (
+          <input value={code} onChange={(e) => setCode(e.target.value.slice(0, 12))} autoComplete="off" autoFocus placeholder="xxxx-xxxx" aria-label="Mã dự phòng" />
+        ) : (
+          <input className="otp-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" autoFocus aria-label="Mã xác thực 6 số" />
+        )}
+      </label>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <button className="btn primary" disabled={busy || (backup ? code.replace(/[^a-z0-9]/gi, "").length < 8 : code.length < 6)}>{busy ? "Đang kiểm tra…" : "Đăng nhập"}</button>
+      <div className="verify-actions">
+        <button type="button" className="verify-link" onClick={() => { setBackup((b) => !b); setCode(""); setError(""); }}>{backup ? "Dùng mã trong ứng dụng" : "Mất điện thoại? Dùng mã dự phòng"}</button>
+        <button type="button" className="verify-link" onClick={logout}>Đăng nhập tài khoản khác</button>
       </div>
     </form>
   );

@@ -1381,6 +1381,7 @@ export const EN = {
 "PNG vuông để dán vào ảnh, menu": "A square PNG for photos and menus",
 "Pattern chung và ý tưởng bài viết cho bạn.": "General pattern and writing ideas for you.",
 "Phiên đăng nhập giữ trong 30 ngày trên trình duyệt này.": "Login session lasts 30 days on this browser.",
+"Phiên quản trị giữ trong 7 ngày trên trình duyệt này.": "Admin session lasts 7 days on this browser.",
 "Phiếu xé có mã vạch ghi ưu đãi, rồi phiếu đặt trên ảnh món": "A tear-off coupon with a barcode showing your deal, then the coupon on a dish photo",
 "Phiếu ưu đãi": "Coupon",
 "Phong cách": "Style",

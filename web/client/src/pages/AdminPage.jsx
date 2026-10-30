@@ -110,6 +110,8 @@ export default function AdminPage() {
                   <td>{u.lastLoginAt ? ago(u.lastLoginAt) : "Chưa đăng nhập"}</td>
                   <td><div className="admin-actions">
                     <button type="button" className="btn small" onClick={() => { const p = window.prompt(`Mật khẩu mới cho ${u.contact} (ít nhất 8 ký tự):`); if (p) update(u, { password: p }, "Đã đặt lại mật khẩu"); }}>Đặt lại mật khẩu</button>
+                    {u.id !== user.id && <button type="button" className="btn small" title="Mọi trình duyệt đang đăng nhập tài khoản này phải đăng nhập lại" onClick={() => update(u, { signOut: true }, "Đã đăng xuất tài khoản này khỏi mọi thiết bị")}>Đăng xuất mọi nơi</button>}
+                    {u.mfa && u.id !== user.id && <button type="button" className="btn small danger" title="Khi người này mất điện thoại và mã dự phòng" onClick={() => window.confirm(`Tắt xác thực 2 lớp của ${u.contact}? Chỉ làm khi người đó mất điện thoại và mã dự phòng.`) && update(u, { mfaOff: true }, "Đã tắt xác thực 2 lớp")}>Tắt 2 lớp</button>}
                     {u.role !== "admin" && <button type="button" className={u.disabled ? "btn small" : "btn small danger"} onClick={() => update(u, { disabled: !u.disabled }, u.disabled ? "Đã mở khoá" : "Đã khoá tài khoản")}>{u.disabled ? "Mở khoá" : "Khoá"}</button>}
                     {u.role !== "admin" && <button type="button" className="btn small danger" onClick={() => setRemoving(u)}>Xoá</button>}
                   </div></td>

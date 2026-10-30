@@ -9,12 +9,17 @@ import { createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from "nod
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { backupHash, checkTotp, newBackupCodes, newSecret, otpauthUri } from "./totp.mjs";
 
 const scryptAsync = promisify(scrypt);
 const COOKIE = "skipli_user";
 const PENDING_COOKIE = "skipli_pending"; // a sign-up waiting for its email code (no account yet)
 const PENDING_MS = 30 * 60_000;
+const MFA_COOKIE = "skipli_mfa"; // password right, waiting for the 2-step code
+const MFA_MS = 5 * 60_000;
 const DAYS = 30;
+const ADMIN_DAYS = 7; // the admin sets prices and credits: a shorter session
+const daysOf = (u) => (u.role === "admin" ? ADMIN_DAYS : DAYS);
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i;
 
 export async function hashPassword(password) {
@@ -56,6 +61,7 @@ export const publicUser = (u) =>
     verified: u.verified !== false && u.emailVerified !== false,
     disabled: !!u.disabled,
     disabledReason: u.disabledReason ?? null, // "dispute": locked by a chargeback (server/billing.mjs)
+    mfa: u.mfa?.on ? { backupLeft: u.mfa.backup?.length ?? 0 } : null, // 2-step login on (admin)
     createdAt: u.createdAt,
   };
 /** Not confirmed yet: an account made before sign-ups waited for their code (cleaned up after a day). */
@@ -77,24 +83,50 @@ export class AccountError extends Error {
  */
 export function createAccounts({ store, dataDir, signup = null }) {
   const secret = sessionSecret(dataDir);
-  // The token changes when the password does, so a password change signs out every other device.
-  const sign = (user, exp) => createHmac("sha256", secret).update(`${user.id}.${exp}.${user.passHash.slice(-12)}`).digest("hex");
+  // The token changes when the password does, so a password change signs out every other device; so does
+  // a new session version (sv: "Đăng xuất khỏi mọi thiết bị", 2-step login turned on). Accounts that never
+  // bumped it keep the old form, so this change signed nobody out.
+  const sign = (user, exp, kind = "") => createHmac("sha256", secret).update(`${kind}${user.id}.${exp}.${user.passHash.slice(-12)}${user.sv ? `.${user.sv}` : ""}`).digest("hex");
   const token = (user) => {
-    const exp = Date.now() + DAYS * 86_400_000;
+    const exp = Date.now() + daysOf(user) * 86_400_000;
     return `${user.id}.${exp}.${sign(user, exp)}`;
   };
-  function userOf(req) {
-    const [id, exp, mac] = cookieOf(req, COOKIE).split(".");
+  /** The user a signed cookie names: right signature, not expired, not longer than its role allows. */
+  function signedUser(value, kind, maxMs) {
+    const [id, exp, mac] = value.split(".");
     const user = id && store.getUser(id);
-    if (!user || user.disabled || !(Number(exp) > Date.now())) return null;
-    const want = Buffer.from(sign(user, exp));
+    const left = Number(exp) - Date.now();
+    if (!user || user.disabled || !(left > 0) || left > maxMs(user) + 60_000) return null;
+    const want = Buffer.from(sign(user, exp, kind));
     const got = Buffer.from(mac ?? "");
     return want.length === got.length && timingSafeEqual(want, got) ? user : null;
   }
+  const userOf = (req) => signedUser(cookieOf(req, COOKIE), "", (u) => daysOf(u) * 86_400_000);
+  const mfaUserOf = (req) => signedUser(cookieOf(req, MFA_COOKIE), "mfa:", () => MFA_MS);
   const setCookie = (req, res, value, maxAge, name = COOKIE) => {
     const secure = req.secure || req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
     res.append("Set-Cookie", `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
   };
+  const signIn = (req, res, user) => setCookie(req, res, token(user), daysOf(user) * 86_400);
+  /** Password right: with 2-step login on, the session waits for the code (the answer says mfa: true). */
+  async function passwordOk(req, res, user) {
+    if (user.mfa?.on) {
+      const exp = Date.now() + MFA_MS;
+      setCookie(req, res, `${user.id}.${exp}.${sign(user, exp, "mfa:")}`, MFA_MS / 1000, MFA_COOKIE);
+      return false;
+    }
+    signIn(req, res, user);
+    return true;
+  }
+  /** The 6 digits from the app, or a backup code (used up): the patch that records it, or null. */
+  function mfaMatch(user, raw) {
+    const step = checkTotp(user.mfa.secret, raw, { lastStep: user.mfa.lastStep ?? -1 });
+    if (step !== null) return { mfa: { ...user.mfa, lastStep: step } };
+    const h = backupHash(user.id, raw);
+    const backup = user.mfa.backup ?? [];
+    if (String(raw ?? "").replace(/[^a-z0-9]/gi, "").length === 8 && backup.includes(h)) return { mfa: { ...user.mfa, backup: backup.filter((x) => x !== h) } };
+    return null;
+  }
 
   // Sign-ups waiting for their email code live here, not in the user list: the account is only made
   // once the code is right, so an unconfirmed email never shows up (or holds the address) anywhere.
@@ -227,7 +259,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (req.user) return next();
       // Open without a login: the session and login calls, the page itself, and the canned sample results
       // shown on the home page (no customer data in them).
-      const open = ["/api/login", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
+      const open = ["/api/login", "/api/login/mfa", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -247,16 +279,78 @@ export function createAccounts({ store, dataDir, signup = null }) {
       }
       if (user.disabled) return res.status(403).json({ error: user.disabledReason === "dispute" ? "Tài khoản tạm khoá vì có yêu cầu hoàn tiền qua ngân hàng cho một lần nạp. Liên hệ hỗ trợ để mở lại." : "Tài khoản đã bị khoá, liên hệ quản trị viên." });
       attempts.delete(key);
+      if (!(await passwordOk(req, res, user))) return res.json({ ok: true, mfa: true });
       await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
-      setCookie(req, res, token(user), DAYS * 86_400);
       res.json({ ok: true, user: publicUser(user) });
     },
+    /** POST /api/login/mfa { code }: the second step, within 5 minutes of the password. */
+    async loginMfa(req, res) {
+      const user = mfaUserOf(req);
+      if (!user?.mfa?.on) throw new AccountError(400, "Phiên đăng nhập đã hết hạn, nhập lại mật khẩu nhé.");
+      const ip = req.ip ?? "?";
+      const key = `mfa|${user.id}`;
+      if (recentOf(key).length >= 10 || recentOf(ip).length >= 100) throw new AccountError(429, "Sai mã nhiều lần, thử lại sau 15 phút.");
+      const patch = mfaMatch(user, req.body?.code);
+      if (!patch) {
+        fail(key, ip);
+        throw new AccountError(400, "Mã chưa đúng. Nhập mã đang hiện trong ứng dụng xác thực, hoặc một mã dự phòng.");
+      }
+      attempts.delete(key);
+      const done = await store.updateUser(user.id, { ...patch, lastLoginAt: new Date().toISOString() });
+      setCookie(req, res, "", 0, MFA_COOKIE);
+      signIn(req, res, done);
+      res.json({ ok: true, user: publicUser(done) });
+    },
+    /** Password typed, 2-step code not yet (the login page asks for it). */
+    mfaPending: (req) => !!mfaUserOf(req)?.mfa?.on,
     logout(req, res) {
       const p = pendingOf(req);
       if (p) pending.delete(p.id);
       setCookie(req, res, "", 0);
       setCookie(req, res, "", 0, PENDING_COOKIE);
+      setCookie(req, res, "", 0, MFA_COOKIE);
       res.json({ ok: true });
+    },
+    /** POST /api/me/logout-all: every other browser signed in to this account is signed out; this one stays. */
+    async logoutAll(req, res) {
+      const done = await store.updateUser(req.user.id, { sv: (req.user.sv ?? 0) + 1 });
+      signIn(req, res, done);
+      res.json({ ok: true });
+    },
+
+    /** Admin 2-step login, step 1: a new secret for the app (kept aside until a code from it comes back). */
+    async mfaSetup(req, res) {
+      const user = req.user;
+      if (user.role !== "admin") throw new AccountError(403, "Xác thực 2 lớp hiện chỉ dành cho tài khoản quản trị");
+      if (user.mfa?.on) throw new AccountError(409, "Xác thực 2 lớp đã bật");
+      const secret = newSecret();
+      await store.updateUser(user.id, { mfaSetup: { secret, at: Date.now() } });
+      res.json({ secret, uri: otpauthUri({ secret, account: user.email }) });
+    },
+    /** Step 2: the password and a code from the app turn it on; the backup codes are shown once. */
+    async mfaEnable(req, res) {
+      const user = req.user;
+      if (user.role !== "admin") throw new AccountError(403, "Xác thực 2 lớp hiện chỉ dành cho tài khoản quản trị");
+      if (user.mfa?.on) throw new AccountError(409, "Xác thực 2 lớp đã bật");
+      if (!(await checkPassword(req.body?.password ?? "", user.passHash))) throw new AccountError(400, "Mật khẩu hiện tại không đúng");
+      const setup = user.mfaSetup;
+      if (!setup || Date.now() - setup.at > 30 * 60_000) throw new AccountError(400, "Mã QR đã hết hạn, bấm Bật lại để lấy mã mới.");
+      const step = checkTotp(setup.secret, req.body?.code);
+      if (step === null) throw new AccountError(400, "Mã chưa đúng. Kiểm tra giờ trên điện thoại và nhập mã đang hiện.");
+      const codes = newBackupCodes();
+      // Browsers signed in before 2-step login was on are signed out (sv), this one stays.
+      const done = await store.updateUser(user.id, { mfa: { on: true, secret: setup.secret, lastStep: step, backup: codes.map((c) => backupHash(user.id, c)), at: new Date().toISOString() }, mfaSetup: null, sv: (user.sv ?? 0) + 1 });
+      signIn(req, res, done);
+      res.json({ ok: true, codes, user: publicUser(done) });
+    },
+    /** Turn it off: the password and a current code (or a backup code). */
+    async mfaDisable(req, res) {
+      const user = req.user;
+      if (!user.mfa?.on) return res.json({ ok: true, user: publicUser(user) });
+      if (!(await checkPassword(req.body?.password ?? "", user.passHash))) throw new AccountError(400, "Mật khẩu hiện tại không đúng");
+      if (!mfaMatch(user, req.body?.code)) throw new AccountError(400, "Mã chưa đúng");
+      const done = await store.updateUser(user.id, { mfa: null, mfaSetup: null });
+      res.json({ ok: true, user: publicUser(done) });
     },
     pendingOf: (req) => publicPending(pendingOf(req)),
 
@@ -277,7 +371,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (!verifying()) {
         const user = await create({ email: req.body?.email, password: req.body?.password, name: req.body?.name ?? "", credits: signup.credits, signupIp: key });
         await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
-        setCookie(req, res, token(user), DAYS * 86_400);
+        signIn(req, res, user);
         return res.status(201).json({ ok: true, user: publicUser(user), sendError: null });
       }
       // With mail: checked like a real account, but only held here until the code comes back.
@@ -310,7 +404,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
         }
         const user = await store.addUser({ email: rec.email, name: rec.name, role: "member", dailyLimit: null, credits: signup?.credits ?? 0, signupIp: rec.signupIp, passHash: rec.passHash, verifiedAt: new Date().toISOString(), lastLoginAt: new Date().toISOString() });
         pending.delete(rec.id);
-        setCookie(req, res, token(user), DAYS * 86_400);
+        signIn(req, res, user);
         setCookie(req, res, "", 0, PENDING_COOKIE);
         return res.json({ ok: true, user: publicUser(user) });
       }
@@ -372,8 +466,11 @@ export function createAccounts({ store, dataDir, signup = null }) {
       await checkCode(user, "resetOtp", req.body?.code);
       // The code proves the email, so an old account still waiting for its sign-up code is confirmed too.
       const confirm = unconfirmed(user) ? { verified: true, emailVerified: null, otp: null, verifiedAt: new Date().toISOString(), credits: (user.credits ?? 0) + (signup?.credits ?? 0) } : {};
-      const done = await store.updateUser(user.id, { passHash: await hashPassword(req.body.password), resetOtp: null, lastLoginAt: new Date().toISOString(), ...confirm });
-      setCookie(req, res, token(done), DAYS * 86_400); // the new password signs out every other device
+      const done = await store.updateUser(user.id, { passHash: await hashPassword(req.body.password), resetOtp: null, ...confirm });
+      // The new password signs out every other device. The email code is one step: with 2-step login on,
+      // the app code is still asked before this browser is signed in.
+      if (!(await passwordOk(req, res, done))) return res.json({ ok: true, mfa: true });
+      await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
       res.json({ ok: true, user: publicUser(done) });
     },
 
@@ -382,7 +479,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (store.listUsers().length) throw new AccountError(409, "Đã có tài khoản quản trị");
       const user = await create({ ...req.body, role: "admin" });
       await store.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
-      setCookie(req, res, token(user), DAYS * 86_400);
+      signIn(req, res, user);
       res.status(201).json({ ok: true, user: publicUser(user) });
     },
 
@@ -391,7 +488,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (!(await checkPassword(req.body?.current ?? "", user.passHash))) throw new AccountError(400, "Mật khẩu hiện tại không đúng");
       if (String(req.body?.next ?? "").length < 8) throw new AccountError(400, "Mật khẩu mới cần ít nhất 8 ký tự");
       const updated = await store.updateUser(user.id, { passHash: await hashPassword(req.body.next) });
-      setCookie(req, res, token(updated), DAYS * 86_400); // keep this device signed in
+      signIn(req, res, updated); // keep this device signed in
       res.json({ ok: true });
     },
 
@@ -403,7 +500,7 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (user.role === "admin" || user.id === by?.id) throw new AccountError(400, "Không xoá được tài khoản quản trị");
       await store.deleteUser(id);
     },
-    async update(id, body) {
+    async update(id, body, by) {
       const user = store.getUser(id);
       if (!user) throw new AccountError(404, "Không tìm thấy tài khoản");
       const patch = {};
@@ -423,6 +520,12 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (body.password !== undefined) {
         if (String(body.password).length < 8) throw new AccountError(400, "Mật khẩu cần ít nhất 8 ký tự");
         patch.passHash = await hashPassword(body.password);
+      }
+      if (body.signOut) patch.sv = (user.sv ?? 0) + 1; // every browser signed in to this account is signed out
+      if (body.mfaOff) {
+        if (id === by?.id) throw new AccountError(400, "Tự tắt xác thực 2 lớp ở trang Tài khoản");
+        patch.mfa = null; // lost phone and backup codes: another admin turns it off
+        patch.mfaSetup = null;
       }
       return store.updateUser(id, patch);
     },
