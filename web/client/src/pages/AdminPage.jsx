@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { BackLink } from "../components/SkillShell.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import AdminOps from "../components/AdminOps.jsx";
+import AdminActivity from "../components/AdminActivity.jsx";
 import { useAuth } from "../components/AuthGate.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import { api } from "../lib/api.js";
@@ -121,6 +122,7 @@ export default function AdminPage() {
           </table>
         </div>
       </section>
+      <AdminActivity users={data?.users} />
       <AdminOps />
       {removing && (
         <ConfirmDialog

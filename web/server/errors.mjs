@@ -48,3 +48,26 @@ export function createErrorLog({ store, env = process.env, fetchFn = fetch, log 
     },
   };
 }
+
+// What the admin sees of a customer's failed run: the kind of failure, never the message (it can quote what
+// the customer typed: a shop name, an address, a search term).
+const KINDS = [
+  [/canceled|đã huỷ/i, "Đã huỷ"],
+  [/khởi động lại/i, "Gián đoạn do server khởi động lại"],
+  [/hết credit/i, "Hết credit"],
+  [/GPU|Kaggle|worker|edge_tts|giọng đọc/i, "GPU / máy dựng video"],
+  [/google maps|không tìm thấy|không đọc được đủ|chỉ thấy \d+/i, "Không tìm thấy quán hoặc dữ liệu"],
+  [/429|rate.?limit|hết lượt|quá tải|đang bận|overloaded|503/i, "AI đang bận hoặc hết lượt"],
+  [/quá lâu|timeout|timed out|deadline|aborted/i, "Quá thời gian chờ"],
+  [/fetch failed|ECONN|ENOTFOUND|socket|network|kết nối/i, "Lỗi mạng"],
+  [/apify|facebook|tiktok|instagram|threads|yelp|trends/i, "Không đọc được nền tảng nguồn"],
+  [/không hợp lệ|invalid|thiếu/i, "Dữ liệu nhập không hợp lệ"],
+];
+export const errorKind = (message) => (message ? KINDS.find(([re]) => re.test(message))?.[1] ?? "Lỗi khác" : null);
+
+/** A job error for the admin's error log with the customer's own words taken out ("…" for quotes and lists). */
+export const redact = (message) =>
+  String(message ?? "")
+    .replace(/["“][^"”]*["”]/g, "“…”")
+    .replace(/\([^()]*\)/g, "(…)")
+    .replace(/\b(quanh|gần|tại|ở) [^.]+/gi, "$1 …");

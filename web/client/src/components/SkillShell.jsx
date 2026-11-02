@@ -5,7 +5,7 @@ import { JobHistory } from "./JobBits.jsx";
 import SkillArt from "./SkillArt.jsx";
 
 // Skills with a canned result (server/mock.mjs); image and video results are media files.
-const SAMPLE_TYPES = new Set(["fb-reels", "threads", "write", "clone", "tiktok", "compare", "maps", "fanpage", "plan", "livestream", "campaign", "menu", "review", "inbox", "hashtag", "yelp", "instagram"]);
+const SAMPLE_TYPES = new Set(["fb-reels", "threads", "write", "clone", "tiktok", "compare", "maps", "fanpage", "plan", "livestream", "campaign", "menu", "review", "inbox", "hashtag", "yelp", "instagram", "gbp-post", "zalo-message", "promo-plan", "delivery-menu", "us-occasions", "nextdoor-post", "shop-about"]);
 
 export function BackLink({ to = "/", children = "Tất cả công cụ" }) {
   return (

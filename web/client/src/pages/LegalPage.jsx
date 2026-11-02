@@ -40,20 +40,28 @@ const TERMS = [
 
 const PRIVACY = [
   {
-    vi: ["Thông tin chúng tôi lưu", "Số điện thoại (hoặc email với tài khoản quản trị), tên bạn nhập, mật khẩu đã mã hoá một chiều (không ai đọc được mật khẩu gốc), số credit và lịch sử nạp. Thông tin bạn nhập vào các công cụ và kết quả tạo ra. Mã băm của địa chỉ IP lúc đăng ký, chỉ để giới hạn số tài khoản dùng thử."],
-    en: ["What we keep", "Your phone number (or email for admin accounts), the name you enter, your password hashed one way (nobody can read the original), your credits and top-ups. What you type into the tools and the results. A hash of your sign-up IP address, only to limit trial accounts."],
+    vi: ["Thông tin chúng tôi lưu", "Email, tên bạn nhập, mật khẩu đã mã hoá một chiều (không ai đọc được mật khẩu gốc), số credit và lịch sử nạp. Thông tin bạn nhập vào các công cụ và kết quả tạo ra. Mã băm của địa chỉ IP lúc đăng ký, chỉ để giới hạn số tài khoản dùng thử."],
+    en: ["What we keep", "Your email, the name you enter, your password hashed one way (nobody can read the original), your credits and top-ups. What you type into the tools and the results. A hash of your sign-up IP address, only to limit trial accounts."],
+  },
+  {
+    vi: ["Góp ý qua mã QR của quán", "Khi bạn góp ý qua mã QR khảo sát của một quán, chúng tôi lưu số sao, lựa chọn có quay lại không, lời nhắn và thông tin liên hệ nếu bạn tự ghi, để chủ quán đó xem. Không cần đăng nhập, không lưu địa chỉ IP. Góp ý bị xoá khi chủ quán xoá khảo sát."],
+    en: ["Feedback through a restaurant's QR code", "When you leave feedback through a restaurant's survey QR code, we keep the stars, whether you would come back, your note and any contact you choose to give, for that restaurant's owner to read. No sign-in, no IP address kept. The feedback is deleted when the owner deletes the survey."],
+  },
+  {
+    vi: ["Quản trị viên thấy gì", "Để hỗ trợ khi bạn gặp lỗi và chặn lạm dụng, quản trị viên xem được lịch sử sử dụng của tài khoản: công cụ đã chạy, thời gian, trạng thái, số credit và loại lỗi nếu có. Quản trị viên không xem nội dung bạn nhập hay kết quả bạn nhận."],
+    en: ["What the admin sees", "To help when something fails and to stop abuse, the admin can see an account's usage: which tools ran, when, their status, the credits and the kind of error if any. The admin does not see what you type or the results you get."],
   },
   {
     vi: ["Lưu ở đâu", "Dữ liệu tài khoản và kết quả nằm trên Google Cloud Firestore. Ảnh, video bạn tải lên và file kết quả nằm trên Backblaze B2; file bạn tải lên tự xoá sau 7 ngày. Dữ liệu được sao lưu hằng ngày và giữ bản sao 14 ngày."],
     en: ["Where it is stored", "Account data and results are on Google Cloud Firestore. Photos and videos you upload and result files are on Backblaze B2; your uploads are deleted after 7 days. The data is backed up daily and backups are kept for 14 days."],
   },
   {
-    vi: ["Bên thứ ba xử lý dữ liệu", "Nhà cung cấp AI (Groq, Google Gemini) nhận nội dung cần xử lý để tạo kết quả. Twilio gửi mã xác nhận tới số điện thoại của bạn. Stripe xử lý thanh toán; số thẻ do Stripe giữ, không qua máy chủ của chúng tôi. Chúng tôi không bán dữ liệu của bạn."],
-    en: ["Who processes it for us", "AI providers (Groq, Google Gemini) receive the content to process so they can make your results. Twilio texts confirmation codes to your phone. Stripe handles payments; your card number stays with Stripe and never reaches our servers. We do not sell your data."],
+    vi: ["Bên thứ ba xử lý dữ liệu", "Nhà cung cấp AI (Groq, Google Gemini) nhận nội dung cần xử lý để tạo kết quả. Gmail gửi mã xác nhận tới email của bạn. Stripe xử lý thanh toán; số thẻ do Stripe giữ, không qua máy chủ của chúng tôi. Chúng tôi không bán dữ liệu của bạn."],
+    en: ["Who processes it for us", "AI providers (Groq, Google Gemini) receive the content to process so they can make your results. Gmail sends confirmation codes to your email. Stripe handles payments; your card number stays with Stripe and never reaches our servers. We do not sell your data."],
   },
   {
-    vi: ["Cookie", "Web dùng một cookie đăng nhập (giữ 30 ngày) và bộ nhớ trình duyệt cho các tuỳ chọn như giao diện sáng tối, ngôn ngữ. Không dùng cookie quảng cáo hay theo dõi."],
-    en: ["Cookies", "The site uses one sign-in cookie (kept 30 days) and browser storage for preferences such as light or dark mode and language. No advertising or tracking cookies."],
+    vi: ["Cookie", "Web dùng một cookie đăng nhập (giữ 30 ngày, tài khoản quản trị 7 ngày) và bộ nhớ trình duyệt cho các tuỳ chọn như giao diện sáng tối, ngôn ngữ. Không dùng cookie quảng cáo hay theo dõi."],
+    en: ["Cookies", "The site uses one sign-in cookie (kept 30 days, 7 for admin accounts) and browser storage for preferences such as light or dark mode and language. No advertising or tracking cookies."],
   },
   {
     vi: ["Quyền của bạn", "Bạn có thể xem, sửa hoặc xoá dữ liệu của mình: kết quả xoá được ngay trong Lịch sử; muốn xoá tài khoản và toàn bộ dữ liệu, gửi yêu cầu qua mục Hỗ trợ và góp ý."],

@@ -27,7 +27,7 @@ import { openStore } from "./store/index.mjs";
 import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
 import { BillingError, createBilling } from "./billing.mjs";
 import { createMailer } from "./mailer.mjs";
-import { createErrorLog } from "./errors.mjs";
+import { createErrorLog, errorKind, redact } from "./errors.mjs";
 import { runBackup } from "./backup.mjs";
 import { parsePacks } from "./billing.mjs";
 import { RECIPES, buildCombo, comboCost } from "./combos.mjs";
@@ -40,6 +40,9 @@ import { cleanUploads, createStorage, filesOf } from "./storage.mjs";
 import { SEED_TEMPLATES } from "./seed-templates.mjs";
 import { readMenu } from "./vision.mjs";
 import { promoReport } from "./promo.mjs";
+import { aboutLengths } from "./about.mjs";
+import { createLowCreditMail, LOW_CREDITS } from "./notify.mjs";
+import { answerFields, BACK, isLow, SurveyError, surveyFields, surveyStats } from "./survey.mjs";
 import { detectMapping, MAX_SALES_BYTES, readSheet, salesStats, statsText } from "./sales.mjs";
 import { cleanOccasions } from "./usDays.mjs";
 
@@ -96,7 +99,7 @@ function passwordGate(password) {
     signedIn,
     middleware(req, res, next) {
       if (signedIn(req)) return next();
-      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
+      const open = req.path === "/api/login" || req.path === "/api/session" || req.path === "/api/client-error" || (req.method === "POST" && /^\/api\/public\/surveys\/[^/]+\/answers$/.test(req.path)) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });
       res.status(401).send("Cần đăng nhập");
@@ -207,8 +210,9 @@ export async function createApp(config, adapter) {
   const store = await openStore(adapter, { templates: SEED_TEMPLATES });
   // ACCOUNTS=1: one login per customer, each sees only their own data (see ./accounts.mjs).
   // SIGNUP=1: customers make their own account with trial credits and top up through Stripe (./billing.mjs).
-  const billing = createBilling({ store, env: config.billingEnv ?? process.env, fetchFn: config.fetchFn });
-  const mailer = config.mailer ?? createMailer(config.mailEnv ?? process.env); // sign-up and password codes
+  const mailer = config.mailer ?? createMailer(config.mailEnv ?? process.env); // sign-up and password codes, reminders
+  const lowCreditMail = createLowCreditMail({ store, mailer, publicUrl: (config.billingEnv ?? process.env).PUBLIC_URL ?? process.env.PUBLIC_URL ?? "" });
+  const billing = createBilling({ store, env: config.billingEnv ?? process.env, fetchFn: config.fetchFn, onLow: lowCreditMail, lowAt: LOW_CREDITS });
   // Sign-up rules read live, so the admin's settings page applies without a restart.
   const signupRules = {
     mailer,
@@ -306,6 +310,8 @@ export async function createApp(config, adapter) {
     if (job.type === "promo-plan") return { result: promoReport(content, job.input) };
     // Offers the shop never chose are taken out of the posts; unknown ingredients are flagged (usDays.mjs).
     if (job.type === "us-occasions") content = cleanOccasions(content, job.input?.serves);
+    // Listing texts have a character cap: the count is worked out here, not by the model.
+    if (job.type === "shop-about") content = aboutLengths(content);
     if (job.type === "reel-cut") return clipper.finishReels(job, content, ctx);
     if (job.type === "live-recap") return clipper.finishRecap(job, content, ctx);
     if (job.type === "dub") return clipper.finishDub(job, content, ctx);
@@ -556,6 +562,10 @@ export async function createApp(config, adapter) {
     const out = await billingCall(() => billing.confirm(req.user, req.body?.sessionId));
     res.json({ paid: out.paid, added: out.added, credits: store.getUser(req.user.id).credits ?? null });
   }));
+  // The Stripe receipt of a top-up (opened in a new tab from the Credit page).
+  api.get("/billing/receipt/:id", accountRoute(async (req, res) => {
+    res.redirect(302, await billingCall(() => billing.receipt(req.user, String(req.params.id))));
+  }));
   api.put("/me/password", accountRoute((req, res) => accounts.changePassword(req, res)));
   api.post("/login/mfa", accountRoute((req, res) => accounts.loginMfa(req, res)));
   api.post("/me/logout-all", accountRoute((req, res) => accounts.logoutAll(req, res)));
@@ -565,7 +575,9 @@ export async function createApp(config, adapter) {
   // ---- admin: errors, backups, settings ----
   api.get("/admin/errors", accountRoute(async (req, res) => {
     adminOnly(req);
-    res.json({ errors: await store.listErrors(100), webhook: !!(config.errorEnv ?? process.env).ERROR_WEBHOOK_URL });
+    // A failed run's message can quote what the customer typed: the admin sees it with those words taken out.
+    const list = (await store.listErrors(100)).map((e) => (e.source === "job" ? { ...e, message: redact(e.message) } : e));
+    res.json({ errors: list, webhook: !!(config.errorEnv ?? process.env).ERROR_WEBHOOK_URL });
   }));
   api.delete("/admin/errors", accountRoute(async (req, res) => {
     adminOnly(req);
@@ -634,6 +646,56 @@ export async function createApp(config, adapter) {
       }),
       defaultLimit: limits.LIMITS.jobsPerUserDay,
     });
+  }));
+  /**
+   * Who ran what, for support and spotting abuse: the tool, status, credits and times of the recent runs
+   * (the cached ones, newest first). Never what the customer typed, the title (it names the shop) or the
+   * result; a failure shows its kind only.
+   */
+  api.get("/admin/activity", accountRoute((req, res) => {
+    adminOnly(req);
+    const { user, type, status } = req.query;
+    const limit = Math.min(500, Number(req.query.limit) || 100);
+    const all = store.listJobs();
+    const rows = all
+      .filter((j) => (!user || accounts.ownerId(j) === user) && (!type || j.type === type) && (!status || j.status === status))
+      .slice(0, limit)
+      .map((j) => ({
+        id: j.id,
+        type: j.type,
+        status: j.status,
+        userId: accounts.ownerId(j),
+        credits: j.credits ?? 0,
+        refunded: !!j.refunded,
+        createdAt: j.createdAt,
+        startedAt: j.startedAt ?? null,
+        finishedAt: j.finishedAt ?? null,
+        error: j.status === "failed" ? errorKind(j.error) : null,
+      }));
+    res.json({ rows, types: [...new Set(all.map((j) => j.type))].sort(), oldest: all.at(-1)?.createdAt ?? null });
+  }));
+  /** Per tool over the last 7 or 30 days (of the cached runs): runs, failures, people, credits kept, usual time. */
+  api.get("/admin/skill-stats", accountRoute((req, res) => {
+    adminOnly(req);
+    const days = Number(req.query.days) === 30 ? 30 : 7;
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const all = store.listJobs();
+    const by = new Map();
+    for (const j of all) {
+      if (j.createdAt < since || j.type === "combo") continue; // a combo's steps are counted as their own tools
+      const s = by.get(j.type) ?? { type: j.type, runs: 0, failed: 0, users: new Set(), credits: 0, times: [] };
+      s.runs++;
+      if (j.status === "failed") s.failed++;
+      s.users.add(accounts.ownerId(j));
+      if (j.credits && !j.refunded) s.credits += j.credits;
+      if (j.status === "done" && j.startedAt && j.finishedAt) s.times.push(Date.parse(j.finishedAt) - Date.parse(j.startedAt));
+      by.set(j.type, s);
+    }
+    const median = (list) => (list.length ? list.sort((a, b) => a - b)[Math.floor(list.length / 2)] : null);
+    const rows = [...by.values()].map((s) => ({ type: s.type, runs: s.runs, failed: s.failed, users: s.users.size, credits: s.credits, medianMs: median(s.times) })).sort((a, b) => b.runs - a.runs);
+    // The cache keeps the latest runs only: when it starts after `since`, the numbers cover less than the period.
+    const oldest = all.at(-1)?.createdAt ?? null;
+    res.json({ days, rows, partial: !!oldest && all.length >= 1000 && oldest > since, oldest });
   }));
   api.post("/admin/users", accountRoute(async (req, res) => {
     adminOnly(req);
@@ -773,11 +835,12 @@ export async function createApp(config, adapter) {
     campaign: () => ({ start: nextMondayYmd(), platform: "facebook", days: 7, perDay: 1, topic: "Quán cà phê" }),
     clone: () => ({ platform: "facebook", topic: "Quán cà phê nhỏ", pillars: ["entertain", "educate", "engage", "sell"] }),
     "promo-plan": () => ({ business: "Phở Cali", goal: "slow", dishes: "Phở bò - 65.000 - 28.000\nTrà đá - 5.000 - 1.000" }),
+    "shop-about": () => ({ business: "Phở Cali", area: "Quận 1, TP.HCM", facts: "Phở bò, nước dùng hầm xương 12 tiếng mỗi sáng. Món nổi bật: phở tái nạm, phở đặc biệt. Gia đình anh Minh mở từ 2015. Có máy lạnh, mang về, giao GrabFood và ShopeeFood." }),
   };
   api.get("/samples/:type", (req, res) => {
     const raw = sampleReply(req.params.type);
     // The promotion sample is a model answer like any other: its money is worked out the same way.
-    const result = raw && req.params.type === "promo-plan" ? promoReport(raw, SAMPLE_INPUT["promo-plan"]()) : raw;
+    const result = raw && req.params.type === "promo-plan" ? promoReport(raw, SAMPLE_INPUT["promo-plan"]()) : raw && req.params.type === "shop-about" ? aboutLengths(raw) : raw;
     if (!result) throw new HttpError(404, "Công cụ này chưa có kết quả mẫu");
     const now = new Date().toISOString();
     res.json({ job: { id: `sample-${req.params.type}`, type: req.params.type, sample: true, status: "done", title: "Kết quả mẫu", input: SAMPLE_INPUT[req.params.type]?.() ?? {}, result, createdAt: now, startedAt: now, finishedAt: now } });
@@ -905,21 +968,39 @@ export async function createApp(config, adapter) {
   const HEAVY = new Set(["video", "image", "photo-fix", "reel-cut", "dub", "live-recap", "combo"]);
   const HEAVY_DEFAULT = Number.isInteger(Number(process.env.HEAVY_PER_USER)) && process.env.HEAVY_PER_USER !== undefined ? Number(process.env.HEAVY_PER_USER) : 2;
   const heavyCap = () => (Number.isInteger(store.getSettings?.()?.heavyPerUser) ? store.getSettings().heavyPerUser : HEAVY_DEFAULT);
+  // Runs past the gate but not stored yet (their photos and credits are still being checked): counted too,
+  // so two quick clicks cannot both get in under the cap.
+  const heavyHeld = new Map(); // userId → runs on their way in
+  /** Takes a heavy slot (or says the account has too many going); returns the function that lets it go once the job is stored. */
   function heavyGate(req, type) {
     const cap = heavyCap();
-    if (!accounts || !req.user || req.user.role === "admin" || !HEAVY.has(type) || !cap) return;
-    const busy = store.listJobs().filter((j) => j.userId === req.user.id && HEAVY.has(j.type) && (j.status === "queued" || j.status === "running")).length;
+    if (!accounts || !req.user || req.user.role === "admin" || !HEAVY.has(type) || !cap) return () => {};
+    const id = req.user.id;
+    const busy = store.listJobs().filter((j) => j.userId === id && HEAVY.has(j.type) && (j.status === "queued" || j.status === "running")).length + (heavyHeld.get(id) ?? 0);
     if (busy >= cap) throw new HttpError(429, `Bạn đang có ${busy} tác vụ nặng (video, ảnh) đang chạy. Chờ xong bớt rồi chạy tiếp nhé, tối đa ${cap} tác vụ cùng lúc.`);
+    heavyHeld.set(id, (heavyHeld.get(id) ?? 0) + 1);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      const left = (heavyHeld.get(id) ?? 1) - 1;
+      if (left > 0) heavyHeld.set(id, left);
+      else heavyHeld.delete(id);
+    };
   }
 
   api.post("/jobs", limits.jobs, async (req, res) => {
     const { type, input } = req.body ?? {};
-    heavyGate(req, type);
-    await enoughCredits(req, type, input);
-    const spec = await jobSpec(type, input);
-    if (input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" }; // English interface: English reports
-    const job = await submitPaid(req, type, spec);
-    res.status(201).json({ job: summary(job, runner) });
+    const release = heavyGate(req, type);
+    try {
+      await enoughCredits(req, type, input);
+      const spec = await jobSpec(type, input);
+      if (input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" }; // English interface: English reports
+      const job = await submitPaid(req, type, spec);
+      res.status(201).json({ job: summary(job, runner) });
+    } finally {
+      release(); // stored now (or refused): the job list counts it from here
+    }
   });
 
   api.get("/jobs/:id", async (req, res) => {
@@ -936,12 +1017,16 @@ export async function createApp(config, adapter) {
   api.post("/jobs/:id/retry", limits.jobs, async (req, res) => {
     const job = await loadJob(req);
     if (ACTIVE.has(job.status)) throw new HttpError(409, "Tác vụ đang chạy");
-    heavyGate(req, job.type);
-    await enoughCredits(req, job.type, job.input);
-    const spec = await jobSpec(job.type, job.input);
-    if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
-    const fresh = await submitPaid(req, job.type, spec);
-    res.status(201).json({ job: summary(fresh, runner) });
+    const release = heavyGate(req, job.type);
+    try {
+      await enoughCredits(req, job.type, job.input);
+      const spec = await jobSpec(job.type, job.input);
+      if (job.input?.uiLang === "en") spec.input = { ...spec.input, uiLang: "en" };
+      const fresh = await submitPaid(req, job.type, spec);
+      res.status(201).json({ job: summary(fresh, runner) });
+    } finally {
+      release();
+    }
   });
 
   // ---- shared results: a read-only link the owner can turn off ----
@@ -1043,23 +1128,27 @@ export async function createApp(config, adapter) {
     const tagline = String(req.body?.tagline ?? job.input.tagline ?? "").trim().slice(0, 60);
     const mapLink = layout === "map" ? String(req.body?.mapLink ?? job.input.mapLink ?? "").trim().slice(0, 1000) : job.input.mapLink;
     if (layout === "map" && !isMapsLink(mapLink)) throw new HttpError(400, "Mẫu Chỉ đường cần link Google Maps của quán");
-    heavyGate(req, "video");
-    await billingCall(() => billing.check(req.user, "video-restyle"));
-    // The photos may only be in object storage (another server, a cleaned disk): fetch them back first.
-    if (storage.remote) for (const s of job.slides) if (s.image && !existsSync(localOf(`images/${s.image}`))) await storage.get(`images/${s.image}`, localOf(`images/${s.image}`)).catch(() => false);
-    await ensureUploads(job.input);
-    const credits = await billingCall(() => billing.charge(req.user, "video-restyle"));
-    const fresh = await runner.submit({
-      type: "video",
-      agent: job.agent,
-      title: job.title,
-      input: { ...job.input, layout, ratio, offer, dishes, texts, tagline, mapLink, review: false, restyledFrom: job.id },
-      prompt: "",
-      userId: job.userId,
-      credits,
-      extra: { renderOnly: true, slides: job.slides, images: job.images, draft: job.draft ?? "" },
-    });
-    res.status(201).json({ job: summary(fresh, runner) });
+    const release = heavyGate(req, "video");
+    try {
+      await billingCall(() => billing.check(req.user, "video-restyle"));
+      // The photos may only be in object storage (another server, a cleaned disk): fetch them back first.
+      if (storage.remote) for (const s of job.slides) if (s.image && !existsSync(localOf(`images/${s.image}`))) await storage.get(`images/${s.image}`, localOf(`images/${s.image}`)).catch(() => false);
+      await ensureUploads(job.input);
+      const credits = await billingCall(() => billing.charge(req.user, "video-restyle"));
+      const fresh = await runner.submit({
+        type: "video",
+        agent: job.agent,
+        title: job.title,
+        input: { ...job.input, layout, ratio, offer, dishes, texts, tagline, mapLink, review: false, restyledFrom: job.id },
+        prompt: "",
+        userId: job.userId,
+        credits,
+        extra: { renderOnly: true, slides: job.slides, images: job.images, draft: job.draft ?? "" },
+      });
+      res.status(201).json({ job: summary(fresh, runner) });
+    } finally {
+      release();
+    }
   });
 
   // ---- "Menu in & menu điện tử": a menu kept as a library item of kind "menu"; its online page is public ----
@@ -1177,6 +1266,102 @@ export async function createApp(config, adapter) {
     const item = store.getItem(req.params.id);
     if (!item || item.kind !== "menu") throw new HttpError(404, "Menu không tồn tại hoặc đã bị xoá");
     res.set("Cache-Control", "public, max-age=60").json({ menu: item.menu, updatedAt: item.updatedAt });
+  });
+
+  // ---- "Khảo sát tại bàn": a library item of kind "survey"; guests answer on /f/:id, no login ----
+  const surveyCall = (fn) => {
+    try {
+      return fn();
+    } catch (e) {
+      throw e instanceof SurveyError ? new HttpError(e.status, e.message) : e;
+    }
+  };
+  const mySurvey = (req) => {
+    const item = store.getItem(req.params.id);
+    if (!item || item.kind !== "survey" || !own(req, item)) throw new HttpError(404, "Không tìm thấy khảo sát");
+    return item;
+  };
+  const surveyView = async (item, days = 30) => {
+    const all = await store.listAnswers(item.id);
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const recent = all.filter((a) => a.createdAt >= since);
+    return { id: item.id, survey: item.survey, updatedAt: item.updatedAt, total: all.length, stats: surveyStats(recent), days };
+  };
+  api.get("/surveys", async (req, res) => {
+    const mine = store.listLibrary().filter((x) => x.kind === "survey" && own(req, x));
+    res.json({ surveys: await Promise.all(mine.map((x) => surveyView(x, 30))) });
+  });
+  api.post("/surveys", async (req, res) => {
+    if (store.listLibrary().filter((x) => x.kind === "survey" && own(req, x)).length >= 10) throw new HttpError(400, "Mỗi tài khoản có tối đa 10 khảo sát, xoá bớt khảo sát cũ nhé");
+    const survey = surveyCall(() => surveyFields(req.body ?? {}));
+    const item = await store.addItem({ kind: "survey", title: survey.name, survey, ...(accounts ? { userId: req.user.id } : {}) });
+    res.status(201).json({ survey: await surveyView(item) });
+  });
+  api.put("/surveys/:id", async (req, res) => {
+    mySurvey(req);
+    const survey = surveyCall(() => surveyFields(req.body ?? {}));
+    const item = await store.updateItem(req.params.id, { title: survey.name, survey });
+    res.json({ survey: await surveyView(item) });
+  });
+  api.delete("/surveys/:id", async (req, res) => {
+    mySurvey(req);
+    await store.deleteAnswers(req.params.id); // the guests' answers go with it
+    await store.deleteItem(req.params.id);
+    res.json({ ok: true });
+  });
+  /** The owner's view of one survey: averages over 7, 30 or 90 days and the latest answers (newest first). */
+  api.get("/surveys/:id/answers", async (req, res) => {
+    const item = mySurvey(req);
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const view = await surveyView(item, days);
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const answers = (await store.listAnswers(item.id)).filter((a) => a.createdAt >= since).slice(0, 200).map(({ id, food, service, back, comment, contact, createdAt }) => ({ id, food, service, back, comment, contact, createdAt, low: isLow({ food, service, back }) }));
+    res.json({ ...view, answers });
+  });
+  /** What the guest's phone shows: the shop name and its lines, nothing about the owner. */
+  api.get("/public/surveys/:id", (req, res) => {
+    const item = store.getItem(req.params.id);
+    if (!item || item.kind !== "survey") throw new HttpError(404, "Khảo sát không tồn tại hoặc đã bị xoá");
+    const { name, intro, thanks, open, lang = "vi" } = item.survey;
+    res.set("Cache-Control", "public, max-age=60").json({ survey: { name, intro, thanks, open, lang } });
+  });
+  // Guests: a few answers per survey per address an hour, 20 an hour in all, and 300 a day per survey,
+  // so a script cannot flood a shop. Kept in memory only: no address is stored with the answers.
+  const surveyHits = new Map();
+  const surveyTake = (key, max, ms) => {
+    const now = Date.now();
+    if (surveyHits.size > 20_000) for (const [k, v] of surveyHits) if (!v.some((t) => now - t < 86_400_000)) surveyHits.delete(k);
+    const list = (surveyHits.get(key) ?? []).filter((t) => now - t < ms);
+    if (list.length >= max) return false;
+    surveyHits.set(key, [...list, now]);
+    return true;
+  };
+  const surveyAlerted = new Map(); // survey id → last email time
+  api.post("/public/surveys/:id/answers", async (req, res) => {
+    const item = store.getItem(req.params.id);
+    if (!item || item.kind !== "survey") throw new HttpError(404, "Khảo sát không tồn tại hoặc đã bị xoá");
+    if (!item.survey.open) throw new HttpError(409, "Quán đã tạm dừng nhận góp ý");
+    if (req.body?.website) return res.status(201).json({ ok: true }); // the hidden field only a bot fills in
+    const answer = surveyCall(() => answerFields(req.body ?? {}));
+    const ip = req.ip ?? "?";
+    if (!surveyTake(`s|${item.id}|${ip}`, 3, 3600_000) || !surveyTake(`ip|${ip}`, 20, 3600_000)) throw new HttpError(429, "Bạn vừa gửi góp ý rồi, cảm ơn bạn nhé!");
+    if (!surveyTake(`day|${item.id}`, 300, 86_400_000)) throw new HttpError(429, "Hôm nay quán đã nhận rất nhiều góp ý, thử lại ngày mai nhé.");
+    await store.addAnswer({ surveyId: item.id, ...answer });
+    res.status(201).json({ ok: true });
+    // A poor answer: the owner hears about it now (one email an hour per survey at most).
+    const owner = accounts ? store.getUser(accounts.ownerId(item)) : null;
+    if (isLow(answer) && item.survey.alert && mailer.enabled && owner?.email && Date.now() - (surveyAlerted.get(item.id) ?? 0) > 3600_000) {
+      surveyAlerted.set(item.id, Date.now());
+      const link = `${origin(req)}/survey`;
+      const lines = [`Món ăn: ${answer.food}/5 sao`, `Phục vụ: ${answer.service}/5 sao`, `Sẽ quay lại: ${BACK[answer.back]}`, answer.comment && `Góp ý: ${answer.comment}`, answer.contact && `Liên hệ khách để lại: ${answer.contact}`].filter(Boolean);
+      const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      mailer.send({
+        to: owner.email,
+        subject: `Góp ý chưa tốt từ khách tại ${item.survey.name}`,
+        text: `Một khách vừa góp ý qua mã QR ở ${item.survey.name}:\n\n${lines.join("\n")}\n\nXem tất cả góp ý: ${link}\nLiên hệ lại sớm thường giữ được khách và tránh một review xấu trên mạng.`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:460px;margin:auto;padding:24px;color:#1c1a16"><h2 style="margin:0 0 12px">Góp ý chưa tốt tại ${esc(item.survey.name)}</h2><p>${lines.map(esc).join("<br>")}</p><p style="margin:22px 0"><a href="${link}" style="background:#1c1a16;color:#f8f4ec;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">Xem tất cả góp ý</a></p><p style="color:#6e685d;font-size:13px">Liên hệ lại sớm thường giữ được khách và tránh một review xấu trên mạng. Tắt email này trong trang Khảo sát tại bàn.</p></div>`,
+      }).catch((e) => console.error(`survey alert mail failed: ${e.message}`));
+    }
   });
 
   api.delete("/jobs/:id", async (req, res) => {
@@ -1331,7 +1516,8 @@ export async function createApp(config, adapter) {
     const file = video.imagePath(req.params.file);
     if (!file) return res.status(404).send("Không tìm thấy ảnh");
     if (!existsSync(file)) return fromStorage(res, `images/${req.params.file}`);
-    res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
+    // private: a customer's own pictures, never kept by a shared cache (CDN, proxy) for other visitors
+    res.set({ "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400" }).sendFile(file, { dotfiles: "allow" });
   });
   app.use("/api", (req, res, next) => {
     res.set("Cache-Control", "no-store");
