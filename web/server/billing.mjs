@@ -38,6 +38,7 @@ export const CREDIT_COST = {
   "delivery-menu": 1,
   "us-occasions": 1,
   "nextdoor-post": 1,
+  "shop-about": 1,
   nearby: 2, // 15 to 25 places read on Google Maps
   "review-compare": 3, // two review reads per place, up to 5 places
   trends: 2, // two Google Trends reads
@@ -91,7 +92,7 @@ function form(obj, prefix = "", out = new URLSearchParams()) {
 /**
  * @param {{ store, env?: object, fetchFn?: typeof fetch }} opts
  */
-export function createBilling({ store, env = process.env, fetchFn = fetch }) {
+export function createBilling({ store, env = process.env, fetchFn = fetch, onLow = null, lowAt = 5 }) {
   // The admin can change the trial credits and the packs on the web (store settings); env is the default.
   const secret = env.STRIPE_SECRET_KEY ?? "";
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET ?? "";
@@ -202,7 +203,11 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
       const cost = costOf(type);
       const fresh = store.getUser(user.id);
       if (fresh.credits < cost) throw new BillingError(402, `Hết credit: lượt này cần ${cost} credit, bạn còn ${fresh.credits}. Nạp thêm ở trang Credit nhé.`);
-      await store.updateUser(user.id, { credits: fresh.credits - cost });
+      const before = fresh.credits; // `fresh` is the stored account itself: read before the update changes it
+      const left = before - cost;
+      await store.updateUser(user.id, { credits: left });
+      // Just went under the line: a reminder to top up (sent in the background, never holds the run).
+      if (onLow && before >= lowAt && left < lowAt) Promise.resolve(onLow(store.getUser(user.id), left)).catch(() => {});
       return cost;
     },
 
@@ -228,6 +233,8 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
         success_url: `${origin}/billing?paid={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/billing?canceled=1`,
         metadata: { credits: pack.credits, userId: user.id },
+        // Stripe emails its receipt to this address once the card is charged (live mode).
+        ...(user.email ? { payment_intent_data: { receipt_email: user.email } } : {}),
         line_items: [{ quantity: 1, price_data: { currency, unit_amount: pack.cents, product_data: { name: `${pack.credits} credit Skipli Content` } } }],
       });
       return { url: session.url, id: session.id };
@@ -240,6 +247,26 @@ export function createBilling({ store, env = process.env, fetchFn = fetch }) {
       const session = await stripe("GET", `/checkout/sessions/${sessionId}`);
       if (session.client_reference_id !== user.id) throw new BillingError(404, "Không tìm thấy thanh toán này");
       return { paid: session.payment_status === "paid", ...(await credit(session)) };
+    },
+
+    /**
+     * The Stripe receipt of one of the account's top-ups (a page the owner can print or save as PDF for their
+     * books). Looked up once, then kept on the payment; a top-up of another account is not found.
+     */
+    async receipt(user, paymentId) {
+      if (!secret) throw new BillingError(503, "Chưa cấu hình thanh toán (STRIPE_SECRET_KEY).");
+      const payment = (user.payments ?? []).find((p) => p.id === paymentId);
+      if (!payment) throw new BillingError(404, "Không tìm thấy lần nạp này");
+      if (payment.receiptUrl) return payment.receiptUrl;
+      const pi = payment.paymentIntent ?? (await stripe("GET", `/checkout/sessions/${encodeURIComponent(payment.id)}`)).payment_intent;
+      if (!pi) throw new BillingError(404, "Stripe chưa có biên lai cho lần nạp này");
+      const intent = await stripe("GET", `/payment_intents/${encodeURIComponent(pi)}?expand[]=latest_charge`);
+      const url = intent.latest_charge?.receipt_url;
+      if (!url || !/^https:\/\/[\w.-]*stripe\.com\//.test(url)) throw new BillingError(404, "Stripe chưa có biên lai cho lần nạp này");
+      // Saved on the payment as it is now (another top-up may have landed while Stripe answered).
+      const fresh = store.getUser(user.id);
+      await store.updateUser(user.id, { payments: (fresh.payments ?? []).map((p) => (p.id === paymentId ? { ...p, paymentIntent: pi, receiptUrl: url } : p)) });
+      return url;
     },
 
     /** POST /api/stripe/webhook with the raw body. */

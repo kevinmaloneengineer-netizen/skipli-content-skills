@@ -31,7 +31,7 @@ export default function AuthGate({ children }) {
       setSession((s) => (s && s.mode !== "open" ? { ...s, signedIn: false, user: null } : s));
       const here = window.location.pathname + window.location.search;
       // Public pages (a shared result, the table QR menu) stay where they are: their viewers have no account.
-      if (!here.startsWith("/login") && !/^\/(s|m)\//.test(here)) navigate(loginPath(here), { replace: true });
+      if (!here.startsWith("/login") && !/^\/(s|m|f)\//.test(here)) navigate(loginPath(here), { replace: true });
     };
     window.addEventListener("auth-required", out);
     return () => window.removeEventListener("auth-required", out);

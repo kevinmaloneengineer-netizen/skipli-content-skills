@@ -7,6 +7,12 @@ import { SKILLS_DIR } from "./llm.mjs";
 
 const PYTHON = process.env.PYTHON ?? "python3";
 
+// The scripts answer in English; what a shop owner can act on is said in Vietnamese.
+const SCRIPT_ERRORS = [
+  [/^page not found/i, "Không tìm thấy trang này trên Facebook. Kiểm tra lại link fanpage (mở trang trên Facebook rồi chép link trên thanh địa chỉ)."],
+  [/^no reels found/i, "Không thấy reel nào: trang không có reel công khai, hoặc Facebook đang tạm chặn. Kiểm tra lại link hoặc thử lại sau ít phút."],
+];
+
 /**
  * Run skills/<skill>/scripts/<script> and parse the one JSON object it prints.
  * @returns the parsed object; throws with the script's own error message when it reports ok: false.
@@ -19,7 +25,9 @@ export function runScript(skill, script, args, { signal, timeoutMs = 240_000, st
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
     child.on("error", (e) => reject(e.name === "AbortError" ? e : new Error(`Không chạy được ${script}: ${e.message}`)));
-    child.on("close", () => {
+    child.on("close", (code, sig) => {
+      // Killed at timeoutMs (not by the user's cancel): say what happened instead of "no result".
+      if (sig === "SIGTERM" && !signal?.aborted) return reject(new Error(`${script} chạy quá ${Math.round(timeoutMs / 60_000)} phút nên đã dừng (Facebook đang phản hồi chậm). Thử lại sau ít phút.`));
       // Whole stdout first (some scripts pretty-print), else the last line that looks like JSON (after log lines).
       let data;
       try {
@@ -32,7 +40,7 @@ export function runScript(skill, script, args, { signal, timeoutMs = 240_000, st
       } catch {
         return reject(new Error(`${script} không trả về kết quả${err ? `: ${err.trim().split("\n").at(-1)}` : ""}`));
       }
-      if (data.ok === false) return reject(new Error(data.error || `${script} lỗi`));
+      if (data.ok === false) return reject(new Error(SCRIPT_ERRORS.find(([re]) => re.test(data.error ?? ""))?.[1] ?? (data.error || `${script} lỗi`)));
       resolve(data);
     });
     if (stdin) child.stdin.end(stdin);

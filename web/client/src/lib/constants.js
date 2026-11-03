@@ -92,6 +92,15 @@ export const SKILLS = [
     eta: "Tức thì",
   },
   {
+    id: "survey",
+    path: "/survey",
+    tone: "rose",
+    title: "Khảo sát khách tại bàn",
+    short: "Khảo sát tại bàn",
+    pitch: "Mã QR trên bàn: khách chấm sao món ăn, phục vụ và cho biết có quay lại không. Có góp ý chưa tốt là bạn nhận email ngay, trước khi khách lên mạng viết review. Miễn phí.",
+    eta: "Tức thì",
+  },
+  {
     id: "event-banner",
     path: "/banner",
     tone: "rose",
@@ -398,6 +407,17 @@ export const SKILLS = [
     etaLong: "Thường dưới 1 phút.",
   },
   {
+    id: "shop-about",
+    type: "shop-about",
+    path: "/shop-about",
+    tone: "olive",
+    title: "Viết phần giới thiệu quán",
+    short: "Giới thiệu quán",
+    pitch: "Đoạn giới thiệu cho Google Business, Facebook, Instagram (và Yelp với quán ở Mỹ), có từ khoá khu vực để khách tìm thấy trên bản đồ.",
+    eta: "dưới 1 phút",
+    etaLong: "Thường dưới 1 phút. Số ký tự do hệ thống đếm.",
+  },
+  {
     id: "sales-insight",
     type: "sales-insight",
     path: "/sales-insight",
@@ -493,7 +513,7 @@ export const CATEGORIES = [
     title: "Đăng bài & chăm khách",
     word: "CHĂM KHÁCH",
     desc: "Giữ lại mẫu hay, xếp lịch đăng đúng giờ, trả lời review và tin nhắn để khách quay lại.",
-    skills: ["library", "schedule", "gbp-post", "zalo-message", "nextdoor-post", "delivery-menu", "us-occasions", "promo-plan", "sales-insight", "menu-board", "qr", "hashtag", "review", "inbox"],
+    skills: ["library", "schedule", "gbp-post", "shop-about", "zalo-message", "nextdoor-post", "delivery-menu", "us-occasions", "promo-plan", "sales-insight", "menu-board", "qr", "survey", "hashtag", "review", "inbox"],
     deco: ["calendar", "clock", "bookmark", "check", "folder", "bell", "check", "clock"],
   },
 ];

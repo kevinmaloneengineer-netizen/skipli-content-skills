@@ -34,9 +34,11 @@ const DubPage = lazy(() => import("./pages/DubPage.jsx"));
 const CombosPage = lazy(() => import("./pages/CombosPage.jsx"));
 const QrPage = lazy(() => import("./pages/QrPage.jsx"));
 const MenuBoardPage = lazy(() => import("./pages/MenuBoardPage.jsx"));
+const SurveyPage = lazy(() => import("./pages/SurveyPage.jsx"));
 const BannerPage = lazy(() => import("./pages/BannerPage.jsx"));
 const SalesPage = lazy(() => import("./pages/SalesPage.jsx"));
 const PublicMenuPage = lazy(() => import("./pages/PublicMenuPage.jsx"));
+const PublicSurveyPage = lazy(() => import("./pages/PublicSurveyPage.jsx"));
 const PhotoFixPage = lazy(() => import("./pages/PhotoFixPage.jsx"));
 const LegalPage = lazy(() => import("./pages/LegalPage.jsx"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage.jsx"));
@@ -66,6 +68,8 @@ export default function App() {
           <Routes>
             {/* The online menu guests open from a table QR: no navbar, no login. */}
             <Route path="m/:id" element={<Suspense fallback={null}><PublicMenuPage /></Suspense>} />
+            {/* The table survey guests open from a QR: no navbar, no login. */}
+            <Route path="f/:id" element={<Suspense fallback={null}><PublicSurveyPage /></Suspense>} />
             {/* A result shared by its owner: read only, no navbar, no login. */}
             <Route path="s/:token" element={<Suspense fallback={null}><SharedPage /></Suspense>} />
             <Route element={<Layout />}>
@@ -108,6 +112,7 @@ export default function App() {
                 <Route path="delivery-menu" element={<TextSkillPage config={TEXT_SKILLS["delivery-menu"]} />} />
                 <Route path="us-occasions" element={<TextSkillPage config={TEXT_SKILLS["us-occasions"]} />} />
                 <Route path="nextdoor-post" element={<TextSkillPage config={TEXT_SKILLS["nextdoor-post"]} />} />
+                <Route path="shop-about" element={<TextSkillPage config={TEXT_SKILLS["shop-about"]} />} />
                 <Route path="nearby" element={<TextSkillPage config={TEXT_SKILLS.nearby} />} />
                 <Route path="review-compare" element={<TextSkillPage config={TEXT_SKILLS["review-compare"]} />} />
                 <Route path="trends" element={<TextSkillPage config={TEXT_SKILLS.trends} />} />
@@ -115,6 +120,7 @@ export default function App() {
                 <Route path="photo-fix" element={<PhotoFixPage />} />
                 <Route path="qr" element={<QrPage />} />
                 <Route path="menu-board" element={<MenuBoardPage />} />
+                <Route path="survey" element={<SurveyPage />} />
                 <Route path="banner" element={<BannerPage />} />
                 <Route path="combos" element={<CombosPage />} />
                 <Route path="skills/tiktok" element={<Navigate to="/tiktok" replace />} />

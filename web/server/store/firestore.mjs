@@ -30,6 +30,7 @@ export function connectFirestore({ projectId, serviceAccount, databaseId }) {
  *   <prefix>users/{id}     customer accounts (ACCOUNTS=1)
  *   <prefix>meta/settings  sign-up and credit settings the admin changes on the web
  *   <prefix>errors/{id}    server, job and browser errors (the admin's "Lỗi gần đây")
+ *   <prefix>answers/{id}   guests' answers to a shop's table survey (by surveyId)
  * Only single-field queries are used, so no composite index is needed.
  * Clients never touch Firestore directly - see deploy/firebase/firestore.rules.
  */
@@ -42,6 +43,7 @@ export function firestoreAdapter(db, prefix = "") {
   const watch = db.collection(`${prefix}watch`);
   const users = db.collection(`${prefix}users`);
   const errors = db.collection(`${prefix}errors`);
+  const answers = db.collection(`${prefix}answers`);
   const settings = db.collection(`${prefix}meta`).doc("settings");
   const data = (snap) => snap.docs.map((d) => d.data());
 
@@ -101,6 +103,23 @@ export function firestoreAdapter(db, prefix = "") {
     async saveFeedback(item) {
       await feedback.doc(item.id).set(item);
     },
+    // Survey answers: an equality filter only (no orderBy), so no composite index; sorted here.
+    async loadAnswers(surveyId, limit = 2000) {
+      const list = data(await answers.where("surveyId", "==", surveyId).limit(limit).get());
+      return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+    async saveAnswer(a) {
+      await answers.doc(a.id).set(a);
+    },
+    async deleteAnswers(surveyId) {
+      for (;;) {
+        const snap = await answers.where("surveyId", "==", surveyId).limit(400).get();
+        if (snap.empty) return;
+        const batch = db.batch();
+        for (const d of snap.docs) batch.delete(d.ref);
+        await batch.commit();
+      }
+    },
     async loadSettings() {
       const snap = await settings.get();
       return snap.exists ? snap.data() : {};
@@ -120,7 +139,7 @@ export function firestoreAdapter(db, prefix = "") {
     /** Every collection of this app (its prefix), for a backup: { name: [docs with id] }. */
     async exportAll() {
       const out = {};
-      for (const name of ["jobs", "library", "meta", "feedback", "schedule", "watch", "users", "errors"]) {
+      for (const name of ["jobs", "library", "meta", "feedback", "schedule", "watch", "users", "errors", "answers"]) {
         out[name] = (await db.collection(`${prefix}${name}`).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
       }
       return out;

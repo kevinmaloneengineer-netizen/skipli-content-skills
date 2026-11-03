@@ -197,12 +197,22 @@ export async function withOwnAudio(video, audio) {
 /** One MP3 per text (dir/s1.mp3, s2.mp3, …) read with the free Edge voices on this machine (server/voice/tts.py). */
 async function readAloud(texts, voice, dir) {
   await writeFile(path.join(dir, "shots.json"), JSON.stringify({ voice: VOICES[voice] ?? VOICES.female, texts }));
+  let silent = [];
   try {
-    await run(process.env.TTS_PYTHON ?? process.env.PYTHON ?? "python3", [VOICE_SCRIPT, path.join(dir, "shots.json"), dir], { timeout: 180_000 });
+    const { stdout } = await run(process.env.TTS_PYTHON ?? process.env.PYTHON ?? "python3", [VOICE_SCRIPT, path.join(dir, "shots.json"), dir], { timeout: 300_000 });
+    try {
+      silent = JSON.parse(stdout.trim().split("\n").at(-1)).silent ?? [];
+    } catch {
+      // an older script prints only the folder: every shot was read
+    }
   } catch (e) {
-    throw new VideoError(`Không tạo được giọng đọc (${e.stderr?.trim().split("\n").at(-1) ?? e.message}). Máy chủ cần python3 có edge-tts (pip install edge-tts).`);
+    if (e.killed) throw new VideoError("Không tạo được giọng đọc: dịch vụ giọng đọc miễn phí của Microsoft trả lời quá chậm (quá 5 phút). Thử lại sau ít phút (không mất credit).");
+    const last = e.stderr?.trim().split("\n").filter(Boolean).at(-1) || e.message;
+    // Only a missing package is the server's to fix; NoAudioReceived and network errors are Microsoft's free voice service.
+    const hint = /No module named|ModuleNotFoundError/.test(last) ? "Máy chủ cần python3 có edge-tts (pip install edge-tts)." : "Dịch vụ giọng đọc miễn phí của Microsoft đang không trả lời, thử lại sau ít phút (không mất credit).";
+    throw new VideoError(`Không tạo được giọng đọc (${last}). ${hint}`);
   }
-  return texts.map((_, i) => path.join(dir, `s${i + 1}.mp3`));
+  return { files: texts.map((_, i) => path.join(dir, `s${i + 1}.mp3`)), silent };
 }
 
 const mediaLength = async (file) => Number((await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file])).stdout) || 0;
@@ -534,6 +544,7 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
 
   const STILL_NEGATIVE = "text, letters, words, watermark, logo, signage, sign lettering, menu board, blurry, low quality, deformed, extra fingers";
   const narratedFields = (job, slides, seconds, title) => ({
+    ...(job.voiceGaps?.length ? { notice: `Dịch vụ giọng đọc của Microsoft không đọc được cảnh ${job.voiceGaps.join(", ")}: cảnh đó không có tiếng (phụ đề vẫn hiện đủ). Bấm Chạy lại nếu muốn có giọng đọc đầy đủ.` } : {}),
     video: { file: `${job.id}.mp4`, duration: seconds, ratio: job.input.ratio, title, shots: slides.map((x) => ({ narration: x.narration, visual: x.prompt, role: x.role, image: x.image })) },
   });
 
@@ -597,7 +608,9 @@ export function createVideoService({ dataDir, timeoutMs, mock, log = console }) 
       } else {
         await setPhase("Đang tạo giọng đọc…");
         const voice = job.input.lang === "en" ? `en-${job.input.voice ?? "female"}` : (job.input.voice ?? "female");
-        voices = await readAloud(slides.map((x) => x.narration), voice, dir);
+        const read = await readAloud(slides.map((x) => x.narration), voice, dir);
+        voices = read.files;
+        job.voiceGaps = read.silent; // shots Edge kept refusing: silent, said on the result page
         talk = await Promise.all(voices.map(mediaLength));
       }
       let dur = talk.map((t) => LEAD + t + FADE + 0.25);

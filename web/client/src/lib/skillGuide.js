@@ -273,6 +273,15 @@ export const GUIDE = {
     ],
     output: ["3 bài theo 3 góc khác nhau", "Tiêu đề ngắn cho từng bài", "Lưu ý khi đăng"],
   },
+  "shop-about": {
+    perks: ["Có từ khoá khu vực", "Đếm sẵn ký tự", "Không bịa thông tin"],
+    steps: [
+      ["Ghi khu vực", "Quận, thành phố hoặc khu phố của quán."],
+      ["Ghi thông tin thật", "Món nổi bật, năm mở, dịch vụ. Thiếu gì AI bỏ qua, không đoán."],
+      ["Dán vào từng trang", "Google Business → Thông tin → Mô tả; Facebook → Giới thiệu; Instagram → Chỉnh sửa trang cá nhân."],
+    ],
+    output: ["Mô tả Google Business", "Giới thiệu ngắn Facebook và Instagram", "Yelp với quán ở Mỹ", "Từ khoá đã dùng"],
+  },
   "sales-insight": {
     perks: ["Dùng file thật của quán", "Số liệu tính sẵn", "Không đoán"],
     steps: [
@@ -308,6 +317,15 @@ export const GUIDE = {
       ["In hoặc tạo link", "In menu A4, hoặc lưu thành menu điện tử kèm mã QR để in lên bàn."],
     ],
     output: ["Menu A4 hai cột, in hoặc lưu PDF", "Menu điện tử mở trên điện thoại, không cần cài app", "Mã QR dẫn tới menu, đổi giá không cần in lại mã"],
+  },
+  survey: {
+    perks: ["Miễn phí", "Khách không cần đăng nhập", "Báo ngay góp ý chưa tốt"],
+    steps: [
+      ["Tạo khảo sát", "Ghi tên quán, chọn trang khách tiếng Việt hay tiếng Anh."],
+      ["In mã QR", "Dán lên bàn hoặc kẹp vào hoá đơn: \"Quét để góp ý cho quán\"."],
+      ["Đọc góp ý", "Xem điểm trung bình theo 7, 30, 90 ngày; liên hệ lại khách chưa hài lòng."],
+    ],
+    output: ["Mã QR dẫn tới trang góp ý 3 câu", "Điểm món ăn, phục vụ và tỉ lệ khách quay lại", "Email ngay khi có góp ý chưa tốt"],
   },
   "event-banner": {
     perks: ["Miễn phí", "14 dịp lễ", "5 khổ ảnh"],

@@ -12,6 +12,7 @@ export function memoryAdapter() {
   const watch = new Map();
   const users = new Map();
   const errors = [];
+  const answers = []; // guests' answers to a shop's table survey
   let settings = {};
   let seeded = false;
 
@@ -70,6 +71,16 @@ export function memoryAdapter() {
     async saveFeedback(item) {
       feedback.push(clone(item));
     },
+    /** Table survey answers: one survey's, newest first. */
+    async loadAnswers(surveyId, limit = 2000) {
+      return answers.filter((a) => a.surveyId === surveyId).sort(newestFirst).slice(0, limit).map(clone);
+    },
+    async saveAnswer(a) {
+      answers.push(clone(a));
+    },
+    async deleteAnswers(surveyId) {
+      for (let i = answers.length - 1; i >= 0; i--) if (answers[i].surveyId === surveyId) answers.splice(i, 1);
+    },
     async loadSettings() {
       return clone(settings);
     },
@@ -88,7 +99,7 @@ export function memoryAdapter() {
     /** Everything, for a backup: { collection: [docs] }. */
     async exportAll() {
       const all = (m) => [...m.values()].map(clone);
-      return { jobs: all(jobs), library: all(library), schedule: all(schedule), watch: all(watch), users: all(users), feedback: feedback.map(clone), errors: errors.map(clone), meta: [{ id: "settings", ...clone(settings) }] };
+      return { jobs: all(jobs), library: all(library), schedule: all(schedule), watch: all(watch), users: all(users), feedback: feedback.map(clone), errors: errors.map(clone), answers: answers.map(clone), meta: [{ id: "settings", ...clone(settings) }] };
     },
     /** Insert starter items exactly once per database. */
     async seedOnce(items) {

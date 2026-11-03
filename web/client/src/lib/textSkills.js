@@ -131,6 +131,17 @@ export const TEXT_SKILLS = {
     ],
     notes: ["3 bài theo 3 góc khác nhau, mỗi bài có tiêu đề và 3 đến 5 câu.", "Giọng hàng xóm, không quảng cáo dồn dập, không hashtag.", "Đăng từ trang doanh nghiệp của quán trên Nextdoor."],
   },
+  "shop-about": {
+    type: "shop-about",
+    label: "Viết phần giới thiệu",
+    eta: "dưới 1 phút",
+    fields: [
+      { name: "business", label: "Quán", placeholder: "Phở Cali", required: true },
+      { name: "area", label: "Khu vực", hint: "Quận, thành phố hoặc khu phố, để khách tìm \"phở gần đây\" thấy quán.", placeholder: "Quận 1, TP.HCM", required: true },
+      { name: "facts", kind: "area", label: "Thông tin thật về quán", hint: "Món nổi bật, phong cách, năm mở, ai đứng bếp, ngồi lại hay mang về, giao qua app nào. AI chỉ dùng những gì bạn ghi.", placeholder: "Phở bò, nước dùng hầm xương 12 tiếng. Món nổi bật: phở tái nạm. Gia đình anh Minh mở từ 2015. Có máy lạnh, mang về, giao GrabFood.", required: true },
+    ],
+    notes: ["Viết cho Google Business (tối đa 750 ký tự), Facebook (101 ký tự), Instagram (150 ký tự); quán ở Mỹ có thêm Yelp.", "Số ký tự do hệ thống đếm và báo nếu dài quá.", "Không ghi giá hay giờ mở cửa vì Google không cho phép quảng cáo trong phần mô tả. Nhập tiếng Anh thì viết tiếng Anh."],
+  },
   nearby: {
     type: "nearby",
     label: "Tìm đối thủ quanh quán",

@@ -15,6 +15,10 @@ import { fetchTrends } from "./sources/trends.mjs";
 import { compareTable, nearbyReport, trendsReport } from "./research.mjs";
 import { TREND_AREAS } from "../shared/trendAreas.js";
 
+// Seconds a reel list may take in all (paging, then each reel's reactions): Facebook is sometimes slow (30-60 s a request),
+// so the script hands back what it read in time (fewer reels, or ranked by plays) before runScript gives up at 4 minutes.
+const SCAN_BUDGET = "140";
+
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}K` : String(n));
 
 /** TikTok: search the videos, read their numbers, watch the top ones, then hand everything to the model. */
@@ -47,7 +51,7 @@ async function comparePrompt(input, { setPhase, signal }) {
     const name = new URL(url).pathname.split("/").filter(Boolean)[0] ?? url;
     await setPhase(`Đang đọc kênh ${i + 1}/${input.urls.length}: @${name}…`);
     try {
-      const list = await runScript("fanpage-analyzer", "list_reels.py", [url, "--count", "50", "--stats", "--limit", "100"], { signal });
+      const list = await runScript("fanpage-analyzer", "list_reels.py", [url, "--count", "50", "--stats", "--budget", SCAN_BUDGET, "--limit", "100"], { signal });
       const st = await runScript("fanpage-analyzer", "analyze_reels.py", ["--tz", input.tz ?? "Asia/Ho_Chi_Minh"], { signal, stdin: JSON.stringify(list) });
       pages.push({
         name, url,
@@ -63,7 +67,9 @@ async function comparePrompt(input, { setPhase, signal }) {
     }
   }
   const ok = pages.filter((p) => !p.error);
-  if (ok.length < 2) throw new Error(`Không đọc được đủ kênh để so sánh (${pages.filter((p) => p.error).map((p) => `@${p.name}`).join(", ")} lỗi). Kiểm tra lại link fanpage.`);
+  // Each failed page with its reason, so the owner knows whether to fix the link or just try later.
+  const why = (err) => (/Không tìm thấy trang/.test(err) ? "không có trang này trên Facebook (sai link?)" : /Không thấy reel/.test(err) ? "không thấy reel nào (không có reel công khai, hoặc Facebook đang tạm chặn)" : /quá \d+ phút|timed out|timeout/i.test(err) ? "Facebook phản hồi quá chậm" : err.slice(0, 120));
+  if (ok.length < 2) throw new Error(`Không đọc được đủ kênh để so sánh (${pages.filter((p) => p.error).map((p) => `@${p.name}: ${why(p.error)}`).join("; ")}). Kiểm tra lại link fanpage hoặc thử lại sau ít phút.`);
   await setPhase("AI đang so sánh các kênh…");
   return {
     fields: { compare: pages },
@@ -90,7 +96,7 @@ async function comparePrompt(input, { setPhase, signal }) {
 async function campaignPrompt(job, { setPhase, signal }) {
   const { url } = job.input;
   await setPhase("Bước 1/3: đang quét kênh đối thủ…");
-  const data = await runScript("fb-reel-reader", "list_reels.py", [url, "--count", "30", "--stats", "--limit", "10"], { signal });
+  const data = await runScript("fb-reel-reader", "list_reels.py", [url, "--count", "30", "--stats", "--budget", SCAN_BUDGET, "--limit", "10"], { signal });
   const reels = (data.reels ?? []).slice(0, 3);
   if (!reels.length) throw new Error("Không đọc được reel nào của kênh đối thủ. Kiểm tra lại link fanpage.");
   const { notes, log } = directEnabled()
@@ -486,7 +492,7 @@ async function scanDirect(job, { setPhase, signal }) {
       };
     }
     await setPhase(`Đang quét ${input.depth} reel gần nhất…`);
-    const data = await runScript("fb-reel-reader", "list_reels.py", [input.url, "--count", String(input.depth), "--stats", "--limit", "30"], { signal });
+    const data = await runScript("fb-reel-reader", "list_reels.py", [input.url, "--count", String(input.depth), "--stats", "--budget", SCAN_BUDGET, "--limit", "30"], { signal });
     const reels = data.reels ?? [];
     if (!reels.length) throw new Error("Không đọc được reel nào của kênh này. Kênh có thể riêng tư hoặc chưa có reel.");
     const scanned = data.scanned ?? data.count ?? reels.length; // scanned = reels read; count = reels kept
@@ -506,7 +512,7 @@ async function scanDirect(job, { setPhase, signal }) {
 
   if (job.type === "fanpage") {
     await setPhase("Đang đọc 100 reel gần nhất của fanpage…");
-    const list = await runScript("fanpage-analyzer", "list_reels.py", [input.url, "--count", "100", "--stats", "--limit", "200"], { signal });
+    const list = await runScript("fanpage-analyzer", "list_reels.py", [input.url, "--count", "100", "--stats", "--budget", SCAN_BUDGET, "--limit", "200"], { signal });
     await setPhase(`Đã đọc ${list.count ?? list.reels?.length ?? 0} reel, đang tính số liệu…`);
     const stats = await runScript("fanpage-analyzer", "analyze_reels.py", ["--tz", input.tz ?? "Asia/Ho_Chi_Minh"], { signal, stdin: JSON.stringify(list) });
     await setPhase("AI đang viết báo cáo…");
@@ -522,7 +528,7 @@ async function scanDirect(job, { setPhase, signal }) {
 
   if (job.type === "clone" && input.source === "url") {
     await setPhase("Đang đọc 30 reel gần nhất của kênh đối thủ…");
-    const data = await runScript("channel-cloner", "list_reels.py", [input.url, "--count", "30", "--stats", "--limit", String(Math.min(input.count + 5, 20))], { signal });
+    const data = await runScript("channel-cloner", "list_reels.py", [input.url, "--count", "30", "--stats", "--budget", SCAN_BUDGET, "--limit", String(Math.min(input.count + 5, 20))], { signal });
     const reels = data.reels ?? [];
     if (!reels.length) throw new Error("Không đọc được bài nào của kênh đối thủ. Thử dán nội dung bài viết thay cho link.");
     await setPhase(`Đã đọc ${data.count ?? reels.length} bài, AI đang viết ${input.count} bài mới…`);

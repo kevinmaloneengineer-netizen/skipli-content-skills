@@ -479,6 +479,24 @@ const OCCASIONS = `## Dịp 1: Halloween (2026-10-31)
 **Mẫu video nên dùng:** Top 3 món phải thử
 **Đăng lúc nào:** 5 days before, in the morning.`;
 
+const ABOUT = `## Google Business
+Phở Cali là quán phở bò ở Quận 1, TP.HCM, nấu nước dùng từ xương bò hầm 12 tiếng mỗi sáng. Món nên thử là phở tái nạm và phở đặc biệt, bánh phở tươi giao trong ngày. Quán do gia đình anh Minh mở từ năm 2015, có chỗ ngồi máy lạnh, nhận mang về và giao qua GrabFood, ShopeeFood.
+
+## Facebook
+Phở bò Quận 1, nước dùng hầm xương 12 tiếng. Ngồi lại, mang về hay giao tận nơi.
+
+## Instagram
+Phở bò Quận 1 🍜
+Nước dùng hầm 12 tiếng mỗi sáng
+Mở từ 2015 · Giao GrabFood, ShopeeFood
+
+## Từ khoá đã dùng
+- phở bò Quận 1
+- quán phở TP.HCM
+- phở tái nạm
+- phở giao tận nơi Quận 1
+`;
+
 const NEXTDOOR = `## Bài 1: Introduce the place
 **Subject:** Your neighborhood pho spot on Main St
 Hi neighbors! We're Pho Cali on Main St. We make our broth every morning and love seeing familiar faces. Stop by and say hi.
@@ -496,7 +514,7 @@ Cold day ahead. A hot bowl of pho is a few minutes away on Main St. Our hours: [
 - Trả lời mọi bình luận trong ngày.
 - Ưu đãi nên đơn giản, dễ dùng.`;
 
-const REPLIES = { "delivery-menu": DELIVERY, "us-occasions": OCCASIONS, "nextdoor-post": NEXTDOOR, "zalo-message": ZALO, "promo-plan": PROMO, "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
+const REPLIES = { "shop-about": ABOUT, "delivery-menu": DELIVERY, "us-occasions": OCCASIONS, "nextdoor-post": NEXTDOOR, "zalo-message": ZALO, "promo-plan": PROMO, "gbp-post": GBP, yelp: MAPS, instagram: FANPAGE, campaign: PLAN, compare: COMPARE, review: REVIEW, menu: MENU, inbox: INBOX, hashtag: HASHTAG, maps: MAPS, tiktok: TIKTOK, "fb-reels": FB, threads: THREADS, write: WRITE, clone: CLONE, fanpage: FANPAGE, livestream: LIVESTREAM, image: "```json\n" + IMAGE + "\n```", plan: PLAN, video: "```json\n" + VIDEO + "\n```" };
 
 /** Canned report for the "Xem kết quả mẫu" page of a skill (null for skills whose result is media). */
 export const sampleReply = (type) => (type === "image" || type === "video" ? null : REPLIES[type] ?? null);

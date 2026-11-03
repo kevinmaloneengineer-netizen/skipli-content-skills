@@ -133,7 +133,7 @@ export function buildJob(type, raw, refs = {}) {
 }
 
 /** Job types whose result is copy for customers (scan reports stay in Vietnamese for the owner). */
-const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan", "delivery-menu", "us-occasions", "nextdoor-post", "post-score", "story-behind", "dish-riddle"]);
+const CONTENT_TYPES = new Set(["write", "review", "menu", "inbox", "hashtag", "livestream", "plan", "clone", "campaign", "image", "video", "gbp-post", "zalo-message", "promo-plan", "delivery-menu", "us-occasions", "nextdoor-post", "post-score", "story-behind", "dish-riddle", "shop-about"]);
 
 /** Zalo OA messages: what the message is for, and the button under it. */
 export const ZALO_GOALS = { back: "Mời khách quen lâu chưa ghé quay lại", offer: "Báo ưu đãi đang có", new: "Giới thiệu món mới", birthday: "Chúc mừng sinh nhật khách", event: "Ngày lễ hoặc sự kiện của quán" };
@@ -169,8 +169,9 @@ export const ENGLISH_RULE = [
   "KHÔNG BỊA điều quán chưa nói: địa chỉ, giao hàng hay ship (phạm vi, thời gian), cách thanh toán, đổi trả hay hoàn tiền, chỗ đậu xe, món chay hay không gluten, mã giảm giá, giảm giá, quà tặng, nguồn nguyên liệu, giải thưởng. Chưa có thì để chỗ trống như [ADDRESS], [DELIVERY], [PAYMENT], [PARKING], [OFFER], hoặc khuyên khách hỏi quán. Điều chủ quán ĐÃ nhập (giá, ưu đãi, giờ, chính sách) thì dùng nguyên văn, không thay bằng chỗ trống.",
 ].join("\n");
 const VI_MARKS = /[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i;
-// Vietnamese typed without accents ("quan lau bo ngon") must not count as English.
-const VI_PLAIN = /\b(quan|lau|bo|pho|com|bun|ngon|gia|mon|khach|ban|cua|cho|nhe|nha hang|tiem|uu dai|giam)\b/gi;
+// Vietnamese typed without accents ("quan lau bo ngon") must not count as English. Dish names English menus
+// use too (pho, bun, com) are left out: "Pho Cali, a family pho shop… rare beef pho" is English.
+const VI_PLAIN = /\b(quan|lau|bo|ngon|gia|mon|khach|ban|cua|cho|nhe|nha hang|tiem|uu dai|giam)\b/gi;
 function userText(raw = {}) {
   // Names and addresses do not tell the language ("Phở Cali" is a restaurant in Milwaukee).
   const skip = /^(url|urls|start|platform|platforms|tone|style|size|ratio|engine|voice|mode|kind|layout|templateId|referenceJobId|referenceImageId|logoId|photoIds|panelIds|pillars|source|lang|name|city|address|phone)$/;
@@ -188,7 +189,8 @@ export function isEnglish(text) {
   const vi = words.filter((w) => VI_MARKS.test(w)).length;
   if (vi / words.length > 0.2) return false;
   if ((text.match(VI_PLAIN) ?? []).length >= 2 && vi > 0) return false;
-  if ((text.match(VI_PLAIN) ?? []).length >= 3) return false;
+  const plain = (text.match(VI_PLAIN) ?? []).length;
+  if (plain >= 3 && plain / words.length > 0.1) return false; // a share, so one long English text can name a few
   return (text.match(/\b[a-z]{3,}\b/gi) ?? []).length >= 3;
 }
 
@@ -800,6 +802,17 @@ function buildSpec(type, raw, refs) {
       const sections = ["Write Nextdoor posts with the skill nextdoor-post.", `Restaurant: ${business}`, `Neighborhood: ${neighborhood}`, `Purpose: ${NEXTDOOR_GOALS[goal]}`];
       if (details) sections.push(`Real facts (use only these for dates, offers, hours, address):\n${details}`);
       return { agent: "writer", direct: "nextdoor-post", title: `Nextdoor · ${business.slice(0, 60)}`, input: { business, neighborhood, goal, details }, prompt: sections.join("\n\n") };
+    }
+    case "shop-about": {
+      const business = str(raw.business, "quán", { required: true, max: 200 });
+      const area = str(raw.area, "khu vực", { required: true, max: 200 });
+      const facts = str(raw.facts, "thông tin thật về quán", { required: true, max: 1500 });
+      // A US restaurant (English input) gets the whole ask in English: told only at the end, the free models
+      // still wrote Vietnamese and left out Yelp.
+      const sections = isEnglish(`${business}\n${area}\n${facts}`)
+        ? ["Write the restaurant's about texts with the skill shop-about, in natural American English. This is a US restaurant: include the ## Yelp section.", `Restaurant: ${business}`, `Area: ${area}`, `Real facts about the restaurant (use only these):\n${facts}`]
+        : ["Viết phần giới thiệu quán theo skill shop-about, bằng tiếng Việt. Quán ở Việt Nam: bỏ hẳn mục ## Yelp.", `Quán: ${business}`, `Khu vực: ${area}`, `Thông tin có thật của quán (chỉ dùng những gì ở đây):\n${facts}`];
+      return { agent: "writer", direct: "shop-about", title: `Giới thiệu quán · ${business.slice(0, 60)}`, input: { business, area, facts }, prompt: sections.join("\n\n") };
     }
 
     case "nearby": {

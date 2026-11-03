@@ -595,6 +595,48 @@ function NextdoorArt() {
   );
 }
 
+/** Khảo sát tại bàn: a phone with a row of stars and a QR square beside it. */
+function SurveyArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(92 14)">
+        <rect width="74" height="124" rx="14" className="art-card" />
+        {[0, 1, 2, 3, 4].map((i) => <path key={i} transform={`translate(${10 + i * 11} 40)`} d="M5 0 L6.5 3.5 L10 3.8 L7.3 6.2 L8.1 9.8 L5 7.9 L1.9 9.8 L2.7 6.2 L0 3.8 L3.5 3.5 Z" className={i < 4 ? "art-hi" : "art-mid"} />)}
+        <rect x="12" y="66" width="50" height="7" rx="3.5" className="art-mid" />
+        <rect x="12" y="80" width="38" height="7" rx="3.5" className="art-mid" />
+        <rect x="12" y="98" width="50" height="14" rx="7" className="art-hi" />
+      </g>
+      <g transform="translate(190 46)">
+        <rect width="58" height="58" rx="8" className="art-card" />
+        <rect x="8" y="8" width="16" height="16" rx="2" className="art-hi" />
+        <rect x="34" y="8" width="16" height="16" rx="2" className="art-hi" />
+        <rect x="8" y="34" width="16" height="16" rx="2" className="art-hi" />
+        <rect x="36" y="36" width="6" height="6" className="art-mid" />
+        <rect x="44" y="44" width="6" height="6" className="art-mid" />
+      </g>
+    </svg>
+  );
+}
+
+/** Giới thiệu quán: a map pin over a listing card with its text lines. */
+function AboutArt() {
+  return (
+    <svg viewBox="0 0 320 150" aria-hidden="true">
+      <g transform="translate(70 30)">
+        <rect width="180" height="96" rx="12" className="art-card" />
+        <rect x="16" y="18" width="70" height="10" rx="5" className="art-hi" />
+        <rect x="16" y="40" width="148" height="7" rx="3.5" className="art-mid" />
+        <rect x="16" y="54" width="132" height="7" rx="3.5" className="art-mid" />
+        <rect x="16" y="68" width="96" height="7" rx="3.5" className="art-mid" />
+      </g>
+      <g transform="translate(222 14)">
+        <path d="M18 0 C29 0 36 8 36 18 C36 31 18 48 18 48 C18 48 0 31 0 18 C0 8 7 0 18 0 Z" className="art-hi" />
+        <circle cx="18" cy="18" r="7" className="art-card" />
+      </g>
+    </svg>
+  );
+}
+
 /** Đọc file bán hàng: a spreadsheet grid with bars on the best sellers. */
 function SalesArt() {
   return (
@@ -832,7 +874,7 @@ function TrendsArt() {
   );
 }
 
-const ART = { nearby: NearbyArt, "review-compare": ReviewCompareArt, trends: TrendsArt, "delivery-menu": DeliveryArt, "us-occasions": OccasionsArt, "nextdoor-post": NextdoorArt, "sales-insight": SalesArt, "zalo-message": ZaloArt, "promo-plan": PromoArt, combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
+const ART = { survey: SurveyArt, "shop-about": AboutArt, nearby: NearbyArt, "review-compare": ReviewCompareArt, trends: TrendsArt, "delivery-menu": DeliveryArt, "us-occasions": OccasionsArt, "nextdoor-post": NextdoorArt, "sales-insight": SalesArt, "zalo-message": ZaloArt, "promo-plan": PromoArt, combos: CombosArt, qr: QrArt, "menu-board": MenuBoardArt, "event-banner": EventBannerArt, "gbp-post": GbpPost, "photo-fix": PhotoFix, "reel-cut": ReelCut, dub: Dub, "dish-riddle": DishRiddle, "story-behind": RecipeStory, "weather-post": WeatherPost, "post-score": PostScore, "live-recap": LiveRecap, yelp: Yelp, instagram: Instagram, reels: Reels, threads: Threads, write: Write, clone: Clone, video: Video, library: Library, tiktok: Tiktok, fanpage: Fanpage, image: ImageArt, schedule: Schedule, livestream: Livestream, maps: Maps, menu: Menu, review: Review, inbox: Inbox, hashtag: Hashtag, compare: Compare, campaign: Campaign };
 
 export default function SkillArt({ id }) {
   const Art = ART[id];

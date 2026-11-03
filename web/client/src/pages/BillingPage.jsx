@@ -89,7 +89,7 @@ export default function BillingPage() {
   tiers[1] = [...(tiers[1] ?? []), ...SKILLS.filter((s) => s.type && !priced.has(s.type) && s.status !== "soon" && !["library", "schedule", "qr", "combos"].includes(s.id))];
   // Credit activity: top-ups (+) and runs that took credits (−, or refunded), newest first.
   const runs = (jobs ?? []).filter((j) => j.credits).map((j) => ({ id: j.id, at: j.createdAt, delta: j.refunded ? 0 : -j.credits, label: j.title, refunded: !!j.refunded, credits: j.credits }));
-  const tops = (data.payments ?? []).map((p) => ({ id: p.id, at: p.at, delta: p.credits, label: p.disputed ? "Nạp credit · đang hoàn tiền qua ngân hàng" : "Nạp credit", amount: p.amount != null ? money(p.amount, p.currency || data.currency) : "" }));
+  const tops = (data.payments ?? []).map((p) => ({ id: p.id, at: p.at, delta: p.credits, label: p.disputed ? "Nạp credit · đang hoàn tiền qua ngân hàng" : "Nạp credit", amount: p.amount != null ? money(p.amount, p.currency || data.currency) : "", receipt: data.enabled && /^cs_/.test(p.id) }));
   const activity = [...runs, ...tops].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 12);
   const month = Date.now() - 30 * 86_400_000;
   const spent = runs.filter((r) => Date.parse(r.at) > month).reduce((n, r) => n - r.delta, 0);
@@ -172,7 +172,7 @@ export default function BillingPage() {
               {activity.map((x) => (
                 <li key={x.id} className={x.delta > 0 ? "is-in" : x.refunded ? "is-refund" : "is-out"}>
                   <span className="billing-dot" aria-hidden="true">{x.delta > 0 ? "+" : x.refunded ? "↺" : "−"}</span>
-                  <span className="billing-what"><b>{x.label}</b><small>{ago(x.at)}{x.amount ? ` · ${x.amount}` : ""}{x.refunded ? " · đã hoàn credit" : ""}</small></span>
+                  <span className="billing-what"><b>{x.label}</b><small>{ago(x.at)}{x.amount ? ` · ${x.amount}` : ""}{x.refunded ? " · đã hoàn credit" : ""}{x.receipt && <> · <a href={`/api/billing/receipt/${encodeURIComponent(x.id)}`} target="_blank" rel="noopener noreferrer">Biên lai</a></>}</small></span>
                   <span className="billing-delta">{x.delta > 0 ? `+${x.delta}` : x.refunded ? `±${x.credits}` : x.delta}</span>
                 </li>
               ))}

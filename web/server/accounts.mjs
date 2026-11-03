@@ -259,6 +259,8 @@ export function createAccounts({ store, dataDir, signup = null }) {
       if (req.user) return next();
       // Open without a login: the session and login calls, the page itself, and the canned sample results
       // shown on the home page (no customer data in them).
+      // A guest answering a shop's table survey (the QR page) needs no account either.
+      if (req.method === "POST" && /^\/api\/public\/surveys\/[^/]+\/answers$/.test(req.path)) return next();
       const open = ["/api/login", "/api/login/mfa", "/api/session", "/api/setup", "/api/logout", "/api/signup", "/api/stripe/webhook", "/api/password/forgot", "/api/password/reset", "/api/client-error", "/api/verify", "/api/verify/resend"].includes(req.path) || (req.method === "GET" && /^\/api\/(samples|public)\//.test(req.path)) || (req.method === "GET" && !req.path.startsWith("/api/") && !req.path.startsWith("/media/")) || (req.method === "GET" && req.path.startsWith("/media/") && !!req.sharedJobs);
       if (open) return next();
       if (req.path.startsWith("/api/")) return res.status(401).set("Cache-Control", "no-store").json({ error: "Cần đăng nhập", auth: true });

@@ -37,6 +37,11 @@ HEADERS = {
 }
 
 
+# Set from --budget in main(): when the whole run should hand back what it has (0 = no limit).
+DEADLINE = None
+BUDGET = 0
+
+
 def fail(msg):
     print(json.dumps({"ok": False, "error": msg}, ensure_ascii=False))
     sys.exit(1)
@@ -59,10 +64,23 @@ def reels_tab_url(url):
     return f"https://www.facebook.com/{parts[0]}/reels/"
 
 
-def fetch_raw(url):
+def fetch_raw(url, max_seconds=None):
+    """The page's HTML. max_seconds caps the whole download: Facebook sometimes trickles a page for a
+    minute or more, which the per-read socket timeout never catches."""
     req = urllib.request.Request(url, headers=HEADERS)
+    start = time.time()
     with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode("utf-8", "ignore")
+        if max_seconds is None:
+            return r.read().decode("utf-8", "ignore")
+        chunks = []
+        while True:
+            if time.time() - start > max_seconds:
+                raise TimeoutError(f"page took over {max_seconds}s")
+            b = r.read(65536)
+            if not b:
+                break
+            chunks.append(b)
+        return b"".join(chunks).decode("utf-8", "ignore")
 
 
 def fetch(url):
@@ -240,6 +258,9 @@ def paginate(tab, html, reels, want):
     collections = _collection_candidates(html)
     collection = None
     while len(reels) < want and cursor:
+        # Paging gets most of the budget; the rest is for reading each reel's reactions.
+        if DEADLINE and time.time() > DEADLINE - 0.4 * BUDGET:
+            return reels[:want], f"Facebook was slow: stopped paging at {len(reels)} latest reels"
         try:
             if collection is None:  # find which collection id answers with reels
                 for c in collections:
@@ -278,7 +299,7 @@ def _first_int(pattern, html):
 def fetch_stats(reel):
     """Add reactions / comments / shares from the reel's own page (1 light request, no download)."""
     try:
-        html = fetch_raw(f"https://www.facebook.com/reel/{reel['id']}")
+        html = fetch_raw(f"https://www.facebook.com/reel/{reel['id']}", max_seconds=45)
     except Exception as e:  # noqa: BLE001 - one bad reel must not break the whole scan
         reel["stats_error"] = str(e)
         return reel
@@ -351,7 +372,12 @@ def main():
                    help="how many latest reels to scan (default 10 = the ones embedded in the page; up to 200, paged logged-out)")
     p.add_argument("--stats", action="store_true",
                    help="also fetch reactions/comments/shares per reel and sort by engagement")
+    p.add_argument("--budget", type=float, default=0,
+                   help="seconds to spend on --stats (0 = no limit); when Facebook is slow the reels not reached keep only their plays")
     args = p.parse_args()
+    global DEADLINE, BUDGET
+    BUDGET = args.budget
+    DEADLINE = time.time() + args.budget if args.budget else None
 
     if args.ids:
         raw = args.ids
@@ -403,6 +429,9 @@ def scan_tab(url):
                               "caption": "", "plays": None, "plays_text": None,
                               "duration": None, "created": None, "music": None, "owner": None})
     if not reels:
+        # A name that is no page answers Facebook's generic shell: titled just "Facebook", no og:url.
+        if not re.search(r'<meta property="og:url"', html) and re.search(r"<title[^>]*>\s*Facebook\s*</title>", html):
+            fail("page not found - check the link: Facebook has no page at this address")
         fail("no reels found - the profile may be private, have no reels, or Facebook blocked the request")
     return tab, reels, html
 
@@ -411,13 +440,26 @@ def run(args, tab, reels, note=None):
     scanned = len(reels)
     sort_by = "recent"
     if args.stats:
+        # Facebook sometimes takes 30-60 s per reel page: past the budget, the reels not started yet are
+        # skipped (ranked by plays) so the caller gets an answer instead of a timeout.
+        deadline = DEADLINE
+
+        def stats_in_time(r):
+            if deadline and time.time() > deadline:
+                r["stats_skipped"] = True
+                return r
+            return fetch_stats(r)
+
         # Small pool + slight stagger to stay polite and avoid rate limits.
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             futures = []
             for r in reels:
-                futures.append(pool.submit(fetch_stats, r))
+                futures.append(pool.submit(stats_in_time, r))
                 time.sleep(0.25)
             reels = [f.result() for f in futures]
+        skipped = sum(1 for r in reels if r.get("stats_skipped"))
+        if skipped:
+            note = f"{note or ''}; Facebook was slow: reactions read for {len(reels) - skipped}/{len(reels)} reels, the rest ranked by plays".lstrip("; ")
         for r in reels:
             r["engagement"] = engagement(r)
         reels.sort(key=lambda r: (r["engagement"], r.get("plays") or 0), reverse=True)

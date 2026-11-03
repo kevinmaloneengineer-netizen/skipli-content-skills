@@ -42,7 +42,8 @@ import { readMenu } from "./vision.mjs";
 import { promoReport } from "./promo.mjs";
 import { aboutLengths } from "./about.mjs";
 import { createLowCreditMail, LOW_CREDITS } from "./notify.mjs";
-import { answerFields, BACK, isLow, SurveyError, surveyFields, surveyStats } from "./survey.mjs";
+import { answerFields, BACK, isHigh, isLow, SurveyError, surveyFields, surveyStats } from "./survey.mjs";
+import { emailHtml, esc, pill, quote, rows, stars } from "./emailLayout.mjs";
 import { detectMapping, MAX_SALES_BYTES, readSheet, salesStats, statsText } from "./sales.mjs";
 import { cleanOccasions } from "./usDays.mjs";
 
@@ -1348,19 +1349,38 @@ export async function createApp(config, adapter) {
     if (!surveyTake(`day|${item.id}`, 300, 86_400_000)) throw new HttpError(429, "Hôm nay quán đã nhận rất nhiều góp ý, thử lại ngày mai nhé.");
     await store.addAnswer({ surveyId: item.id, ...answer });
     res.status(201).json({ ok: true });
-    // A poor answer: the owner hears about it now (one email an hour per survey at most).
+    // A poor answer: the owner hears about it now. Praise too, when the owner wants it. One email of each
+    // kind an hour per survey at most, so a busy evening does not flood the inbox.
+    const kind = isLow(answer) ? (item.survey.alert ? "low" : null) : isHigh(answer) && item.survey.praise !== false ? "praise" : null;
     const owner = accounts ? store.getUser(accounts.ownerId(item)) : null;
-    if (isLow(answer) && item.survey.alert && mailer.enabled && owner?.email && Date.now() - (surveyAlerted.get(item.id) ?? 0) > 3600_000) {
-      surveyAlerted.set(item.id, Date.now());
+    const key = `${kind}|${item.id}`;
+    if (kind && mailer.enabled && owner?.email && Date.now() - (surveyAlerted.get(key) ?? 0) > 3600_000) {
+      surveyAlerted.set(key, Date.now());
+      const low = kind === "low";
       const link = `${origin(req)}/survey`;
       const lines = [`Món ăn: ${answer.food}/5 sao`, `Phục vụ: ${answer.service}/5 sao`, `Sẽ quay lại: ${BACK[answer.back]}`, answer.comment && `Góp ý: ${answer.comment}`, answer.contact && `Liên hệ khách để lại: ${answer.contact}`].filter(Boolean);
-      const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const title = low ? `Góp ý chưa tốt tại ${item.survey.name}` : `Khách khen ${item.survey.name}`;
+      const tip = low ? "Liên hệ lại sớm thường giữ được khách và tránh một review xấu trên mạng." : "Lời khen này dùng được cho bài đăng hoặc nhắn nhân viên đã phục vụ tốt. Mời khách để lại review Google khi họ vui là lúc dễ nhận nhất.";
       mailer.send({
         to: owner.email,
-        subject: `Góp ý chưa tốt từ khách tại ${item.survey.name}`,
-        text: `Một khách vừa góp ý qua mã QR ở ${item.survey.name}:\n\n${lines.join("\n")}\n\nXem tất cả góp ý: ${link}\nLiên hệ lại sớm thường giữ được khách và tránh một review xấu trên mạng.`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:460px;margin:auto;padding:24px;color:#1c1a16"><h2 style="margin:0 0 12px">Góp ý chưa tốt tại ${esc(item.survey.name)}</h2><p>${lines.map(esc).join("<br>")}</p><p style="margin:22px 0"><a href="${link}" style="background:#1c1a16;color:#f8f4ec;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:700">Xem tất cả góp ý</a></p><p style="color:#6e685d;font-size:13px">Liên hệ lại sớm thường giữ được khách và tránh một review xấu trên mạng. Tắt email này trong trang Khảo sát tại bàn.</p></div>`,
-      }).catch((e) => console.error(`survey alert mail failed: ${e.message}`));
+        subject: low ? `Góp ý chưa tốt từ khách tại ${item.survey.name}` : `Khách vừa khen ${item.survey.name} ${"★".repeat(Math.round((answer.food + answer.service) / 2))}`,
+        text: `Một khách vừa góp ý qua mã QR ở ${item.survey.name}:\n\n${lines.join("\n")}\n\nXem tất cả góp ý: ${link}\n${tip}`,
+        html: emailHtml({
+          preheader: answer.comment || `Món ${answer.food}/5 · Phục vụ ${answer.service}/5`,
+          kicker: low ? pill("Cần chú ý") : pill("Khách khen", { bg: "#dcebdf", fg: "#2e6b4f" }),
+          title,
+          intro: "Một khách vừa góp ý qua mã QR trên bàn.",
+          body:
+            rows([
+              ["Món ăn", stars(answer.food)],
+              ["Phục vụ", stars(answer.service)],
+              ["Sẽ quay lại", answer.back === "no" ? pill(BACK.no) : answer.back === "yes" ? pill(BACK.yes, { bg: "#dcebdf", fg: "#2e6b4f" }) : pill(BACK.maybe, { bg: "#f6e6bf", fg: "#8a5a00" })],
+              ...(answer.contact ? [["Khách để lại liên hệ", /^[+\d][\d\s.-]{6,}$/.test(answer.contact) ? `<a href="tel:${esc(answer.contact.replace(/[^\d+]/g, ""))}" style="color:#1c1a16;font-weight:700">${esc(answer.contact)}</a>` : `<b>${esc(answer.contact)}</b>`]] : []),
+            ]) + (answer.comment ? quote(answer.comment) : ""),
+          button: { href: link, label: "Xem tất cả góp ý" },
+          footer: `${tip}<br>Tắt email này trong trang Khảo sát tại bàn.`,
+        }),
+      }).catch((e) => console.error(`survey ${kind} mail failed: ${e.message}`));
     }
   });
 

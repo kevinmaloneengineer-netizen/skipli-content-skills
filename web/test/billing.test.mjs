@@ -269,3 +269,55 @@ test("chargeback: the bank takes the money back, the credits go too; spent alrea
     s.close();
   }
 });
+
+test("Stripe receipt: looked up once for the account's own top-up and kept; the checkout asks Stripe to email it", async () => {
+  const { openStore } = await import("../server/store/index.mjs");
+  const { createBilling } = await import("../server/billing.mjs");
+  const store = await openStore(memoryAdapter());
+  const user = await store.addUser({ email: "cafe@shop.com", role: "member", credits: 100, passHash: "x:y", payments: [{ id: "cs_test_0123456789abc", credits: 100, amount: 900 }] });
+  const asked = [];
+  const fetchFn = async (url, init) => {
+    asked.push({ url, body: init?.body ? String(init.body) : "" });
+    if (url.includes("/checkout/sessions/cs_test")) return new Response(JSON.stringify({ id: "cs_test_0123456789abc", payment_intent: "pi_123" }));
+    if (url.includes("/payment_intents/pi_123")) return new Response(JSON.stringify({ id: "pi_123", latest_charge: { receipt_url: "https://pay.stripe.com/receipts/acct_1/ch_1/rcpt_x" } }));
+    if (url.endsWith("/checkout/sessions")) return new Response(JSON.stringify({ id: "cs_new", url: "https://checkout.stripe.com/c/pay/x" }));
+    return new Response("{}", { status: 404 });
+  };
+  const billing = createBilling({ store, env: { STRIPE_SECRET_KEY: "sk_test_x", CREDIT_PACKS: "100:900" }, fetchFn });
+  assert.equal(await billing.receipt(store.getUser(user.id), "cs_test_0123456789abc"), "https://pay.stripe.com/receipts/acct_1/ch_1/rcpt_x");
+  assert.match(asked[1].url, /payment_intents\/pi_123\?expand\[\]=latest_charge/);
+  const n = asked.length;
+  assert.equal(await billing.receipt(store.getUser(user.id), "cs_test_0123456789abc"), "https://pay.stripe.com/receipts/acct_1/ch_1/rcpt_x");
+  assert.equal(asked.length, n); // kept on the payment, no second lookup
+  await assert.rejects(billing.receipt(store.getUser(user.id), "cs_someone_elses"), /Không tìm thấy/);
+  await billing.checkout(store.getUser(user.id), billing.packs[0].id, "https://app.example");
+  assert.match(decodeURIComponent(asked.at(-1).body), /payment_intent_data\[receipt_email\]=cafe@shop\.com/);
+});
+
+test("low credits: one reminder email when the balance drops under 5, not again within 3 days, never for the admin", async () => {
+  const { openStore } = await import("../server/store/index.mjs");
+  const { createBilling } = await import("../server/billing.mjs");
+  const { createLowCreditMail } = await import("../server/notify.mjs");
+  const store = await openStore(memoryAdapter());
+  const sent = [];
+  const mailer = { enabled: true, send: async (m) => sent.push(m) };
+  const billing = createBilling({ store, env: {}, onLow: createLowCreditMail({ store, mailer, publicUrl: "https://app.example/" }), lowAt: 5 });
+  const user = await store.addUser({ email: "cafe@shop.com", role: "member", credits: 6, passHash: "x:y" });
+  const run = async () => (await billing.charge(store.getUser(user.id), "write"), await sleep(10));
+  await run(); // 6 → 5: still at the line
+  assert.equal(sent.length, 0);
+  await run(); // 5 → 4: under it
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, "cafe@shop.com");
+  assert.match(sent[0].subject, /Còn 4 credit/);
+  assert.match(sent[0].text, /https:\/\/app\.example\/billing/);
+  await store.updateUser(user.id, { credits: 5 });
+  await run(); // under again within 3 days: no second mail
+  assert.equal(sent.length, 1);
+  await store.updateUser(user.id, { credits: 5, lowCreditMailAt: new Date(Date.now() - 4 * 86_400_000).toISOString() });
+  await run(); // 4 days later
+  assert.equal(sent.length, 2);
+  const admin = await store.addUser({ email: "boss@shop.com", role: "admin", credits: 5, passHash: "x:y" });
+  assert.equal(await billing.charge(admin, "write"), null); // the admin is not metered at all
+  assert.equal(sent.length, 2);
+});

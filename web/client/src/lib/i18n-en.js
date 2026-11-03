@@ -2665,7 +2665,13 @@ export const EN = {
 "Xem điểm trung bình theo 7, 30, 90 ngày; liên hệ lại khách chưa hài lòng.": "See averages over 7, 30 or 90 days; reach out to unhappy guests.",
 "Mã QR dẫn tới trang góp ý 3 câu": "QR code to a 3-question feedback page",
 "Điểm món ăn, phục vụ và tỉ lệ khách quay lại": "Food and service scores and how many would return",
-"Email ngay khi có góp ý chưa tốt": "An email the moment feedback is poor"
+"Email ngay khi có góp ý chưa tốt": "An email the moment feedback is poor",
+"Gửi email khi khách khen (món và phục vụ từ 4 sao, chắc chắn quay lại)": "Email me when a guest praises us (4 stars or more for food and service, will come back)",
+"Đã bật email khi khách khen": "Praise emails on",
+"Đã tắt email khi khách khen": "Praise emails off",
+"Bật email khen": "Turn on praise emails",
+"Tắt email khen": "Turn off praise emails",
+"Email báo góp ý chưa tốt và email khi khách khen: mỗi loại tối đa 1 lần mỗi giờ cho mỗi khảo sát. Góp ý chưa tốt để bạn liên hệ lại khách trước khi họ viết review xấu.": "Poor feedback and praise emails: at most one of each per hour per survey. Poor feedback lets you reach the guest before they write a bad review."
 };
 export const EN_PATTERNS = [
 [

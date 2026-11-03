@@ -138,6 +138,15 @@ export async function openStore(adapter, { templates = [], cacheSize = 1000 } = 
       await adapter.deleteSlot(id);
     },
 
+    // ---- table survey answers (read on demand: they can be many, not kept in memory) ----
+    async addAnswer(a) {
+      const item = { id: randomUUID(), createdAt: now(), ...a };
+      await adapter.saveAnswer(item);
+      return item;
+    },
+    listAnswers: (surveyId, limit) => adapter.loadAnswers(surveyId, limit),
+    deleteAnswers: (surveyId) => adapter.deleteAnswers(surveyId),
+
     /** Store a feedback message (write-only: read them in the Firestore console). */
     async addFeedback({ message, contact, page }) {
       const item = { id: randomUUID(), message, contact, page, createdAt: now() };
