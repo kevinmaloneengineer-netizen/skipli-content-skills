@@ -23,6 +23,8 @@ import { PILLARS, splitLivestream, splitVariants, toPlainText } from "../lib/tex
 import PhotoResult from "../components/PhotoResult.jsx";
 import { accepts } from "../lib/drop.js";
 import ComboResult from "../components/ComboResult.jsx";
+import FacebookPost from "../components/FacebookPost.jsx";
+import { useAuth } from "../components/AuthGate.jsx";
 import MapLinkField, { MapPreview } from "../components/MapLinkField.jsx";
 import TemplateTexts from "../components/TemplateTexts.jsx";
 import { DISH_TEMPLATES, FEATURED, OFFER_TEMPLATES, SAMPLE_VERSION, TEMPLATES, sampleOf } from "../lib/videoTemplates.js";
@@ -135,6 +137,9 @@ function RewriteBar({ body, rewritten, onChange }) {
 
 function Variants({ job, onSave, prefix, edits, setEdits }) {
   const copy = useCopy();
+  const { facebook } = useAuth();
+  const [posting, setPosting] = useState(null); // the text being posted to a Facebook Page
+  const [posts, setPosts] = useState(job.fbPosts ?? []);
   const { variants, intro, rest } = splitVariants(job.result, prefix);
   if (!variants.length) return <Markdown className="card md">{job.result}</Markdown>;
   const name = job.input?.topic ?? job.input?.business ?? job.title;
@@ -148,6 +153,13 @@ function Variants({ job, onSave, prefix, edits, setEdits }) {
   return (
     <>
       {intro && <Markdown className="card md notes lead">{intro}</Markdown>}
+      {posts.length > 0 && (
+        <div className="card fb-posted">
+          <b>Đã đăng lên Fanpage</b>
+          <ul>{posts.map((p) => <li key={p.postId}><a href={p.url} target="_blank" rel="noopener noreferrer">{p.pageName}{p.scheduled ? " (hẹn giờ)" : ""}</a> · {ago(p.at)}</li>)}</ul>
+        </div>
+      )}
+      {posting != null && <FacebookPost text={posting} jobId={job.id} onClose={() => setPosting(null)} onPosted={(out) => setPosts((list) => [...list, { postId: out.id, url: out.url, pageName: out.pageName, scheduled: out.scheduled, at: new Date().toISOString() }])} />}
       <div className="variants">
         {variants.map((v, i) => {
           const body = rewritten[i] != null ? fillBlanks(rewritten[i], edits?.fills) : v.body;
@@ -158,6 +170,7 @@ function Variants({ job, onSave, prefix, edits, setEdits }) {
                 <div className="actions">
                   <button className="btn small" onClick={() => copy(toPlainText(body))}><CopyIcon />Sao chép</button>
                   {onSave && <button className="btn small" onClick={() => onSave(`${name} · ${v.title}`, toPlainText(body))}><SaveIcon />Lưu</button>}
+                  {facebook && !job.sample && <button className="btn small fb-btn" onClick={() => setPosting(toPlainText(body))}>Đăng Fanpage</button>}
                 </div>
               </div>
               <Markdown key={body}>{body}</Markdown>

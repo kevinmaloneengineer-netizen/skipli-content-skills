@@ -41,7 +41,7 @@ export default function AuthGate({ children }) {
   // Signed up but the email code is not entered yet: still a guest everywhere, the login page asks for the code.
   const pendingVerify = !!session.signedIn && session.user?.verified === false;
   const guest = session.mode !== "open" && (!session.signedIn || pendingVerify);
-  const value = { mode: session.mode, user: session.user ?? null, signedIn: !guest, guest, setup: !!session.setup, signup: !!session.signup, billing: !!session.billing, trial: session.trial ?? null, codes: !!session.codes, mfa: !!session.mfa, pendingVerify, reload: load };
+  const value = { mode: session.mode, user: session.user ?? null, signedIn: !guest, guest, setup: !!session.setup, signup: !!session.signup, billing: !!session.billing, trial: session.trial ?? null, codes: !!session.codes, facebook: !!session.facebook, mfa: !!session.mfa, pendingVerify, reload: load };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

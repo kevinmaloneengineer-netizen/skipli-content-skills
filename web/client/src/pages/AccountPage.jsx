@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import { BackLink } from "../components/SkillShell.jsx";
 import { useAuth } from "../components/AuthGate.jsx";
@@ -36,12 +37,15 @@ export default function AccountPage() {
   }
   if (!user) return <div className="narrow"><BackLink /><p className="empty">Web chưa bật tài khoản riêng.</p></div>;
   return (
-    <div className="narrow">
+    <div className="narrow wide settings-page">
       <BackLink />
       <header className="plain-head">
-        <h1>Tài khoản</h1>
+        <h1>Cài đặt</h1>
         <p>{user.name ? `${user.name} · ` : ""}{user.contact}</p>
       </header>
+      {/* Left: the account itself (password, 2-step login, devices). Right: what it connects to. */}
+      <div className="settings-grid">
+      <div className="settings-col">
       <form className="form-card" onSubmit={submit}>
         <h2>Đổi mật khẩu</h2>
         <label className="field"><span className="field-label">Mật khẩu hiện tại</span><input type="password" value={form.current} onChange={set("current")} autoComplete="current-password" required /></label>
@@ -58,6 +62,11 @@ export default function AccountPage() {
         <p className="account-note">Quên đăng xuất ở máy dùng chung, hoặc nghi có người khác vào tài khoản? Bấm nút dưới để mọi trình duyệt khác phải đăng nhập lại. Trình duyệt bạn đang dùng vẫn giữ đăng nhập.</p>
         <button type="button" className="btn" onClick={() => setAsking(true)}>Đăng xuất khỏi mọi thiết bị khác</button>
       </section>
+      </div>
+      <div className="settings-col">
+        <FacebookPages />
+      </div>
+      </div>
       {asking && (
         <ConfirmDialog
           title="Đăng xuất mọi thiết bị khác?"
@@ -170,3 +179,56 @@ function TwoStep() {
     </section>
   );
 }
+
+/** The Facebook Pages this account posts to: connect (Facebook Login), see them, disconnect. */
+function FacebookPages() {
+  const { user, facebook, reload } = useAuth();
+  const toast = useToast();
+  const { search, hash } = useLocation();
+  const navigate = useNavigate();
+  const pages = user.fbPages ?? [];
+  // Back from Facebook: say how it went once, then clean the address.
+  useEffect(() => {
+    const q = new URLSearchParams(search);
+    if (!q.get("fb")) return;
+    if (q.get("fb") === "ok") toast(`Đã kết nối ${q.get("n")} Fanpage.`);
+    else toast(q.get("msg") || "Chưa kết nối được Facebook.");
+    reload();
+    navigate("/account#facebook", { replace: true });
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (hash === "#facebook") document.getElementById("facebook")?.scrollIntoView({ block: "start" });
+  }, [hash]);
+  if (!facebook) return null;
+
+  async function remove(page) {
+    try {
+      await api(`/facebook/pages/${encodeURIComponent(page.id)}`, { method: "DELETE" });
+      toast(`Đã ngắt kết nối ${page.name}`);
+      reload();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  return (
+    <section className="form-card account-card" id="facebook">
+      <h2>Fanpage Facebook</h2>
+      <p className="account-note">Kết nối một lần, sau đó bấm "Đăng Fanpage" ở mọi kết quả viết bài để đăng thẳng lên Trang của bạn, ngay hoặc hẹn giờ. Web chỉ đăng khi bạn bấm, không bao giờ tự đăng.</p>
+      {pages.length > 0 && (
+        <ul className="fb-pages">
+          {pages.map((p) => (
+            <li key={p.id}>
+              <span className="fb-avatar" aria-hidden="true">f</span>{/* the Page picture is on Facebook's servers, which the page's CSP does not load */}
+              <b>{p.name}</b>
+              <button type="button" className="btn small ghost" onClick={() => remove(p)}>Ngắt kết nối</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <a className="btn primary fb-connect" href="/api/facebook/connect">{pages.length ? "Kết nối lại hoặc thêm Trang" : "Kết nối Facebook"}</a>
+      <small className="field-hint fb-hint">Chỉ đăng được lên Fanpage bạn quản lý, không đăng được lên trang cá nhân. Khi Facebook hỏi, hãy chọn các Trang muốn dùng và cho phép quyền đăng bài.</small>
+    </section>
+  );
+}
+

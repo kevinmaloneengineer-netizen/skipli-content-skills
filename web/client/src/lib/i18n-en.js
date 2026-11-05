@@ -2671,7 +2671,25 @@ export const EN = {
 "Đã tắt email khi khách khen": "Praise emails off",
 "Bật email khen": "Turn on praise emails",
 "Tắt email khen": "Turn off praise emails",
-"Email báo góp ý chưa tốt và email khi khách khen: mỗi loại tối đa 1 lần mỗi giờ cho mỗi khảo sát. Góp ý chưa tốt để bạn liên hệ lại khách trước khi họ viết review xấu.": "Poor feedback and praise emails: at most one of each per hour per survey. Poor feedback lets you reach the guest before they write a bad review."
+"Email báo góp ý chưa tốt và email khi khách khen: mỗi loại tối đa 1 lần mỗi giờ cho mỗi khảo sát. Góp ý chưa tốt để bạn liên hệ lại khách trước khi họ viết review xấu.": "Poor feedback and praise emails: at most one of each per hour per survey. Poor feedback lets you reach the guest before they write a bad review.",
+"Đăng Fanpage": "Post to Page",
+"Đăng lên Fanpage": "Post to Facebook Page",
+"Đã đăng lên Fanpage": "Posted to Facebook Page",
+"Bạn chưa kết nối Fanpage nào. Kết nối một lần ở trang Tài khoản, sau đó đăng thẳng từ mọi kết quả.": "No Facebook Page connected yet. Connect once on the Account page, then post straight from any result.",
+"Kết nối Facebook": "Connect Facebook",
+"Xem bài trên Facebook": "View post on Facebook",
+"Trang": "Page",
+"Nội dung (sửa được trước khi đăng)": "Text (edit before posting)",
+"Ảnh (tuỳ chọn)": "Photo (optional)",
+"Hẹn giờ (tuỳ chọn, từ 15 phút tới 29 ngày tới)": "Schedule (optional, 15 minutes to 29 days ahead)",
+"Bài còn chỗ trống như [GIÁ], [LINK]. Điền vào trước khi đăng nhé.": "The post still has blanks like [PRICE], [LINK]. Fill them in before posting.",
+"Đang đăng…": "Posting…",
+"Hẹn giờ đăng": "Schedule post",
+"Fanpage Facebook": "Facebook Pages",
+"Kết nối một lần, sau đó bấm \"Đăng Fanpage\" ở mọi kết quả viết bài để đăng thẳng lên Trang của bạn, ngay hoặc hẹn giờ. Web chỉ đăng khi bạn bấm, không bao giờ tự đăng.": "Connect once, then press \"Post to Page\" on any written result to post straight to your Page, now or scheduled. We only post when you press it, never on our own.",
+"Ngắt kết nối": "Disconnect",
+"Kết nối lại hoặc thêm Trang": "Reconnect or add Pages",
+"Chỉ đăng được lên Fanpage bạn quản lý, không đăng được lên trang cá nhân. Khi Facebook hỏi, hãy chọn các Trang muốn dùng và cho phép quyền đăng bài.": "Only Pages you manage can be posted to, not personal profiles. When Facebook asks, pick the Pages to use and allow posting."
 };
 export const EN_PATTERNS = [
 [
@@ -3117,5 +3135,21 @@ export const EN_PATTERNS = [
 [
 "${n} · ${a}/${b} ký tự",
 "${n} · ${a}/${b} characters"
+],
+[
+"Đã kết nối ${n} Fanpage.",
+"Connected ${n} Facebook Page(s)."
+],
+[
+"Đã ngắt kết nối ${name}",
+"Disconnected ${name}"
+],
+[
+"Đã đăng lên ${name}.",
+"Posted to ${name}."
+],
+[
+"Đã hẹn giờ đăng lên ${name}.",
+"Scheduled on ${name}."
 ]
 ];

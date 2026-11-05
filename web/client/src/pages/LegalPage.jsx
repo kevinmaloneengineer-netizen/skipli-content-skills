@@ -48,6 +48,10 @@ const PRIVACY = [
     en: ["Feedback through a restaurant's QR code", "When you leave feedback through a restaurant's survey QR code, we keep the stars, whether you would come back, your note and any contact you choose to give, for that restaurant's owner to read. No sign-in, no IP address kept. The feedback is deleted when the owner deletes the survey."],
   },
   {
+    vi: ["Kết nối Facebook", "Khi bạn kết nối Fanpage, chúng tôi lưu tên, mã số Trang và mã truy cập Trang (đã mã hoá) để đăng bài bạn chọn lên Trang đó. Web chỉ đăng khi bạn bấm Đăng, không đọc tin nhắn hay dữ liệu cá nhân Facebook của bạn. Bấm Ngắt kết nối ở trang Tài khoản là mã truy cập bị xoá; bạn cũng có thể gỡ ứng dụng trong phần cài đặt Facebook."],
+    en: ["Facebook connection", "When you connect a Facebook Page, we keep the Page's name, id and its access token (encrypted) to post what you choose to that Page. We only post when you press Post, and never read your messages or personal Facebook data. Disconnect on the Account page deletes the token; you can also remove the app in your Facebook settings."],
+  },
+  {
     vi: ["Quản trị viên thấy gì", "Để hỗ trợ khi bạn gặp lỗi và chặn lạm dụng, quản trị viên xem được lịch sử sử dụng của tài khoản: công cụ đã chạy, thời gian, trạng thái, số credit và loại lỗi nếu có. Quản trị viên không xem nội dung bạn nhập hay kết quả bạn nhận."],
     en: ["What the admin sees", "To help when something fails and to stop abuse, the admin can see an account's usage: which tools ran, when, their status, the credits and the kind of error if any. The admin does not see what you type or the results you get."],
   },

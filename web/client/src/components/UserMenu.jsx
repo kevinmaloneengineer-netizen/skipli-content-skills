@@ -33,7 +33,7 @@ export default function UserMenu() {
           </div>
           {user.role === "admin" && <Link role="menuitem" to="/admin" onClick={() => setOpen(false)}>Quản lý tài khoản</Link>}
           {typeof user.credits === "number" && <Link role="menuitem" to="/billing" onClick={() => setOpen(false)}>Credit và nạp tiền</Link>}
-          <Link role="menuitem" to="/account" onClick={() => setOpen(false)}>Đổi mật khẩu</Link>
+          <Link role="menuitem" to="/account" onClick={() => setOpen(false)}>Cài đặt</Link>
           <button type="button" role="menuitem" onClick={logout}>Đăng xuất</button>
         </div>
       )}

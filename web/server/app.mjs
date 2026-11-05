@@ -1,6 +1,7 @@
 import express from "express";
 import compression from "compression";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -23,6 +24,7 @@ import { competitorsOf } from "./competitors.mjs";
 import { makeClip } from "./watch.mjs";
 import { createLimits } from "./limits.mjs";
 import { pageConfigured, publishToPage } from "./facebookPage.mjs";
+import { createFacebookConnect, FacebookError } from "./fbConnect.mjs";
 import { openStore } from "./store/index.mjs";
 import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
 import { BillingError, createBilling } from "./billing.mjs";
@@ -213,6 +215,7 @@ export async function createApp(config, adapter) {
   // SIGNUP=1: customers make their own account with trial credits and top up through Stripe (./billing.mjs).
   const mailer = config.mailer ?? createMailer(config.mailEnv ?? process.env); // sign-up and password codes, reminders
   const lowCreditMail = createLowCreditMail({ store, mailer, publicUrl: (config.billingEnv ?? process.env).PUBLIC_URL ?? process.env.PUBLIC_URL ?? "" });
+  const fb = createFacebookConnect({ store, env: config.fbEnv ?? process.env, fetchFn: config.fbFetch ?? fetch }); // each customer's own Facebook Pages
   const billing = createBilling({ store, env: config.billingEnv ?? process.env, fetchFn: config.fetchFn, onLow: lowCreditMail, lowAt: LOW_CREDITS });
   // Sign-up rules read live, so the admin's settings page applies without a restart.
   const signupRules = {
@@ -509,7 +512,7 @@ export async function createApp(config, adapter) {
     if (!accounts) return res.json({ mode: config.appPassword ? "password" : "open", required: !!config.appPassword, signedIn: gate.signedIn(req) });
     const user = accounts.userOf(req);
     const waiting = !user && accounts.pendingOf(req); // signed up, code not entered yet
-    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, mfa: !user && accounts.mfaPending(req), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled });
+    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, mfa: !user && accounts.mfaPending(req), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled, facebook: fb.enabled });
   });
   api.post("/login", (req, res) => gate.login(req, res));
   api.post("/logout", (req, res) => gate.logout(req, res));
@@ -1424,8 +1427,58 @@ export async function createApp(config, adapter) {
   });
 
   api.get("/facebook", (req, res) => {
-    res.json({ configured: pageConfigured() });
+    const pages = (req.user?.fbPages ?? []).map(({ id, name, picture }) => ({ id, name, picture }));
+    res.json({ configured: pages.length > 0 || pageConfigured(), connect: fb.enabled, pages });
   });
+
+  // ---- "Kết nối Facebook": each customer's own Pages, then a post straight from a result ----
+  const fbCall = async (fn) => {
+    try {
+      return await fn();
+    } catch (e) {
+      throw e instanceof FacebookError ? new HttpError(e.status, e.message) : e;
+    }
+  };
+  // Facebook sends the browser back to the address it was sent from (registered in the Meta app).
+  const fbRedirect = (req) => `${req.headers["x-forwarded-proto"] ?? req.protocol}://${req.get("host")}/api/facebook/callback`;
+  api.get("/facebook/connect", accountRoute(async (req, res) => {
+    res.redirect(302, await fbCall(() => fb.loginUrl(req.user, fbRedirect(req))));
+  }));
+  api.get("/facebook/callback", accountRoute(async (req, res) => {
+    const back = (q) => res.redirect(302, `/account?${new URLSearchParams(q)}#facebook`);
+    if (req.query.error) return back({ fb: "error", msg: "Bạn đã huỷ hoặc chưa cho phép kết nối Facebook." });
+    try {
+      const pages = await fb.finish(req.user, { code: String(req.query.code ?? ""), state: String(req.query.state ?? ""), redirectUri: fbRedirect(req) });
+      back({ fb: "ok", n: String(pages.length) });
+    } catch (e) {
+      if (!(e instanceof FacebookError)) console.error(`facebook connect failed: ${e.message}`);
+      back({ fb: "error", msg: e instanceof FacebookError ? e.message : "Chưa kết nối được Facebook, thử lại sau ít phút." });
+    }
+  }));
+  api.delete("/facebook/pages/:id", accountRoute(async (req, res) => {
+    res.json({ left: await fb.disconnect(req.user, req.params.id) });
+  }));
+  const fbPosts = new Map(); // userId → post times (30 an hour)
+  api.post("/facebook/post", accountRoute(async (req, res) => {
+    const now = Date.now();
+    const recent = (fbPosts.get(req.user.id) ?? []).filter((t) => now - t < 3600_000);
+    if (recent.length >= 30) throw new HttpError(429, "Bạn đã đăng 30 bài trong 1 giờ qua, nghỉ một chút rồi đăng tiếp nhé.");
+    const b = req.body ?? {};
+    // A photo from this account's uploads (picked on the page), sent to Facebook as the file itself.
+    let image = null;
+    if (b.photoId) {
+      if (!video.hasUpload(String(b.photoId))) throw new HttpError(400, "Không tìm thấy ảnh đã chọn, chọn lại ảnh nhé.");
+      const ext = path.extname(String(b.photoId)).toLowerCase();
+      image = { data: await readFile(path.join(videoRoot, "uploads", String(b.photoId))), mime: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg" };
+    }
+    const job = b.jobId ? await store.getJob(String(b.jobId)) : null;
+    if (b.jobId && (!job || !own(req, job))) throw new HttpError(404, "Không tìm thấy kết quả này");
+    const out = await fbCall(() => fb.post(req.user, { pageId: b.pageId, message: b.message, image, at: b.at }));
+    fbPosts.set(req.user.id, [...recent, now]);
+    // The result remembers where it went, for the link on its page.
+    if (job) await store.updateJob(job.id, { fbPosts: [...(job.fbPosts ?? []), { pageId: String(b.pageId), pageName: out.pageName, postId: out.id, url: out.url, scheduled: out.scheduled, at: new Date().toISOString() }].slice(-20) });
+    res.status(201).json(out);
+  }));
 
   /** Post a calendar slot to the Facebook Page (now, or scheduled on Facebook for its time). */
   api.post("/schedule/:id/publish", async (req, res) => {
@@ -1433,7 +1486,11 @@ export async function createApp(config, adapter) {
     if (!slot || !own(req, slot)) throw new HttpError(404, "Không tìm thấy bài trong lịch");
     if (slot.fbPostId) throw new HttpError(409, "Bài này đã được gửi lên Facebook");
     try {
-      const out = await publishToPage({ message: [slot.body || slot.title].join(""), at: slot.at });
+      // The customer's own connected Page first (the one picked, else the first); the server-wide Page otherwise.
+      const mine = req.user?.fbPages ?? [];
+      const out = mine.length
+        ? await fbCall(() => fb.post(req.user, { pageId: req.body?.pageId ?? mine[0].id, message: slot.body || slot.title, at: slot.at }))
+        : await publishToPage({ message: [slot.body || slot.title].join(""), at: slot.at });
       res.json({ slot: await store.updateSlot(slot.id, { status: out.scheduled ? "scheduled" : "posted", fbPostId: out.id }), ...out });
     } catch (e) {
       throw new HttpError(pageConfigured() ? 502 : 400, e.message);

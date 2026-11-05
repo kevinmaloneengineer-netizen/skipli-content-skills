@@ -62,6 +62,7 @@ export const publicUser = (u) =>
     disabled: !!u.disabled,
     disabledReason: u.disabledReason ?? null, // "dispute": locked by a chargeback (server/billing.mjs)
     mfa: u.mfa?.on ? { backupLeft: u.mfa.backup?.length ?? 0 } : null, // 2-step login on (admin)
+    fbPages: (u.fbPages ?? []).map(({ id, name, picture }) => ({ id, name, picture })), // connected Facebook Pages (never their tokens)
     createdAt: u.createdAt,
   };
 /** Not confirmed yet: an account made before sign-ups waited for their code (cleaned up after a day). */
