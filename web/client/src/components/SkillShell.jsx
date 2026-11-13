@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { CATEGORIES, SKILLS } from "../lib/constants.js";
 import { GUIDE } from "../lib/skillGuide.js";
+import { TUTORIALS } from "../lib/tutorials.js";
 import { JobHistory } from "./JobBits.jsx";
 import SkillArt from "./SkillArt.jsx";
 
@@ -21,6 +22,27 @@ const Clock = () => (
 const Check = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
 );
+
+/** The tool's YouTube tutorial (privacy-enhanced player: no YouTube cookies until it is played). */
+function Tutorial({ id, title }) {
+  const video = TUTORIALS[id];
+  if (!video) return null;
+  return (
+    <section className="aside-card tutorial-card">
+      <h2>Video hướng dẫn</h2>
+      <div className="tutorial-frame">
+        <iframe
+          src={`https://www.youtube-nocookie.com/embed/${video}?rel=0`}
+          title={`Video hướng dẫn: ${title}`}
+          loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+        />
+      </div>
+    </section>
+  );
+}
 
 /**
  * Page frame for one skill: coloured hero (category, chips, art), the 3-step
@@ -83,6 +105,7 @@ export default function SkillShell({ id, actions, children, wide = false }) {
         <div className={wide ? "skill-layout wide" : "skill-layout"}>
           <div className="skill-main">{children}</div>
           <aside className="skill-aside">
+            <Tutorial id={id} title={skill.title} />
             <section className="aside-card">
               <h2>Bạn sẽ nhận được</h2>
               <ul className="aside-list">
@@ -95,7 +118,14 @@ export default function SkillShell({ id, actions, children, wide = false }) {
           </aside>
         </div>
       ) : (
-        children
+        <>
+          {TUTORIALS[id] && (
+            <div className="tutorial-solo">
+              <Tutorial id={id} title={skill.title} />
+            </div>
+          )}
+          {children}
+        </>
       )}
     </div>
   );

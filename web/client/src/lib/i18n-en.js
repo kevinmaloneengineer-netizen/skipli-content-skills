@@ -246,6 +246,7 @@ export const EN = {
 "Bạn kinh doanh": "Your business",
 "Bạn muốn thêm tính năng gì, chỗ nào chưa tiện?": "What feature would you like added, what’s inconvenient?",
 "Bạn sẽ nhận được": "You will receive",
+"Video hướng dẫn": "Video tutorial",
 "Bạn đã dùng hết credit.": "You have used all your credits.",
 "Bạn đã thử cà phê muối chưa? Vị mặn nhẹ, béo thơm, uống một lần là nhớ cả tuần ☕": "Have you tried salted coffee yet? Lightly salty, rich and creamy. One sip and you'll crave it all week ☕",
 "Bản dịch từng câu để chỉnh sửa": "Translate each sentence for editing",

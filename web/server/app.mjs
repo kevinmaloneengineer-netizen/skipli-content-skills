@@ -1603,7 +1603,7 @@ export async function createApp(config, adapter) {
 
   // Built React app (npm run build). In dev, Vite serves it and proxies /api here.
   if (existsSync(CLIENT_DIST)) {
-    const csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com https://maps.google.com https://www.google.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
+    const csp = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src https://www.youtube-nocookie.com https://www.facebook.com https://www.threads.com https://www.threads.net https://www.tiktok.com https://www.instagram.com https://maps.google.com https://www.google.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com";
     app.use(express.static(CLIENT_DIST, {
       index: false,
       setHeaders: (res, file) => {
