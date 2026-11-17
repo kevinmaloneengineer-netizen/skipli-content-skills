@@ -2,7 +2,11 @@
 // The combo job itself costs nothing; every step is an ordinary job that takes (and on failure gives
 // back) its own credits. A failed step does not stop the steps that do not need it.
 
+
 import { InputError } from "./prompts.mjs";
+
+// English interface: the text the combo writes for the next step is English too.
+const en = (c) => c.input?.uiLang === "en";
 
 const clip = (v, max) => String(v ?? "").trim().slice(0, max);
 
@@ -66,12 +70,12 @@ export const RECIPES = {
       {
         type: "write",
         title: "Bài đăng Facebook",
-        input: (c) => ({ platform: "facebook", topic: `${c.input.dish}: món mới của ${c.input.business}`, brief: c.input.details, variants: 3 }),
+        input: (c) => ({ platform: "facebook", topic: en(c) ? `${c.input.dish}: new at ${c.input.business}` : `${c.input.dish}: món mới của ${c.input.business}`, brief: c.input.details, variants: 3 }),
       },
       {
         type: "gbp-post",
         title: "Bài Google Business",
-        input: (c) => ({ business: c.input.business, promote: `Món mới: ${c.input.dish}`, button: "order", details: c.input.details }),
+        input: (c) => ({ business: c.input.business, promote: en(c) ? `New dish: ${c.input.dish}` : `Món mới: ${c.input.dish}`, button: "order", details: c.input.details }),
       },
       {
         type: "video",
@@ -98,7 +102,9 @@ export const RECIPES = {
         input(c) {
           const bad = items(section(c.steps[0].job.result, "Khách chê gì"));
           if (!bad.length) return null; // nothing to answer
-          return { review: `Tổng hợp những điểm khách chê trên Google Maps gần đây: ${bad.join("; ")}.`, stars: 2, business: c.input.business, style: "Cầu thị, xin lỗi chân thành, nói rõ quán sẽ cải thiện" };
+          return en(c)
+            ? { review: `What guests complained about on Google Maps lately: ${bad.join("; ")}.`, stars: 2, business: c.input.business, style: "Open to feedback, a sincere apology, say clearly how we will improve" }
+            : { review: `Tổng hợp những điểm khách chê trên Google Maps gần đây: ${bad.join("; ")}.`, stars: 2, business: c.input.business, style: "Cầu thị, xin lỗi chân thành, nói rõ quán sẽ cải thiện" };
         },
       },
       {
@@ -108,7 +114,7 @@ export const RECIPES = {
         input(c) {
           const good = items(section(c.steps[0].job.result, "Khách khen gì"));
           if (!good.length) return null;
-          return { business: c.input.business || "Quán", promote: `Những điều khách khen nhiều nhất: ${good.join("; ")}`, button: "learn" };
+          return { business: c.input.business || "Quán", promote: en(c) ? `What guests praise most: ${good.join("; ")}` : `Những điều khách khen nhiều nhất: ${good.join("; ")}`, button: "learn" };
         },
       },
     ],
@@ -132,7 +138,7 @@ export const RECIPES = {
         input(c) {
           const p = firstPromo(c.steps[0].job.result);
           if (!p) return null;
-          return { platform: "facebook", topic: `Khuyến mãi "${p.title}" của ${c.input.business}`, brief: `Chỉ dùng đúng các thông tin này, không đổi giá:\n${p.facts}`, variants: 3 };
+          return { platform: "facebook", topic: en(c) ? `"${p.title}" promotion at ${c.input.business}` : `Khuyến mãi "${p.title}" của ${c.input.business}`, brief: en(c) ? `Use only these facts, do not change the prices:\n${p.facts}` : `Chỉ dùng đúng các thông tin này, không đổi giá:\n${p.facts}`, variants: 3 };
         },
       },
       {
@@ -150,7 +156,7 @@ export const RECIPES = {
         needs: [0],
         input(c) {
           const p = firstPromo(c.steps[0].job.result);
-          return p && { business: c.input.business, promote: `Khuyến mãi: ${p.title}`, button: "offer", details: p.facts };
+          return p && { business: c.input.business, promote: en(c) ? `Promotion: ${p.title}` : `Khuyến mãi: ${p.title}`, button: "offer", details: p.facts };
         },
       },
     ],

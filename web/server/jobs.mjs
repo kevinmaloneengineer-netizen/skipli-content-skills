@@ -1,11 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { directEnabled, runSkill } from "./llm.mjs";
-import { directSkill } from "./prompts.mjs";
+import { directSkill, OWNER_NOTES_EN, OWNER_NOTES_VI } from "./prompts.mjs";
 
 export const ACTIVE = new Set(["queued", "running"]);
 
 const REPORT_TYPES = new Set(["fb-reels", "threads", "tiktok", "maps", "yelp", "instagram", "fanpage", "compare", "nearby", "review-compare", "trends"]);
 const ENGLISH_REPORT = "LANGUAGE: write the report in natural US English. Keep in Vietnamese ONLY the structure the app reads: the section headings (\"## Tổng quan\", \"## Khách khen gì\"…), the table header rows (\"| Điểm khen | Số bài nhắc |\"), star markers like \"(5 sao)\" and labels like \"- Vì sao viral:\". Everything else is English: every table row, every bullet, every sentence (the first sentence of Tổng quan may keep the template wording with the numbers). Quotes keep their original language.";
+
+// English interface: the owner reads English, so everything the AI writes is English. The template's
+// Vietnamese headings and labels stay (the result views read them; the interface shows them in English).
+const ENGLISH_UI = "INTERFACE LANGUAGE: the owner uses the English interface and reads English. Write EVERYTHING in natural US English: copy for customers, notes and explanations for the owner, the opening summary line, comments, clip titles, and the names after a heading's colon. Translate any Vietnamese words that appear in the data you were given (e.g. bài, reel mỗi tuần, sáng, chiều, tối, ký tự, giây, đến) into English. Keep in Vietnamese ONLY the fixed section headings and labels of the skill's template exactly as written (e.g. \"## Câu đố\", \"**Tiêu đề:**\", \"## Tin 1:\", \"## Dịp 1:\", \"- Vì sao viral:\") because the app reads them; write no other Vietnamese.";
+function englishInterface(prompt, report) {
+  const out = prompt
+    .replace(/,? bằng tiếng Việt/g, "")
+    .replace(/Trả lời bằng tiếng Việt\.?/g, "")
+    .replace(/Dòng đầu viết bằng tiếng Việt, ví dụ:/g, "Dòng đầu viết bằng tiếng Anh, theo ý ví dụ sau:")
+    .replace(OWNER_NOTES_VI, OWNER_NOTES_EN);
+  return `${out}\n\n${report ? `${ENGLISH_REPORT}\n` : ""}${ENGLISH_UI}`;
+}
 
 /**
  * FIFO job runner. Concurrency defaults to 1: scans share one Chrome sidecar
@@ -99,16 +111,15 @@ export function createJobRunner({ store, goclaw, agents, concurrency, lanes = nu
       let { prompt, notice, fields, direct } = prepared;
       // English interface: reports in English, with the template's Vietnamese headings kept (the result
       // views read them; the interface shows them in English).
-      if (job.input?.uiLang === "en" && REPORT_TYPES.has(job.type)) {
-        prompt = `${prompt.replace(/,? bằng tiếng Việt/g, "").replace(/Trả lời bằng tiếng Việt\.?/g, "")}\n\n${ENGLISH_REPORT}`;
-      }
+      // Dubbing writes in the language the owner picked, whatever the interface.
+      if (job.input?.uiLang === "en" && prompt && job.type !== "dub") prompt = englishInterface(prompt, REPORT_TYPES.has(job.type));
       await store.updateJob(job.id, { prompt, notice: notice ?? null, ...fields }); // fields: data the result page draws (e.g. the Maps scorecard)
       // Jobs that need no tools run straight on the model when a key is set (much cheaper than an agent run).
       // Scan jobs whose data the server collected itself (prepare → direct) also skip the agent.
       const skill = direct?.skill ?? directSkill(job);
       const { content, usage, meta } =
         skill && directEnabled() && !goclaw.mock
-          ? await runSkill({ skill, from: direct?.from, prompt, signal: ctrl.signal })
+          ? await runSkill({ skill, from: direct?.from, prompt, signal: ctrl.signal, lang: job.input?.uiLang === "en" || job.input?.lang === "en" ? "en" : "vi", englishUi: job.input?.uiLang === "en" && job.type !== "dub" })
           : await goclaw.run({ agent: agents[job.agent], kind: job.type, prompt, timeoutMs, signal: ctrl.signal });
       const extra = await finish(job, content, { setPhase, signal: ctrl.signal });
       // llm: which engine answered and how many model calls it took (rate limits show up as tries > 1).

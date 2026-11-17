@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { CATEGORIES, SKILLS } from "../lib/constants.js";
 import { GUIDE } from "../lib/skillGuide.js";
-import { TUTORIALS } from "../lib/tutorials.js";
+import { tutorialFor } from "../lib/tutorials.js";
 import { JobHistory } from "./JobBits.jsx";
 import SkillArt from "./SkillArt.jsx";
 
@@ -25,7 +25,7 @@ const Check = () => (
 
 /** The tool's YouTube tutorial (privacy-enhanced player: no YouTube cookies until it is played). */
 function Tutorial({ id, title }) {
-  const video = TUTORIALS[id];
+  const video = tutorialFor(id);
   if (!video) return null;
   return (
     <section className="aside-card tutorial-card">
@@ -119,7 +119,7 @@ export default function SkillShell({ id, actions, children, wide = false }) {
         </div>
       ) : (
         <>
-          {TUTORIALS[id] && (
+          {tutorialFor(id) && (
             <div className="tutorial-solo">
               <Tutorial id={id} title={skill.title} />
             </div>

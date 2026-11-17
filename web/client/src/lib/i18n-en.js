@@ -1148,7 +1148,7 @@ export const EN = {
 "Mô tả cửa hàng": "Store description",
 "Mô tả ảnh (tiếng Anh)": "Image description (English)",
 "Mạng xã hội": "Social media",
-"Mất khoảng": "Lost about",
+"Mất khoảng": "Takes about",
 "Mất kết nối máy chủ": "Server connection lost",
 "Mẫu": "Template",
 "Mẫu (cấu trúc)": "Template (structure)",
@@ -1832,7 +1832,7 @@ export const EN = {
 "Tạo ảnh quảng cáo AI": "Create AI ad image",
 "Tải MP4": "Download MP4",
 "Tải PNG": "Download PNG",
-"Tải bản ghi": "Download recording",
+"Tải bản ghi": "Upload the recording",
 "Tải bản ghi buổi live, nhận các đoạn hay đã cắt, tóm tắt buổi live và bài cảm ơn khách.": "Download live recording, get highlighted clips, live summary, and a thank‑you note.",
 "Tải file Excel từ phần mềm bán hàng: biết món nào bán chạy, món nào nên khuyến mãi, giờ nào đông và vắng, rồi nhận bài đăng gợi ý.": "Upload Excel from sales software: identify top‑selling dishes, dishes to promote, peak/off‑peak hours, then get suggested posts.",
 "Tải lại": "Reload",
@@ -2411,7 +2411,7 @@ export const EN = {
 "đang chạy": "running",
 "đang chờ": "waiting",
 "đang tải, lần đầu mất vài phút": "loading, first time takes a few minutes",
-"đoạn": "segment",
+"đoạn": "clips",
 "đoạn, mỗi đoạn là một file MP4 riêng": "segment, each segment is a separate MP4 file",
 "đánh giá": "review",
 "đánh giá gần đây nên phân tích khen/chê chưa đầy đủ. Phân bố số sao vẫn tính trên toàn bộ": "Recent reviews need more thorough praise/critique analysis. Star distribution still calculated across all.",
@@ -2690,7 +2690,113 @@ export const EN = {
 "Kết nối một lần, sau đó bấm \"Đăng Fanpage\" ở mọi kết quả viết bài để đăng thẳng lên Trang của bạn, ngay hoặc hẹn giờ. Web chỉ đăng khi bạn bấm, không bao giờ tự đăng.": "Connect once, then press \"Post to Page\" on any written result to post straight to your Page, now or scheduled. We only post when you press it, never on our own.",
 "Ngắt kết nối": "Disconnect",
 "Kết nối lại hoặc thêm Trang": "Reconnect or add Pages",
-"Chỉ đăng được lên Fanpage bạn quản lý, không đăng được lên trang cá nhân. Khi Facebook hỏi, hãy chọn các Trang muốn dùng và cho phép quyền đăng bài.": "Only Pages you manage can be posted to, not personal profiles. When Facebook asks, pick the Pages to use and allow posting."
+"Chỉ đăng được lên Fanpage bạn quản lý, không đăng được lên trang cá nhân. Khi Facebook hỏi, hãy chọn các Trang muốn dùng và cho phép quyền đăng bài.": "Only Pages you manage can be posted to, not personal profiles. When Facebook asks, pick the Pages to use and allow posting.",
+"AI xem video": "AI watches the videos",
+"Cho Google Maps": "For Google Maps",
+"Cho Zalo OA": "For Zalo OA",
+"Cho Nextdoor": "For Nextdoor",
+"Content viral Threads": "Viral Threads content",
+"Content viral TikTok": "Viral TikTok content",
+"Menu in & QR": "Print menu & QR",
+"Review Yelp": "Yelp reviews",
+"Tin Zalo": "Zalo messages",
+"Menu cho DoorDash, Uber Eats, Grubhub": "Menus for DoorDash, Uber Eats, Grubhub",
+"Menu app giao": "Delivery app menus",
+"Đang chờ ghép ảnh thành video…": "Waiting to put the images into a video…",
+"Xem tất cả góp ý": "See all feedback",
+"Server vừa khởi động lại, đang chạy lại từ đầu…": "The server just restarted, running again from the start…",
+"Đang tìm video TikTok…": "Searching TikTok videos…",
+"AI đang so sánh các kênh…": "AI is comparing the channels…",
+"Bước 1/3: đang quét kênh đối thủ…": "Step 1/3: scanning the competitor's channel…",
+"Bước 3/3: AI đang lên kế hoạch và viết bài…": "Step 3/3: AI is planning and writing posts…",
+"Đang lấy đánh giá ít sao và nhiều sao nhất trên Google Maps…": "Getting the lowest and highest rated reviews on Google Maps…",
+"Đang lấy review ít sao và nhiều sao nhất trên Yelp…": "Getting the lowest and highest rated reviews on Yelp…",
+"AI đang đọc xu hướng…": "AI is reading the trends…",
+"AI đang viết báo cáo…": "AI is writing the report…",
+"Đang mở Google Maps…": "Opening Google Maps…",
+"Đang nghe lời trong video…": "Listening to the video…",
+"Đang nghe lời trong buổi live…": "Listening to the livestream…",
+"AI đang xem ảnh…": "AI is looking at the photo…",
+"Đang xem thời tiết hôm nay…": "Checking today's weather…",
+"Đang quét Threads…": "Scanning Threads…",
+"Đang đọc reel…": "Reading the reel…",
+"AI đang xem reel…": "AI is watching the reel…",
+"Đang đọc 100 reel gần nhất của fanpage…": "Reading the page's latest 100 reels…",
+"Đang đọc 30 reel gần nhất của kênh đối thủ…": "Reading the competitor's latest 30 reels…",
+"Đang lấy danh sách 100 reel mới nhất…": "Getting the latest 100 reels…",
+"Đang tạo ảnh demo…": "Creating demo images…",
+"Đang ghép ảnh thành video…": "Putting the images into a video…",
+"Đang đọc vị trí quán từ link Google Maps…": "Reading the location from the Google Maps link…",
+"Đang tạo giọng đọc…": "Creating the voiceover…",
+"Đang ghép ảnh, giọng đọc và phụ đề…": "Combining images, voiceover and subtitles…",
+"Đang nghe giọng của bạn để làm phụ đề…": "Listening to your voice to make subtitles…",
+"Đang thêm nhạc nền…": "Adding background music…",
+"Đang dựng video demo…": "Building the demo video…",
+"Script (đối thoại trên ảnh)": "Script (on-image dialogue)",
+"Script (đối thoại trên ảnh):": "Script (on-image dialogue):",
+"PAS: Nỗi đau · Khuếch đại · Giải pháp": "PAS: Problem · Agitate · Solution",
+"1. Problem: nêu đúng nỗi đau khách hàng trong 1 câu (dòng đầu tiên).\n2. Agitate: hậu quả nếu không giải quyết, cụ thể và đời thường (2 đến 3 câu).\n3. Solution: sản phẩm/dịch vụ giải quyết thế nào, 2 đến 3 lợi ích chính.\n4. CTA: một hành động duy nhất (inbox / comment / bấm link).": "1. Problem: name the customer's pain in one sentence (the first line).\n2. Agitate: what happens if it is not solved, concrete and everyday (2 to 3 sentences).\n3. Solution: how your product or service solves it, 2 to 3 key benefits.\n4. CTA: one single action (message / comment / click the link).",
+"AIDA: Chú ý · Quan tâm · Mong muốn · Hành động": "AIDA: Attention · Interest · Desire · Action",
+"1. Attention: câu mở gây tò mò hoặc con số bất ngờ.\n2. Interest: thông tin khiến người đọc thấy liên quan tới mình.\n3. Desire: lợi ích + bằng chứng có thật (đánh giá thật, số liệu thật).\n4. Action: CTA rõ ràng, kèm lý do hành động ngay (ưu đãi có thật).": "1. Attention: an opening that sparks curiosity or a surprising number.\n2. Interest: details that make readers feel it is about them.\n3. Desire: benefits plus real proof (real reviews, real numbers).\n4. Action: a clear CTA with a reason to act now (a real offer).",
+"Kể chuyện: Trước · Biến cố · Sau": "Storytelling: Before · Turning point · After",
+"1. Bối cảnh: nhân vật (bạn/khách hàng thật) và tình huống ban đầu.\n2. Biến cố: vấn đề/khó khăn gặp phải.\n3. Bước ngoặt: điều đã thay đổi (gắn với sản phẩm/kiến thức của bạn).\n4. Kết quả + bài học rút ra.\n5. Câu hỏi mở cho người đọc.": "1. Setting: a character (you or a real customer) and the starting situation.\n2. Trouble: the problem or difficulty they faced.\n3. Turning point: what changed (tied to your product or know-how).\n4. Result plus the lesson learned.\n5. An open question for the reader.",
+"Listicle: N mẹo / N sai lầm": "Listicle: N tips / N mistakes",
+"1. Tiêu đề: \"N [mẹo/sai lầm/cách] để [kết quả mong muốn]\".\n2. Danh sách N ý, mỗi ý 1 đến 2 dòng, bắt đầu bằng động từ.\n3. Ý cuối là ý \"đắt\" nhất (giữ chân người đọc).\n4. Kết: \"Lưu lại để dùng dần\" hoặc hỏi \"Bạn thấy ý nào hữu ích nhất?\".": "1. Title: \"N [tips/mistakes/ways] to [desired result]\".\n2. A list of N points, 1 to 2 lines each, each starting with a verb.\n3. Save the best point for last (keeps people reading).\n4. Close with \"Save this for later\" or ask \"Which tip helped most?\".",
+"Threads: Quan điểm gây tranh luận": "Threads: A hot take",
+"1. Một nhận định ngắn, ngược số đông (≤ 1 câu).\n2. 1 đến 2 câu lý do từ trải nghiệm thật.\n3. Hỏi lại: \"Mọi người nghĩ sao?\" / \"Có ai giống mình không?\".\nTổng ≤ 300 ký tự, không hashtag.": "1. One short take that goes against the crowd (1 sentence max).\n2. 1 to 2 sentences of reasons from real experience.\n3. Ask back: \"What do you think?\" / \"Anyone else?\".\nUnder 300 characters, no hashtags.",
+"Threads: Hỏi cộng đồng": "Threads: Ask the community",
+"1. Tình huống cụ thể bạn đang gặp (1 đến 2 câu).\n2. Câu hỏi có 2 đến 3 lựa chọn rõ ràng để người đọc dễ trả lời.\n3. Hứa tổng hợp câu trả lời sau.": "1. A specific situation you are in (1 to 2 sentences).\n2. A question with 2 to 3 clear options so people can answer easily.\n3. Promise to share a roundup of the answers.",
+"Video ngắn: Hook · Giá trị · CTA (30 đến 45 giây)": "Short video: Hook · Value · CTA (30 to 45 seconds)",
+"Hook (0 đến 3 giây): câu nói + chữ trên màn hình nêu kết quả/nỗi đau.\nThân bài (3 đến 35 giây): 3 cảnh, mỗi cảnh 1 ý: lời thoại + hình ảnh minh hoạ + text overlay.\nCTA (35 đến 45 giây): follow / comment từ khoá / xem link bio.\nCaption ≤ 150 ký tự + 3 đến 5 hashtag.": "Hook (0 to 3 s): a line plus on-screen text stating the result or the pain.\nBody (3 to 35 s): 3 scenes, one idea each: voiceover, visuals and text overlay.\nCTA (35 to 45 s): follow / comment a keyword / see the link in bio.\nCaption under 150 characters plus 3 to 5 hashtags.",
+"thương hiệu": "branding",
+"bán hàng": "sales",
+"chuyển đổi": "conversion",
+"quảng cáo": "ads",
+"giáo dục": "education",
+"dễ lưu": "saveable",
+"kịch bản": "script",
+"Sao": "Stars",
+"Lượt đánh giá": "Reviews",
+"Lượt reviews": "Reviews",
+"Đánh giá 1-2 sao": "1-2 star reviews",
+"Giá": "Price",
+"Thứ 6 mở": "Fri hours",
+"Fri mở": "Fri hours",
+"Địa chỉ": "Address",
+"Bài 1-3 sao đã đọc": "1-3 star reviews read",
+"Chủ quán trả lời bài 1-3 sao": "Owner replies to 1-3 star reviews",
+"Trung bình 12 tháng": "12-month average",
+"4 tuần gần nhất": "Last 4 weeks",
+"So với trung bình": "vs. average",
+"So với cùng kỳ năm trước": "vs. a year ago",
+"Tháng tìm nhiều": "Peak months",
+"Tháng tìm ít": "Low months",
+"Người ta tìm kèm": "Searched together",
+"Hay tìm cùng": "Often searched with",
+"Đang tăng nhanh": "Rising fast",
+"Bang": "State",
+"Số tiền": "Amount",
+"Giá thường": "Regular price",
+"Giá khuyến mãi": "Promo price",
+"Giá vốn": "Cost",
+"Lãi mỗi đơn": "Profit per order",
+"Lãi nếu bán giá thường": "Profit at regular price",
+"(thang 0 đến 100 chung cho các từ khoá, 100 là tuần được tìm nhiều nhất)": "(0 to 100 scale shared by all keywords, 100 is the most searched week)",
+"Lồng tiếng tiếng Việt": "Vietnamese dub",
+"Lồng tiếng tiếng Anh": "English dub",
+"✨ AI nhẹ": "✨ AI light",
+"✨ AI vừa": "✨ AI medium",
+"Fanpage 3 (tuỳ chọn)": "Page 3 (optional)",
+"Nội dung gửi cho AI quá dài, hãy rút gọn bớt thông tin.": "What was sent to the AI is too long, please shorten it.",
+"Giá thường, giá vốn và tiền lãi dưới đây do hệ thống tính từ đúng giá bạn nhập, không phải AI ước lượng. Kiểm tra lại trước khi áp dụng.": "Regular prices, costs and profits below are worked out by the system from the prices you entered, not estimated by AI. Double-check before you use them.",
+"Góp ý 30 giây giúp quán làm món ngon hơn mỗi ngày": "30 seconds of feedback helps us cook better every day",
+"Cảm ơn bạn! Lần sau ghé nhớ nhắc nhân viên nhé.": "Thank you! Say hi to our team next time you visit.",
+"Phở Tái - $14.95 - rare beef, 12-hour broth\nGỏi Cuốn - $7 - shrimp, pork, peanut sauce": "Birria tacos (3) - $13.50 - slow-braised beef, consommé\nElote - $5 - grilled corn, cotija, Tajín",
+"Quận 1, TP.HCM": "Wicker Park, Chicago",
+"Phở bò, nước dùng hầm xương 12 tiếng. Món nổi bật: phở tái nạm. Gia đình anh Minh mở từ 2015. Có máy lạnh, mang về, giao GrabFood.": "Chicago deep dish since 2009. Signature: sausage deep dish. Family-run, dine-in and pickup, delivery on DoorDash.",
+"Ngang 16:9": "Landscape 16:9",
+"Bấm vào một bài để sửa và xem trước.": "Click a post to edit it and see a preview.",
+"Xong": "Done"
 };
 export const EN_PATTERNS = [
 [
@@ -3152,5 +3258,101 @@ export const EN_PATTERNS = [
 [
 "Đã hẹn giờ đăng lên ${name}.",
 "Scheduled on ${name}."
+],
+[
+"Bước ${i + 1}/${steps.length}: ${def.title}…",
+"Step ${i + 1}/${steps.length}: ${def.title}…"
+],
+[
+"Đã xem ${videos.length} video, AI đang phân tích…",
+"Watched ${videos.length} videos, AI is analyzing…"
+],
+[
+"Đang đọc kênh ${i + 1}/${input.urls.length}: @${name}…",
+"Reading channel ${i + 1}/${input.urls.length}: @${name}…"
+],
+[
+"Bước 2/3: ${p}",
+"Step 2/3: ${p}"
+],
+[
+"Đã đọc ${place.low.length + place.high.length} đánh giá của ${place.name}, AI đang phân tích…",
+"Read ${place.low.length + place.high.length} reviews of ${place.name}, AI is analyzing…"
+],
+[
+"Đã đọc ${place.low.length + place.high.length} review Yelp của ${place.name}, AI đang phân tích…",
+"Read ${place.low.length + place.high.length} Yelp reviews of ${place.name}, AI is analyzing…"
+],
+[
+"Đang tìm các quán \"${input.query}\" quanh ${input.location} trên Google Maps…",
+"Searching Google Maps for \"${input.query}\" near ${input.location}…"
+],
+[
+"Đã đọc ${places.length} quán, AI đang phân tích…",
+"Read ${places.length} places, AI is analyzing…"
+],
+[
+"Đã đọc đánh giá của ${ok.length} quán, AI đang so sánh…",
+"Read reviews of ${ok.length} places, AI is comparing…"
+],
+[
+"Đang đọc Google Trends 12 tháng qua (${area})…",
+"Reading Google Trends for the past 12 months (${area})…"
+],
+[
+"Đang đọc 40 bài gần nhất của @${input.user}…",
+"Reading the latest 40 posts of @${input.user}…"
+],
+[
+"Đã đọc ${data.count} bài, đang tính số liệu…",
+"Read ${data.count} posts, crunching the numbers…"
+],
+[
+"Đã đọc ${place.reviews.length} đánh giá của ${place.name}, AI đang phân tích…",
+"Read ${place.reviews.length} reviews of ${place.name}, AI is analyzing…"
+],
+[
+"AI đang xem ${items.length} ${label}…",
+"AI is watching ${items.length} ${label}…"
+],
+[
+"AI đã xem ${++watched}/${items.length} ${label}…",
+"AI has watched ${++watched}/${items.length} ${label}…"
+],
+[
+"Đã quét ${data.scanned ?? posts.length} bài, AI đang chọn và phân tích…",
+"Scanned ${data.scanned ?? posts.length} posts, AI is picking and analyzing…"
+],
+[
+"Đang quét ${input.depth} reel gần nhất…",
+"Scanning the latest ${input.depth} reels…"
+],
+[
+"Đã quét ${scanned} reel, AI đang chọn ra ${input.top} reel đáng học…",
+"Scanned ${scanned} reels, AI is picking the ${input.top} reels worth learning from…"
+],
+[
+"Đã đọc ${list.count ?? list.reels?.length ?? 0} reel, đang tính số liệu…",
+"Read ${list.count ?? list.reels?.length ?? 0} reels, crunching the numbers…"
+],
+[
+"Đã đọc ${data.count ?? reels.length} bài, AI đang viết ${input.count} bài mới…",
+"Read ${data.count ?? reels.length} posts, AI is writing ${input.count} new posts…"
+],
+[
+"Đang vẽ ${files.length} ảnh trên GPU…",
+"Drawing ${files.length} images on the GPU…"
+],
+[
+"Đang vẽ ${draw.length} ảnh trên GPU…",
+"Drawing ${draw.length} images on the GPU…"
+],
+[
+"góp ý ${days} ngày",
+"feedback ${days} days"
+],
+[
+"${item.total} góp ý từ trước tới nay",
+"${item.total} feedback all time"
 ]
 ];

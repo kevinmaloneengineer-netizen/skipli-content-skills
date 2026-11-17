@@ -161,11 +161,13 @@ export const PHOTO_BACKGROUNDS = {
   dark: "dark slate stone surface, moody restaurant lighting, deep shadows",
   linen: "beige linen tablecloth with soft folds, bright cafe by a window",
 };
+export const OWNER_NOTES_VI = "Ghi chú và giải thích cho chủ quán viết tiếng Việt. Chỗ chưa biết để dạng [PRICE], [LINK], [HOURS], [PHONE].";
+export const OWNER_NOTES_EN = "Ghi chú và giải thích cho chủ quán cũng viết bằng tiếng Anh kiểu Mỹ (chủ quán dùng giao diện tiếng Anh). Chỗ chưa biết để dạng [PRICE], [LINK], [HOURS], [PHONE].";
 export const ENGLISH_RULE = [
   "NGÔN NGỮ: thông tin được nhập bằng tiếng Anh, khách của quán nói tiếng Anh (thị trường Mỹ).",
   "Viết TOÀN BỘ nội dung dành cho khách (bài đăng, caption, câu trả lời, tin nhắn, mô tả món, lời thoại, chữ trên ảnh, hashtag) bằng tiếng Anh tự nhiên kiểu Mỹ. Tiền tệ là USD ($).",
   "GIỮ NGUYÊN các tiêu đề mục và nhãn theo mẫu của skill bằng tiếng Việt (ví dụ \"## Phương án 1: …\", \"## Món: …\", \"## Tình huống: …\", \"**Khách nhắn:**\", \"**Trả lời:**\", \"## Bộ 1 · …\", \"## Ngày 1 · 19:30 · …\") để ứng dụng hiển thị đúng; phần tên sau dấu \":\" được viết tiếng Anh.",
-  "Ghi chú và giải thích cho chủ quán viết tiếng Việt. Chỗ chưa biết để dạng [PRICE], [LINK], [HOURS], [PHONE].",
+  OWNER_NOTES_VI,
   "KHÔNG BỊA điều quán chưa nói: địa chỉ, giao hàng hay ship (phạm vi, thời gian), cách thanh toán, đổi trả hay hoàn tiền, chỗ đậu xe, món chay hay không gluten, mã giảm giá, giảm giá, quà tặng, nguồn nguyên liệu, giải thưởng. Chưa có thì để chỗ trống như [ADDRESS], [DELIVERY], [PAYMENT], [PARKING], [OFFER], hoặc khuyên khách hỏi quán. Điều chủ quán ĐÃ nhập (giá, ưu đãi, giờ, chính sách) thì dùng nguyên văn, không thay bằng chỗ trống.",
 ].join("\n");
 const VI_MARKS = /[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i;

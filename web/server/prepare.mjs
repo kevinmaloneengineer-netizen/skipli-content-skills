@@ -206,7 +206,9 @@ async function reviewComparePrompt(input, { setPhase, signal }) {
   if (ok.length < 2) throw new Error(`Không đọc được đủ quán để so sánh (${read.filter((p) => p.error).map((p) => p.place.slice(0, 40).replace(/[\s,]+$/, "")).join(", ") || "các quán chưa có đánh giá"}). Hãy dán link Google Maps của từng quán.`);
   await setPhase(`Đã đọc đánh giá của ${ok.length} quán, AI đang so sánh…`);
   const { table } = compareTable(ok);
-  const line = (r) => `- (${r.stars ?? "?"} sao, ${r.when}${r.ownerReplied ? ", chủ quán đã trả lời" : ""}) ${r.text.slice(0, 150)}`;
+  // The English interface adds its language rules to the prompt: shorter quotes keep it inside the model's budget.
+  const cut = input.uiLang === "en" ? 100 : 150;
+  const line = (r) => `- (${r.stars ?? "?"} sao, ${r.when}${r.ownerReplied ? ", chủ quán đã trả lời" : ""}) ${r.text.slice(0, cut)}`;
   const failed = read.filter((p) => p.error);
   return {
     fields: { researchTable: table },

@@ -66,21 +66,25 @@ export async function skillInstructions(name, from) {
   return skillCache.get(key);
 }
 
-/** The UI avoids dashes joining ideas: ranges ("Thứ 2 – Thứ 6", "16h–23h") become "đến", other dashes ": ". */
-export const fixDashes = (t) =>
-  t
-    .replace(/(\d+[hg]?|\d{1,2}:\d{2}|thứ \w+|chủ nhật)[ \t]*[–—][ \t]*(?=\d|thứ|chủ nhật)/gi, "$1 đến ")
-    .replace(/(\b\d{1,2}[hg]|\b\d{1,2}:\d{2})[ \t]*[‑-][ \t]*(?=\d{1,2}(?:[hg:]|\b))/gi, "$1 đến ") // "16h‑23h", "10:30-11:30"; dates like 2026‑07‑05 stay
+/** The UI avoids dashes joining ideas: ranges ("Thứ 2 – Thứ 6", "16h–23h") become "đến" ("to" in English), other dashes ": ". */
+export const fixDashes = (t, lang = "vi") => {
+  const to = lang === "en" ? "to" : "đến";
+  return t
+    .replace(/(\d+[hg]?|\d{1,2}:\d{2}|thứ \w+|chủ nhật)[ \t]*[–—][ \t]*(?=\d|thứ|chủ nhật)/gi, `$1 ${to} `)
+    .replace(/(\b\d{1,2}[hg]|\b\d{1,2}:\d{2})[ \t]*[‑-][ \t]*(?=\d{1,2}(?:[hg:]|\b))/gi, `$1 ${to} `) // "16h‑23h", "10:30-11:30"; dates like 2026‑07‑05 stay
     .replace(/[ \t]+[–—][ \t]+/g, ": ");
+};
 
 /** Run a no-tools skill: SKILL.md as the system prompt, the job prompt as the user turn. */
-export async function runSkill({ skill, from, prompt, signal }) {
-  const system = `${await skillInstructions(skill, from)}\n\nYou cannot run tools or scripts here: the data is already collected and given in the request. Answer directly in the output format above.`;
+export async function runSkill({ skill, from, prompt, signal, lang = "vi", englishUi = false }) {
+  // English interface: the skill's "in Vietnamese" (tips and notes for the owner) become English too.
+  const method = await skillInstructions(skill, from);
+  const system = `${englishUi ? method.replace(/\bin Vietnamese\b/gi, "in English") : method}\n\nYou cannot run tools or scripts here: the data is already collected and given in the request. Answer directly in the output format above.`;
   const room = TPM - estimateTokens(system + prompt) - 200;
   if (room < 1200) throw new Error("Nội dung gửi cho AI quá dài, hãy rút gọn bớt thông tin.");
   const msg = await complete({ messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }, { signal, maxTokens: Math.min(6000, room) });
   // Same rule as the UI copy: no dashes joining ideas ("Món A – mô tả" becomes "Món A: mô tả").
-  const content = fixDashes(msg.content ?? "").trim();
+  const content = fixDashes(msg.content ?? "", lang).trim();
   if (!content) throw new Error("AI không trả về nội dung, hãy chạy lại.");
   return { content: tidyMarkdown(content), usage: msg.usage, meta: msg.meta };
 }

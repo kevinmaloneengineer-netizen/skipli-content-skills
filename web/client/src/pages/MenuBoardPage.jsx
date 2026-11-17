@@ -29,6 +29,20 @@ Trứng chần - 8.000đ
 # Đồ uống
 Trà đá - 5.000đ
 Cà phê sữa đá - 25.000đ`;
+// The English interface starts from a US menu.
+const SAMPLE_EN = `# Pizza
+Deep dish sausage - $32 - Wisconsin mozzarella, chunky tomato *
+Tavern thin crust - $19 - Cracker-thin, cut in squares
+Italian beef pizza - $24 - Giardiniera, sweet peppers
+
+# Sides
+Garlic knots - $7
+Caesar salad - $9
+
+# Drinks
+Fountain soda - $3
+Iced tea - $3`;
+const START = getLang() === "en" ? SAMPLE_EN : SAMPLE;
 const LOGO_MAX = 120_000; // characters of the data URL, the same cap as the server
 const EMPTY = { name: "", tagline: "", note: "", contact: "", theme: "cream", color: "#c2451f", logo: "" };
 const link = (id) => `${window.location.origin}/m/${id}`;
@@ -38,7 +52,7 @@ export default function MenuBoardPage() {
   const toast = useToast();
   const copy = useCopy();
   const [info, setInfo] = useState(EMPTY);
-  const [text, setText] = useState(SAMPLE);
+  const [text, setText] = useState(START);
   const [logoFile, setLogoFile] = useState(null);
   const [view, setView] = useState("print");
   const [saved, setSaved] = useState([]); // the account's menus
@@ -183,7 +197,7 @@ export default function MenuBoardPage() {
             <input ref={scanRef} type="file" accept="image/png,image/jpeg,image/webp" capture="environment" hidden onChange={(e) => scanMenu(e.target.files?.[0])} />
           </div>
           <Field label={`Món (${count})`} hint='Dòng bắt đầu bằng # là tên nhóm. Mỗi món một dòng: Tên món - giá - mô tả. Thêm " *" ở cuối để gắn nhãn Nên thử.'>
-            <textarea className="mb-text" rows={12} value={text} onChange={(e) => setText(e.target.value)} placeholder={SAMPLE} spellCheck={false} />
+            <textarea className="mb-text" rows={12} value={text} onChange={(e) => setText(e.target.value)} placeholder={START} spellCheck={false} />
           </Field>
           <div className="row">
             <Field label="Ghi chú cuối menu (tuỳ chọn)"><input value={info.note} onChange={set("note")} placeholder="Giá đã gồm VAT" maxLength={200} autoComplete="off" /></Field>
