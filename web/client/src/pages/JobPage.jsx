@@ -25,6 +25,7 @@ import { accepts } from "../lib/drop.js";
 import ComboResult from "../components/ComboResult.jsx";
 import FacebookPost from "../components/FacebookPost.jsx";
 import { useAuth } from "../components/AuthGate.jsx";
+import PhoneGate, { usePhoneGate } from "../components/PhoneGate.jsx";
 import MapLinkField, { MapPreview } from "../components/MapLinkField.jsx";
 import TemplateTexts from "../components/TemplateTexts.jsx";
 import { DISH_TEMPLATES, FEATURED, OFFER_TEMPLATES, SAMPLE_VERSION, TEMPLATES, sampleOf } from "../lib/videoTemplates.js";
@@ -705,6 +706,7 @@ export default function JobPage() {
   const [job, setJob] = useState(null);
   const [error, setError] = useState("");
   const [edits, setEdits] = useJobEdits(id);
+  const gated = usePhoneGate(); // first result: phone + details before copying or sharing it
 
   // Summary from the polled list; refetch the full job whenever its state changes.
   const live = jobs.find((j) => j.id === id);
@@ -798,7 +800,8 @@ export default function JobPage() {
       ].filter(Boolean)
     : [];
   const full = job.type === "clone" || job.type === "image" || job.type === "photo-fix";
-  const canCopy = done && !["clone", "video", "image", "photo-fix", "combo"].includes(job.type);
+  const locked = gated && !job.sample;
+  const canCopy = done && !locked && !["clone", "video", "image", "photo-fix", "combo"].includes(job.type);
 
   return (
     <div className={full ? "job-page full" : "job-page"} data-tone={skill?.tone}>
@@ -824,7 +827,13 @@ export default function JobPage() {
       <div className="job-layout">
         <div className="job-main">
           <FillBlanks blanks={blanks} fills={fills} onChange={(f) => setEdits((e) => ({ ...e, fills: f }))} />
-          <Result job={shown} onSave={saveToLibrary} edits={edits} setEdits={setEdits} />
+          {done && !job.sample ? (
+            <PhoneGate>
+              <Result job={shown} onSave={saveToLibrary} edits={edits} setEdits={setEdits} />
+            </PhoneGate>
+          ) : (
+            <Result job={shown} onSave={saveToLibrary} edits={edits} setEdits={setEdits} />
+          )}
         </div>
         <aside className="job-aside">
           <section className="aside-card">
@@ -832,7 +841,7 @@ export default function JobPage() {
             <div className="job-actions actions">
               {canCopy && <button className="btn" onClick={() => copy(toPlainText(shown.result))}><CopyIcon />Sao chép</button>}
               {canCopy && <button className="btn" onClick={() => saveToLibrary(job.title, shown.result)} title="Lưu vào thư viện"><SaveIcon />Lưu</button>}
-              {done && job.type !== "combo" && <button className="btn" onClick={() => window.print()} title="Lưu báo cáo thành PDF hoặc in ra">⤓ Tải PDF</button>}
+              {done && !locked && job.type !== "combo" && <button className="btn" onClick={() => window.print()} title="Lưu báo cáo thành PDF hoặc in ra">⤓ Tải PDF</button>}
               {ACTIVE.has(job.status) ? (
                 <button className="btn danger" onClick={cancel}>Huỷ</button>
               ) : (
@@ -843,7 +852,7 @@ export default function JobPage() {
               )}
             </div>
           </section>
-          {done && job.type !== "combo" && !job.sample && <ShareBox key={job.id} job={job} />}
+          {done && !locked && job.type !== "combo" && !job.sample && <ShareBox key={job.id} job={job} />}
           {next.length > 0 && (
             <section className="aside-card">
               <h2>Bước tiếp theo</h2>

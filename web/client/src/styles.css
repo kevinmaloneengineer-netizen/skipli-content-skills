@@ -3664,3 +3664,24 @@ select:disabled { cursor: not-allowed; opacity: .6; }
 @media (max-width: 900px) {
   .settings-grid { grid-template-columns: 1fr; }
 }
+
+/* "Mở khoá kết quả" (components/PhoneGate.jsx): the first result blurred under a short phone + details form */
+.phone-gate { position: relative; min-height: 560px; }
+.phone-gate-content { filter: blur(7px); pointer-events: none; user-select: none; max-height: 900px; overflow: hidden; opacity: .75; }
+.phone-gate-card { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); width: min(440px, calc(100% - 24px)); display: grid; gap: 12px; padding: 24px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.phone-gate.is-peek .phone-gate-content { filter: blur(3px); opacity: .9; }
+.phone-gate.is-peek .phone-gate-card { top: auto; bottom: 16px; position: sticky; transform: none; margin: -96px auto 0; display: flex; align-items: center; justify-content: space-between; }
+.phone-gate-card h2 { margin: 0; font-size: 22px; }
+.phone-gate-card h3 { margin: 6px 0 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.phone-gate-card form { display: grid; gap: 10px; }
+.phone-gate-card .hint { margin: 0; }
+.phone-gate-card input, .phone-gate-card select { width: 100%; }
+.phone-gate-row { display: flex; justify-content: space-between; }
+.phone-gate-row .link-btn { margin: 0; }
+.phone-gate-ok { margin: 0; padding: 10px 12px; border-radius: 12px; background: #dcebdf; color: #2e6b4f; font-size: 13px; font-weight: 600; }
+.phone-gate-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; }
+.phone-gate-chips legend { width: 100%; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+.pg-chip { padding: 6px 12px; border: 1px solid var(--line); border-radius: 99px; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.pg-chip.on { border-color: var(--run, #e0442a); background: var(--run, #e0442a); color: #fff; }
+.phone-gate-note { color: var(--muted, #6e685d); font-size: 12px; }
+.phone-gate-card > .link-btn { justify-self: center; margin: 0; }

@@ -2796,7 +2796,48 @@ export const EN = {
 "Phở bò, nước dùng hầm xương 12 tiếng. Món nổi bật: phở tái nạm. Gia đình anh Minh mở từ 2015. Có máy lạnh, mang về, giao GrabFood.": "Chicago deep dish since 2009. Signature: sausage deep dish. Family-run, dine-in and pickup, delivery on DoorDash.",
 "Ngang 16:9": "Landscape 16:9",
 "Bấm vào một bài để sửa và xem trước.": "Click a post to edit it and see a preview.",
-"Xong": "Done"
+"Xong": "Done",
+"Mở khoá kết quả": "Unlock your result",
+"Mở khoá ngay": "Unlock now",
+"Xác minh số điện thoại để xem toàn bộ kết quả. Chỉ cần làm một lần.": "Verify your phone number to view the full result. You only do this once.",
+"Số điện thoại Mỹ, ví dụ (404) 555-0123": "US phone number, e.g. (404) 555-0123",
+"Gửi mã xác minh": "Send verification code",
+"Nhập mã 6 số đã gửi tới": "Enter the 6-digit code sent to",
+"Mã xác minh": "Verification code",
+"Đang xác minh…": "Verifying…",
+"Xác minh số": "Verify number",
+"Đổi số": "Change number",
+"Đã xác minh số điện thoại. Điền thêm vài thông tin để mở kết quả.": "Phone number verified. Complete your details to unlock the result.",
+"Họ và tên": "Full name",
+"Email công việc": "Work email",
+"Thông tin về quán": "Tell us about your restaurant",
+"Vài thông tin nhanh để đội ngũ hỗ trợ bạn sát hơn.": "A few quick details help us tailor the follow-up.",
+"Thành phố, bang (ví dụ Houston, TX)": "City, state (e.g. Houston, TX)",
+"Quán đang đăng bài ở đâu?": "Where does your restaurant post?",
+"Chưa đăng ở đâu": "Nowhere yet",
+"Ai đang lo marketing cho quán?": "Who handles your marketing?",
+"Chủ quán tự làm": "The owner",
+"Nhân viên của quán": "Our staff",
+"Thuê agency / freelancer": "An agency or freelancer",
+"Chưa có ai làm": "Nobody yet",
+"Ngân sách marketing mỗi tháng": "Monthly marketing budget",
+"Chưa chi": "Nothing yet",
+"Dưới $200": "Under $200",
+"$200 đến $500": "$200 to $500",
+"$500 đến $1.000": "$500 to $1,000",
+"Trên $1.000": "Over $1,000",
+"Mở toàn bộ kết quả": "Unlock full result",
+"Chúng tôi chỉ dùng thông tin này để liên hệ với bạn về Skipli Content.": "We only use your details to contact you about Skipli Content.",
+"Xem trước kết quả": "View preview first",
+"Nhập số điện thoại Mỹ, ví dụ (404) 555-0123.": "Enter a US phone number, e.g. (404) 555-0123.",
+"Số điện thoại chưa đúng. Nhập số Mỹ (404) 555-0123 hoặc số Việt Nam 0912 345 678.": "That phone number looks wrong. Enter a US number (404) 555-0123 or a Vietnamese number 0912 345 678.",
+"Đã gửi mã nhiều lần trong 1 giờ qua, thử lại sau nhé.": "Too many codes sent in the last hour, please try again later.",
+"Số này không nhận được tin nhắn, kiểm tra lại số điện thoại nhé.": "This number cannot receive texts, please check it.",
+"Xác minh số điện thoại trước nhé.": "Please verify your phone number first.",
+"Nhập họ tên nhé.": "Please enter your name.",
+"Email chưa đúng.": "That email looks wrong.",
+"Nhập tên quán nhé.": "Please enter your restaurant name.",
+"Nhập thành phố của quán nhé.": "Please enter your city."
 };
 export const EN_PATTERNS = [
 [
@@ -3354,5 +3395,13 @@ export const EN_PATTERNS = [
 [
 "${item.total} góp ý từ trước tới nay",
 "${item.total} feedback all time"
+],
+[
+"Gửi lại mã sau ${wait} giây",
+"Resend code in ${wait}s"
+],
+[
+"Đợi ${Math.ceil((30_000 - (now - last.sentAt)) / 1000)} giây rồi gửi lại mã nhé.",
+"Wait ${Math.ceil((30_000 - (now - last.sentAt)) / 1000)} seconds before resending."
 ]
 ];

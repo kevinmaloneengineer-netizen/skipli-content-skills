@@ -25,6 +25,8 @@ import { makeClip } from "./watch.mjs";
 import { createLimits } from "./limits.mjs";
 import { pageConfigured, publishToPage } from "./facebookPage.mjs";
 import { createFacebookConnect, FacebookError } from "./fbConnect.mjs";
+import { createPhoneGate, LEAD_HEADER, PhoneError } from "./phone.mjs";
+import { createSheets } from "./sheets.mjs";
 import { openStore } from "./store/index.mjs";
 import { AccountError, createAccounts, publicUser } from "./accounts.mjs";
 import { BillingError, createBilling } from "./billing.mjs";
@@ -228,6 +230,10 @@ export async function createApp(config, adapter) {
     },
   };
   const errors = createErrorLog({ store, env: config.errorEnv ?? process.env, fetchFn: config.fetchFn });
+  // "Unlock your result": a US phone number confirmed by SMS (Twilio), then a few restaurant details,
+  // written to the team's Google Sheet when GOOGLE_SHEET_ID is set.
+  const leadSheet = createSheets({ serviceAccount: config.firebase?.serviceAccount, sheetId: (config.phoneEnv ?? process.env).GOOGLE_SHEET_ID, range: (config.phoneEnv ?? process.env).GOOGLE_SHEET_RANGE || "A1", header: LEAD_HEADER, fetchFn: config.sheetsFetch ?? fetch });
+  const phone = createPhoneGate({ store, env: config.phoneEnv ?? process.env, sheets: leadSheet, fetchFn: config.twilioFetch ?? fetch, onError: (e) => errors.record({ source: "sheets", message: e.message }) });
   const accounts = config.accounts ? createAccounts({ store, dataDir: config.video?.dataDir ?? path.join(tmpdir(), `skipli-accounts-${process.pid}`), signup: config.signup ? signupRules : null }) : null;
   if (config.signup && accounts && !mailer.enabled) console.warn("signup: SMTP_USER / SMTP_PASS not set (and no MAIL_LOG=1), new accounts skip the email code.");
   if (accounts) {
@@ -512,7 +518,7 @@ export async function createApp(config, adapter) {
     if (!accounts) return res.json({ mode: config.appPassword ? "password" : "open", required: !!config.appPassword, signedIn: gate.signedIn(req) });
     const user = accounts.userOf(req);
     const waiting = !user && accounts.pendingOf(req); // signed up, code not entered yet
-    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, mfa: !user && accounts.mfaPending(req), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled, facebook: fb.enabled });
+    res.json({ mode: "accounts", required: true, signedIn: !!(user || waiting), user: user ? publicUser(user) : waiting || null, mfa: !user && accounts.mfaPending(req), setup: accounts.needsSetup(), signup: accounts.signupOpen, trial: accounts.signupOpen ? billing.trial : null, billing: billing.enabled, codes: !!mailer.enabled, facebook: fb.enabled, phoneGate: phone.enabled });
   });
   api.post("/login", (req, res) => gate.login(req, res));
   api.post("/logout", (req, res) => gate.logout(req, res));
@@ -1430,6 +1436,20 @@ export async function createApp(config, adapter) {
     const pages = (req.user?.fbPages ?? []).map(({ id, name, picture }) => ({ id, name, picture }));
     res.json({ configured: pages.length > 0 || pageConfigured(), connect: fb.enabled, pages });
   });
+
+  // ---- "Mở khoá kết quả": phone code by SMS, then the restaurant details (server/phone.mjs) ----
+  const phoneCall = async (req, fn) => {
+    if (!req.user) throw new HttpError(401, "Đăng nhập trước nhé");
+    try {
+      return await fn();
+    } catch (e) {
+      throw e instanceof PhoneError ? new HttpError(e.status, e.message) : e;
+    }
+  };
+  // Admins may test with a Vietnamese number; customers enter a US number.
+  api.post("/phone/send", async (req, res) => res.json(await phoneCall(req, () => phone.send(req.user.id, req.body?.phone, { intl: req.user.role === "admin", ip: req.ip }))));
+  api.post("/phone/verify", async (req, res) => res.json(await phoneCall(req, () => phone.verify(req.user.id, req.body?.code))));
+  api.post("/phone/details", async (req, res) => res.json(await phoneCall(req, () => phone.details(req.user.id, req.body ?? {}, { lang: req.body?.lang === "en" ? "en" : "vi" }))));
 
   // ---- "Kết nối Facebook": each customer's own Pages, then a post straight from a result ----
   const fbCall = async (fn) => {
